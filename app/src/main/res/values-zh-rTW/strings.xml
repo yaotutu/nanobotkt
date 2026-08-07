@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">nanobotkt</string>
+    <string name="connecting_gateway">正在連線閘道…</string>
+    <string name="gateway_unreachable">無法連線閘道</string>
+    <string name="retry">重試</string>
+    <string name="refresh">重新整理</string>
+    <string name="new_topic">新增話題</string>
+    <string name="search_topics">搜尋話題</string>
+    <string name="pinned">已釘選</string>
+    <string name="topics">話題</string>
+    <string name="projects">專案</string>
+    <string name="archived">已封存</string>
+    <string name="no_topics">尚無話題</string>
+    <string name="no_search_results">沒有相符的話題</string>
+    <string name="reconnect">重新連線</string>
+    <string name="logout">登出</string>
+    <string name="show_archived">顯示已封存</string>
+    <string name="topic_actions">話題操作</string>
+    <string name="unpin">取消釘選</string>
+    <string name="pin">釘選</string>
+    <string name="rename">重新命名</string>
+    <string name="unarchive">取消封存</string>
+    <string name="archive">封存</string>
+    <string name="delete">刪除</string>
+    <string name="delete_topic">刪除話題？</string>
+    <string name="delete_topic_confirmation">確定刪除「%1$s」嗎？此操作無法復原。</string>
+    <string name="cancel">取消</string>
+    <string name="rename_topic">重新命名話題</string>
+    <string name="save">儲存</string>
+    <string name="model_select_title">選擇模型</string>
+    <string name="model_select_help">用於新的回覆。</string>
+    <string name="model_settings">模型與供應商</string>
+</resources>

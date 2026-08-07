@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">nanobotkt</string>
+    <string name="connecting_gateway">Menghubungkan ke gateway…</string>
+    <string name="gateway_unreachable">Gateway tidak tersedia</string>
+    <string name="retry">Coba lagi</string>
+    <string name="refresh">Segarkan</string>
+    <string name="new_topic">Topik baru</string>
+    <string name="search_topics">Cari topik</string>
+    <string name="pinned">Disematkan</string>
+    <string name="topics">Topik</string>
+    <string name="projects">Proyek</string>
+    <string name="archived">Diarsipkan</string>
+    <string name="no_topics">Belum ada topik</string>
+    <string name="no_search_results">Tidak ada topik yang cocok</string>
+    <string name="reconnect">Hubungkan ulang</string>
+    <string name="logout">Keluar</string>
+    <string name="show_archived">Tampilkan arsip</string>
+    <string name="topic_actions">Tindakan topik</string>
+    <string name="unpin">Lepas sematan</string>
+    <string name="pin">Sematkan</string>
+    <string name="rename">Ubah nama</string>
+    <string name="unarchive">Batalkan arsip</string>
+    <string name="archive">Arsipkan</string>
+    <string name="delete">Hapus</string>
+    <string name="delete_topic">Hapus topik?</string>
+    <string name="delete_topic_confirmation">Hapus “%1$s”? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="cancel">Batal</string>
+    <string name="rename_topic">Ubah nama topik</string>
+    <string name="save">Simpan</string>
+    <string name="model_select_title">Pilih model</string>
+    <string name="model_select_help">Digunakan untuk balasan baru.</string>
+    <string name="model_settings">Model dan penyedia</string>
+</resources>

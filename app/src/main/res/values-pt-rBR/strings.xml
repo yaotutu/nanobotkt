@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">nanobotkt</string>
+    <string name="connecting_gateway">Conectando ao gateway…</string>
+    <string name="gateway_unreachable">Gateway indisponível</string>
+    <string name="retry">Tentar novamente</string>
+    <string name="refresh">Atualizar</string>
+    <string name="new_topic">Novo tópico</string>
+    <string name="search_topics">Pesquisar tópicos</string>
+    <string name="pinned">Fixados</string>
+    <string name="topics">Tópicos</string>
+    <string name="projects">Projetos</string>
+    <string name="archived">Arquivados</string>
+    <string name="no_topics">Ainda não há tópicos</string>
+    <string name="no_search_results">Nenhum tópico correspondente</string>
+    <string name="reconnect">Reconectar</string>
+    <string name="logout">Sair</string>
+    <string name="show_archived">Mostrar arquivados</string>
+    <string name="topic_actions">Ações do tópico</string>
+    <string name="unpin">Desafixar</string>
+    <string name="pin">Fixar</string>
+    <string name="rename">Renomear</string>
+    <string name="unarchive">Desarquivar</string>
+    <string name="archive">Arquivar</string>
+    <string name="delete">Excluir</string>
+    <string name="delete_topic">Excluir tópico?</string>
+    <string name="delete_topic_confirmation">Excluir “%1$s”? Esta ação não pode ser desfeita.</string>
+    <string name="cancel">Cancelar</string>
+    <string name="rename_topic">Renomear tópico</string>
+    <string name="save">Salvar</string>
+    <string name="model_select_title">Selecionar modelo</string>
+    <string name="model_select_help">Usado para novas respostas.</string>
+    <string name="model_settings">Modelos e provedores</string>
+</resources>

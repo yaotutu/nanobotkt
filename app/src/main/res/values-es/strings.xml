@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">nanobotkt</string>
+    <string name="connecting_gateway">Conectando con la puerta de enlace…</string>
+    <string name="gateway_unreachable">Puerta de enlace no disponible</string>
+    <string name="retry">Reintentar</string>
+    <string name="refresh">Actualizar</string>
+    <string name="new_topic">Nuevo tema</string>
+    <string name="search_topics">Buscar temas</string>
+    <string name="pinned">Fijados</string>
+    <string name="topics">Temas</string>
+    <string name="projects">Proyectos</string>
+    <string name="archived">Archivados</string>
+    <string name="no_topics">Aún no hay temas</string>
+    <string name="no_search_results">No hay temas coincidentes</string>
+    <string name="reconnect">Reconectar</string>
+    <string name="logout">Cerrar sesión</string>
+    <string name="show_archived">Mostrar archivados</string>
+    <string name="topic_actions">Acciones del tema</string>
+    <string name="unpin">Desfijar</string>
+    <string name="pin">Fijar</string>
+    <string name="rename">Renombrar</string>
+    <string name="unarchive">Desarchivar</string>
+    <string name="archive">Archivar</string>
+    <string name="delete">Eliminar</string>
+    <string name="delete_topic">¿Eliminar tema?</string>
+    <string name="delete_topic_confirmation">¿Eliminar “%1$s”? Esta acción no se puede deshacer.</string>
+    <string name="cancel">Cancelar</string>
+    <string name="rename_topic">Renombrar tema</string>
+    <string name="save">Guardar</string>
+    <string name="model_select_title">Seleccionar modelo</string>
+    <string name="model_select_help">Se usa para nuevas respuestas.</string>
+    <string name="model_settings">Modelos y proveedores</string>
+</resources>

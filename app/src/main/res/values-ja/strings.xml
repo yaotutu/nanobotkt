@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">nanobotkt</string>
+    <string name="connecting_gateway">ゲートウェイに接続中…</string>
+    <string name="gateway_unreachable">ゲートウェイに接続できません</string>
+    <string name="retry">再試行</string>
+    <string name="refresh">更新</string>
+    <string name="new_topic">新しいトピック</string>
+    <string name="search_topics">トピックを検索</string>
+    <string name="pinned">ピン留め</string>
+    <string name="topics">トピック</string>
+    <string name="projects">プロジェクト</string>
+    <string name="archived">アーカイブ</string>
+    <string name="no_topics">トピックはありません</string>
+    <string name="no_search_results">一致するトピックはありません</string>
+    <string name="reconnect">再接続</string>
+    <string name="logout">ログアウト</string>
+    <string name="show_archived">アーカイブを表示</string>
+    <string name="topic_actions">トピック操作</string>
+    <string name="unpin">ピンを外す</string>
+    <string name="pin">ピン留め</string>
+    <string name="rename">名前を変更</string>
+    <string name="unarchive">アーカイブ解除</string>
+    <string name="archive">アーカイブ</string>
+    <string name="delete">削除</string>
+    <string name="delete_topic">トピックを削除しますか？</string>
+    <string name="delete_topic_confirmation">「%1$s」を削除しますか？この操作は元に戻せません。</string>
+    <string name="cancel">キャンセル</string>
+    <string name="rename_topic">トピック名を変更</string>
+    <string name="save">保存</string>
+    <string name="model_select_title">モデルを選択</string>
+    <string name="model_select_help">新しい返信に使用します。</string>
+    <string name="model_settings">モデルとプロバイダー</string>
+</resources>

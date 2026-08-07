@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">nanobotkt</string>
+    <string name="connecting_gateway">Connexion à la passerelle…</string>
+    <string name="gateway_unreachable">Passerelle indisponible</string>
+    <string name="retry">Réessayer</string>
+    <string name="refresh">Actualiser</string>
+    <string name="new_topic">Nouveau sujet</string>
+    <string name="search_topics">Rechercher des sujets</string>
+    <string name="pinned">Épinglés</string>
+    <string name="topics">Sujets</string>
+    <string name="projects">Projets</string>
+    <string name="archived">Archivés</string>
+    <string name="no_topics">Aucun sujet</string>
+    <string name="no_search_results">Aucun sujet correspondant</string>
+    <string name="reconnect">Reconnecter</string>
+    <string name="logout">Se déconnecter</string>
+    <string name="show_archived">Afficher les archives</string>
+    <string name="topic_actions">Actions du sujet</string>
+    <string name="unpin">Désépingler</string>
+    <string name="pin">Épingler</string>
+    <string name="rename">Renommer</string>
+    <string name="unarchive">Désarchiver</string>
+    <string name="archive">Archiver</string>
+    <string name="delete">Supprimer</string>
+    <string name="delete_topic">Supprimer le sujet ?</string>
+    <string name="delete_topic_confirmation">Supprimer « %1$s » ? Cette action est irréversible.</string>
+    <string name="cancel">Annuler</string>
+    <string name="rename_topic">Renommer le sujet</string>
+    <string name="save">Enregistrer</string>
+    <string name="model_select_title">Choisir un modèle</string>
+    <string name="model_select_help">Utilisé pour les nouvelles réponses.</string>
+    <string name="model_settings">Modèles et fournisseurs</string>
+</resources>

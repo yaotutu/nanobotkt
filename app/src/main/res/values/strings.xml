@@ -1,3 +1,33 @@
 <resources>
     <string name="app_name">nanobotkt</string>
+    <string name="connecting_gateway">Connecting to gateway…</string>
+    <string name="gateway_unreachable">Gateway unavailable</string>
+    <string name="retry">Retry</string>
+    <string name="refresh">Refresh</string>
+    <string name="new_topic">New topic</string>
+    <string name="search_topics">Search topics</string>
+    <string name="pinned">Pinned</string>
+    <string name="topics">Topics</string>
+    <string name="projects">Projects</string>
+    <string name="archived">Archived</string>
+    <string name="no_topics">No topics yet</string>
+    <string name="no_search_results">No matching topics</string>
+    <string name="reconnect">Reconnect</string>
+    <string name="logout">Log out</string>
+    <string name="show_archived">Show archived</string>
+    <string name="topic_actions">Topic actions</string>
+    <string name="unpin">Unpin</string>
+    <string name="pin">Pin</string>
+    <string name="rename">Rename</string>
+    <string name="unarchive">Unarchive</string>
+    <string name="archive">Archive</string>
+    <string name="delete">Delete</string>
+    <string name="delete_topic">Delete topic?</string>
+    <string name="delete_topic_confirmation">Delete “%1$s”? This cannot be undone.</string>
+    <string name="cancel">Cancel</string>
+    <string name="rename_topic">Rename topic</string>
+    <string name="save">Save</string>
+    <string name="model_select_title">Select model</string>
+    <string name="model_select_help">Used for new replies.</string>
+    <string name="model_settings">Models &amp; providers</string>
 </resources>

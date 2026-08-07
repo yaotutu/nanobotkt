@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">nanobotkt</string>
+    <string name="connecting_gateway">Đang kết nối tới cổng…</string>
+    <string name="gateway_unreachable">Không thể kết nối cổng</string>
+    <string name="retry">Thử lại</string>
+    <string name="refresh">Làm mới</string>
+    <string name="new_topic">Chủ đề mới</string>
+    <string name="search_topics">Tìm chủ đề</string>
+    <string name="pinned">Đã ghim</string>
+    <string name="topics">Chủ đề</string>
+    <string name="projects">Dự án</string>
+    <string name="archived">Đã lưu trữ</string>
+    <string name="no_topics">Chưa có chủ đề</string>
+    <string name="no_search_results">Không có chủ đề phù hợp</string>
+    <string name="reconnect">Kết nối lại</string>
+    <string name="logout">Đăng xuất</string>
+    <string name="show_archived">Hiện mục đã lưu trữ</string>
+    <string name="topic_actions">Thao tác chủ đề</string>
+    <string name="unpin">Bỏ ghim</string>
+    <string name="pin">Ghim</string>
+    <string name="rename">Đổi tên</string>
+    <string name="unarchive">Bỏ lưu trữ</string>
+    <string name="archive">Lưu trữ</string>
+    <string name="delete">Xóa</string>
+    <string name="delete_topic">Xóa chủ đề?</string>
+    <string name="delete_topic_confirmation">Xóa “%1$s”? Không thể hoàn tác thao tác này.</string>
+    <string name="cancel">Hủy</string>
+    <string name="rename_topic">Đổi tên chủ đề</string>
+    <string name="save">Lưu</string>
+    <string name="model_select_title">Chọn mô hình</string>
+    <string name="model_select_help">Dùng cho các phản hồi mới.</string>
+    <string name="model_settings">Mô hình và nhà cung cấp</string>
+</resources>
