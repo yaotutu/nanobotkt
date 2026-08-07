@@ -1,6 +1,8 @@
 package com.nanobotkt.core.network
 
 import com.nanobotkt.core.model.BootstrapResponse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -15,7 +17,7 @@ class BootstrapService @Inject constructor(
     @param:RestClient private val client: OkHttpClient,
     private val json: Json,
 ) {
-    suspend fun fetch(baseUrl: String, secret: String): BootstrapResponse {
+    suspend fun fetch(baseUrl: String, secret: String): BootstrapResponse = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(baseUrl.trimEnd('/').plus("/webui/bootstrap").toHttpUrl())
             .header("Accept", "application/json")
@@ -36,7 +38,7 @@ class BootstrapService @Inject constructor(
                 val payload = try { json.decodeFromString<BootstrapResponse>(text) }
                 catch (error: Exception) { throw GatewayException.InvalidPayload(error) }
                 if (payload.token.isBlank() || payload.apiToken.isBlank() || payload.wsPath.isBlank()) throw GatewayException.AuthenticationRequired("bootstrap response missing credentials")
-                return payload
+                return@withContext payload
             }
         } catch (error: GatewayException) { throw error }
         catch (error: SocketTimeoutException) { throw GatewayException.Timeout(error) }

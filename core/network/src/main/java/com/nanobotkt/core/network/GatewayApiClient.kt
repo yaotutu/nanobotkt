@@ -1,6 +1,8 @@
 package com.nanobotkt.core.network
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.json.Json
@@ -28,7 +30,7 @@ class GatewayApiClient @Inject constructor(
         query: Map<String, Any?> = emptyMap(),
         body: String? = null,
         headers: Map<String, String> = emptyMap(),
-    ): T {
+    ): T = withContext(Dispatchers.IO) {
         val base = authContext.baseUrl.trimEnd('/')
         val urlBuilder = (base + path).toHttpUrl().newBuilder()
         query.forEach { (key, value) ->
@@ -74,7 +76,7 @@ class GatewayApiClient @Inject constructor(
                     }
                     throw GatewayException.NonJsonResponse()
                 }
-                return try {
+                return@withContext try {
                     json.decodeFromString(deserializer, responseText)
                 } catch (error: Exception) {
                     throw GatewayException.InvalidPayload(error)
