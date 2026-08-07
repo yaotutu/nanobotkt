@@ -95,17 +95,17 @@ private val sections = listOf(
 private val settingsDark: Boolean
     @Composable get() = MaterialTheme.colorScheme.background.luminance() < 0.5f
 private val PageBackground: Color
-    @Composable get() = if (settingsDark) Color(0xFF171717) else Color(0xFFFCFCFB)
+    @Composable get() = if (settingsDark) Color(0xFF303030) else Color.White
 private val CardBackground: Color
-    @Composable get() = if (settingsDark) Color(0xFF232323) else Color(0xFFF5F5F4)
+    @Composable get() = if (settingsDark) Color(0xFF383838) else Color(0xFFF7F7F6)
 private val SegmentBackground: Color
     @Composable get() = if (settingsDark) Color(0xFF303030) else Color(0xFFF0F0EF)
 private val PrimaryText: Color
-    @Composable get() = if (settingsDark) Color(0xFFF1F1F1) else Color(0xFF242424)
+    @Composable get() = if (settingsDark) Color(0xFFF5F5F6) else Color(0xFF1D1D1F)
 private val SecondaryText: Color
-    @Composable get() = if (settingsDark) Color(0xFFA7A7A7) else Color(0xFF777777)
+    @Composable get() = if (settingsDark) Color(0xFFA6A6A6) else Color(0xFF737373)
 private val DividerColor: Color
-    @Composable get() = if (settingsDark) Color(0xFF363636) else Color(0xFFE9E9E7)
+    @Composable get() = if (settingsDark) Color(0xFF474747) else Color(0xFFE8E7E5)
 
 @Composable
 fun SettingsScreen(
@@ -193,8 +193,8 @@ private fun SettingsHeader(
     Text(
         text = "Settings",
         color = PrimaryText,
-        fontSize = 24.sp,
-        lineHeight = 30.sp,
+        fontSize = 18.sp,
+        lineHeight = 23.sp,
         fontWeight = FontWeight.Normal,
     )
     Spacer(Modifier.height(13.dp))
