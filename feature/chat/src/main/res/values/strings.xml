@@ -9,6 +9,7 @@
     <string name="thinking">Thinking…</string>
     <string name="reasoning">Reasoning</string>
     <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
     <string name="composer_placeholder">Type your message…</string>
     <string name="stop">Stop response</string>
     <string name="send">Send message</string>

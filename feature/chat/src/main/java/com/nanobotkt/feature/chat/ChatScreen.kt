@@ -1,7 +1,6 @@
 package com.nanobotkt.feature.chat
 
 import android.Manifest
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
@@ -54,11 +53,9 @@ import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.Toc
 import androidx.compose.material.icons.rounded.Settings
@@ -86,7 +83,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -96,7 +92,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -112,8 +107,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.McpPresetInfo
 import com.nanobotkt.core.model.SkillSummary
@@ -234,15 +227,6 @@ fun ChatScreen(
     }
 
     val hero = state.chatId == null
-    val view = LocalView.current
-    DisposableEffect(view) {
-        val window = (view.context as? Activity)?.window
-        val bars = window?.let { WindowInsetsControllerCompat(it, view) }
-        bars?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        bars?.hide(WindowInsetsCompat.Type.systemBars())
-        onDispose { bars?.show(WindowInsetsCompat.Type.systemBars()) }
-    }
-
     val composerContent: @Composable () -> Unit = {
         Composer(
             state = composer,
@@ -337,13 +321,11 @@ fun ChatScreen(
                     MessageList(
                         listState = listState,
                         state = state,
-                        composer = composer,
                         loadOlder = viewModel::loadOlder,
                         onQuote = { quoteDraft = normalizeQuotedContext(it) },
                         onFork = { messageId, beforeUserIndex ->
                             viewModel.fork(messageId, beforeUserIndex, forkTitle, onSessionCreated)
                         },
-                        onRetry = viewModel::retry,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(top = 44.dp),
@@ -524,11 +506,9 @@ private fun EmptyChat(modifier: Modifier = Modifier) {
 private fun MessageList(
     listState: androidx.compose.foundation.lazy.LazyListState,
     state: ChatUiState,
-    composer: ComposerUiState,
     loadOlder: () -> Unit,
     onQuote: (String) -> Unit,
     onFork: (String, Int) -> Unit,
-    onRetry: (String) -> Unit,
     modifier: Modifier = Modifier,
     autoFollow: Boolean = true,
 ) {
@@ -556,12 +536,8 @@ private fun MessageList(
             MessageBubble(
                 message = message,
                 forkIndex = forkIndexes.getOrNull(index),
-                canRetry = state.activeTurnId == null && canRetryFromMessage(state.messages, index),
-                forkBusy = composer.forkingMessageId == message.id,
-                retryBusy = composer.retryingMessageId == message.id,
                 onQuote = { onQuote(message.content) },
                 onFork = { forkIndexes.getOrNull(index)?.let { onFork(message.id, it) } },
-                onRetry = { onRetry(message.id) },
             )
         }
     }
@@ -572,12 +548,8 @@ private fun MessageList(
 private fun MessageBubble(
     message: UiMessage,
     forkIndex: Int?,
-    canRetry: Boolean,
-    forkBusy: Boolean,
-    retryBusy: Boolean,
     onQuote: () -> Unit,
     onFork: () -> Unit,
-    onRetry: () -> Unit,
 ) {
     val user = message.role == "user"
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -586,10 +558,19 @@ private fun MessageBubble(
     val userBubbleColor = if (dark) Color(0xFF202125) else Color(0xFFF7F7F7)
     val context = LocalContext.current
     val clipboard = remember(context) { context.getSystemService(ClipboardManager::class.java) }
-    val copyText: (String) -> Unit = { text ->
-        clipboard?.setPrimaryClip(ClipData.newPlainText("message", text))
+    val copyText: (String) -> Boolean = { text ->
+        clipboard?.let {
+            runCatching { it.setPrimaryClip(ClipData.newPlainText("message", text)) }.isSuccess
+        } ?: false
     }
+    var copied by remember(message.id) { mutableStateOf(false) }
     var reasoningOpen by remember(message.id) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(1_500L)
+            copied = false
+        }
+    }
     val elapsedMs = message.latencyMs
         ?: message.completedAt?.minus(message.createdAt)?.coerceAtLeast(0L)
 
@@ -724,35 +705,34 @@ private fun MessageBubble(
                 color = mutedColor,
             )
         }
-        if (message.content.isNotBlank()) {
+        if (message.isStreaming != true && message.content.isNotBlank()) {
             Row(
                 modifier = Modifier.padding(top = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                val copyLabel = stringResource(if (copied) R.string.copied else R.string.copy)
                 IconButton(
-                    onClick = { copyText(message.content) },
+                    onClick = {
+                        if (copyText(message.content)) copied = true
+                    },
                     modifier = Modifier.size(40.dp),
                 ) {
                     Icon(
-                        Icons.Rounded.ContentCopy,
-                        stringResource(R.string.copy),
+                        imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                        contentDescription = copyLabel,
                         modifier = Modifier.size(17.dp),
                         tint = mutedColor,
                     )
                 }
                 if (forkIndex != null) {
-                    IconButton(onClick = onFork, enabled = !forkBusy, modifier = Modifier.size(40.dp)) {
-                        if (forkBusy) {
-                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.5.dp)
-                        } else {
-                            Icon(
-                                Icons.AutoMirrored.Rounded.CallSplit,
-                                stringResource(R.string.fork),
-                                modifier = Modifier.size(18.dp),
-                                tint = mutedColor,
-                            )
-                        }
+                    IconButton(onClick = onFork, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.CallSplit,
+                            stringResource(R.string.fork),
+                            modifier = Modifier.size(18.dp),
+                            tint = mutedColor,
+                        )
                     }
                 }
                 elapsedMs?.let {
@@ -2031,7 +2011,7 @@ private fun CapabilityMentionSuggestions(
                 supporting = listOf(details.first, details.second)
                     .filter(String::isNotBlank)
                     .distinct()
-                    .joinToString(" �� "),
+                    .joinToString(" · "),
                 typeLabel = details.third,
                 accessibilityLabel = stringResource(
                     R.string.capability_mention_suggestion,

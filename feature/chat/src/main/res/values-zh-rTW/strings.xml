@@ -8,7 +8,8 @@
     <string name="load_older">Load older messages</string>
     <string name="thinking">Thinking…</string>
     <string name="reasoning">Reasoning</string>
-    <string name="copy">Copy</string>
+    <string name="copy">複製</string>
+    <string name="copied">已複製</string>
     <string name="composer_placeholder">Type your message…</string>
     <string name="stop">Stop response</string>
     <string name="send">Send message</string>
@@ -50,8 +51,8 @@
     <string name="capability_mentions_label">應用程式與 MCP</string>
     <string name="capability_type_cli">CLI 應用程式</string>
     <string name="capability_type_mcp">MCP</string>
-    <string name="skill_mention_suggestion">%1$s��%2$s</string>
-    <string name="capability_mention_suggestion">%1$s��%2$s��%3$s</string>
+    <string name="skill_mention_suggestion">%1$s · %2$s</string>
+    <string name="capability_mention_suggestion">%1$s · %2$s · %3$s</string>
     <string name="workspace_project_placeholder">選擇專案</string>
     <string name="workspace_project_title">專案</string>
     <string name="workspace_default_project">預設專案</string>

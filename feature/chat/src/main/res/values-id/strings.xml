@@ -8,7 +8,8 @@
     <string name="load_older">Load older messages</string>
     <string name="thinking">Thinking…</string>
     <string name="reasoning">Reasoning</string>
-    <string name="copy">Copy</string>
+    <string name="copy">Salin</string>
+    <string name="copied">Disalin</string>
     <string name="composer_placeholder">Type your message…</string>
     <string name="stop">Stop response</string>
     <string name="send">Send message</string>
