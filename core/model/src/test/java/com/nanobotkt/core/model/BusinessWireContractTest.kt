@@ -177,6 +177,59 @@ class BusinessWireContractTest {
     }
 
     @Test
+    fun `settings capability sections decode official webui contract`() {
+        val settings = json.decodeFromString<SettingsPayload>(
+            """{
+              "web_search": {
+                "provider": "duckduckgo",
+                "max_results": 5,
+                "timeout": 30,
+                "providers": [{"name": "duckduckgo", "label": "DuckDuckGo", "credential": "none"}]
+              },
+              "web": {
+                "enable": true,
+                "search": {"max_results": 5, "timeout": 30},
+                "fetch": {"use_jina_reader": true}
+              },
+              "image_generation": {
+                "enabled": true,
+                "provider": "openrouter",
+                "provider_configured": true,
+                "model": "openai/gpt-image",
+                "default_aspect_ratio": "16:9",
+                "default_image_size": "2K",
+                "max_images_per_turn": 4,
+                "save_dir": "/tmp/images",
+                "providers": [{
+                  "name": "openrouter",
+                  "label": "OpenRouter",
+                  "configured": true,
+                  "default_api_base": "https://openrouter.ai/api/v1",
+                  "models": ["openai/gpt-image"]
+                }]
+              },
+              "transcription": {
+                "enabled": true,
+                "provider": "groq",
+                "provider_configured": true,
+                "model": "whisper-large-v3",
+                "language": "zh",
+                "max_duration_sec": 120,
+                "max_upload_mb": 25,
+                "providers": [{"name": "groq", "label": "Groq", "configured": true}]
+              }
+            }""".trimIndent(),
+        )
+
+        assertEquals("DuckDuckGo", settings.webSearch?.providers?.single()?.label)
+        assertTrue(settings.web?.fetch?.useJinaReader == true)
+        assertEquals("16:9", settings.imageGeneration?.defaultAspectRatio)
+        assertEquals("https://openrouter.ai/api/v1", settings.imageGeneration?.providers?.single()?.defaultApiBase)
+        assertEquals("zh", settings.transcription?.language)
+        assertEquals(25, settings.transcription?.maxUploadMb)
+    }
+
+    @Test
     fun `oauth response round trips exact snake case keys`() {
         val original = ProviderOAuthResult(
             status = "pending",

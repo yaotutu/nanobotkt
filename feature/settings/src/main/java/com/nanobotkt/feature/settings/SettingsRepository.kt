@@ -40,6 +40,33 @@ data class ProviderUpdate(
     val proxy: String? = null,
 )
 
+data class WebSearchSettingsUpdate(
+    val provider: String,
+    val apiKey: String? = null,
+    val baseUrl: String? = null,
+    val maxResults: Int = 5,
+    val timeout: Int = 30,
+    val useJinaReader: Boolean = true,
+)
+
+data class ImageGenerationSettingsUpdate(
+    val enabled: Boolean,
+    val provider: String,
+    val model: String,
+    val defaultAspectRatio: String,
+    val defaultImageSize: String,
+    val maxImagesPerTurn: Int,
+)
+
+data class TranscriptionSettingsUpdate(
+    val enabled: Boolean,
+    val provider: String,
+    val model: String,
+    val language: String,
+    val maxDurationSec: Int,
+    val maxUploadMb: Int,
+)
+
 data class SettingsUiState(
     val payload: SettingsPayload? = null,
     val apiService: ApiServicePayload? = null,
@@ -64,9 +91,9 @@ interface SettingsRepository {
     suspend fun startApiService(host: String, port: Int, timeout: Int, apiKey: String?)
     suspend fun stopApiService()
     suspend fun networkSafety(local: Boolean, mode: String)
-    suspend fun updateWebSearch(values: Map<String, Any?>)
-    suspend fun updateImage(values: Map<String, Any?>)
-    suspend fun updateTranscription(values: Map<String, Any?>)
+    suspend fun updateWebSearch(update: WebSearchSettingsUpdate)
+    suspend fun updateImage(update: ImageGenerationSettingsUpdate)
+    suspend fun updateTranscription(update: TranscriptionSettingsUpdate)
 }
 
 @Singleton
@@ -213,17 +240,50 @@ class DefaultSettingsRepository @Inject constructor(
         )
     }
 
-    override suspend fun updateWebSearch(values: Map<String, Any?>) =
-        media("/api/settings/web-search/update", "web", values)
+    override suspend fun updateWebSearch(update: WebSearchSettingsUpdate) = mutate("web") {
+        val query = buildMap<String, Any?> {
+            put("provider", update.provider)
+            update.apiKey?.let { put("api_key", it) }
+            update.baseUrl?.let { put("base_url", it) }
+            put("max_results", update.maxResults)
+            put("timeout", update.timeout)
+            put("use_jina_reader", update.useJinaReader)
+        }
+        replace(api.request("/api/settings/web-search/update", SettingsPayload.serializer(), query = query))
+    }
 
-    override suspend fun updateImage(values: Map<String, Any?>) =
-        media("/api/settings/image-generation/update", "image", values)
+    override suspend fun updateImage(update: ImageGenerationSettingsUpdate) = mutate("image") {
+        replace(
+            api.request(
+                "/api/settings/image-generation/update",
+                SettingsPayload.serializer(),
+                query = mapOf(
+                    "enabled" to update.enabled,
+                    "provider" to update.provider,
+                    "model" to update.model,
+                    "default_aspect_ratio" to update.defaultAspectRatio,
+                    "default_image_size" to update.defaultImageSize,
+                    "max_images_per_turn" to update.maxImagesPerTurn,
+                ),
+            ),
+        )
+    }
 
-    override suspend fun updateTranscription(values: Map<String, Any?>) =
-        media("/api/settings/transcription/update", "voice", values)
-
-    private suspend fun media(path: String, key: String, values: Map<String, Any?>) = mutate(key) {
-        replace(api.request(path, SettingsPayload.serializer(), query = values))
+    override suspend fun updateTranscription(update: TranscriptionSettingsUpdate) = mutate("voice") {
+        replace(
+            api.request(
+                "/api/settings/transcription/update",
+                SettingsPayload.serializer(),
+                query = mapOf(
+                    "enabled" to update.enabled,
+                    "provider" to update.provider,
+                    "model" to update.model,
+                    "language" to update.language,
+                    "max_duration_sec" to update.maxDurationSec,
+                    "max_upload_mb" to update.maxUploadMb,
+                ),
+            ),
+        )
     }
 
     /** OAuth endpoints may return either an intermediate flow object or canonical settings. */
