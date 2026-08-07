@@ -1,0 +1,7 @@
+<resources>
+    <string name="auth_title">Se connecter à nanobot</string>
+    <string name="auth_description">Saisissez le secret d’amorçage configuré sur votre passerelle.</string>
+    <string name="auth_rejected">Le secret a été refusé. Vérifiez-le et réessayez.</string>
+    <string name="bootstrap_secret">Secret d’amorçage</string>
+    <string name="connect">Se connecter</string>
+</resources>

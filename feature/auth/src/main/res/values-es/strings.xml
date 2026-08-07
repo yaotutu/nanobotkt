@@ -1,0 +1,7 @@
+<resources>
+    <string name="auth_title">Conectar con nanobot</string>
+    <string name="auth_description">Introduce el secreto de arranque configurado en tu puerta de enlace.</string>
+    <string name="auth_rejected">El secreto fue rechazado. Compruébalo e inténtalo de nuevo.</string>
+    <string name="bootstrap_secret">Secreto de arranque</string>
+    <string name="connect">Conectar</string>
+</resources>

@@ -1,0 +1,7 @@
+<resources>
+    <string name="auth_title">Kết nối với nanobot</string>
+    <string name="auth_description">Nhập bí mật khởi động đã cấu hình trên cổng.</string>
+    <string name="auth_rejected">Bí mật bị từ chối. Hãy kiểm tra và thử lại.</string>
+    <string name="bootstrap_secret">Bí mật khởi động</string>
+    <string name="connect">Kết nối</string>
+</resources>

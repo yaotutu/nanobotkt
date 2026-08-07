@@ -1,0 +1,7 @@
+<resources>
+    <string name="auth_title">Conectar ao nanobot</string>
+    <string name="auth_description">Insira o segredo de inicialização configurado no gateway.</string>
+    <string name="auth_rejected">O segredo foi rejeitado. Verifique e tente novamente.</string>
+    <string name="bootstrap_secret">Segredo de inicialização</string>
+    <string name="connect">Conectar</string>
+</resources>

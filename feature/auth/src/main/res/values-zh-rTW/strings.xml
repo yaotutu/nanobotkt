@@ -1,0 +1,7 @@
+<resources>
+    <string name="auth_title">連線 nanobot</string>
+    <string name="auth_description">請輸入閘道中設定的引導密鑰。</string>
+    <string name="auth_rejected">密鑰遭拒，請檢查後重試。</string>
+    <string name="bootstrap_secret">引導密鑰</string>
+    <string name="connect">連線</string>
+</resources>

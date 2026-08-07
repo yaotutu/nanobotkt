@@ -1,0 +1,7 @@
+<resources>
+    <string name="auth_title">nanobot に接続</string>
+    <string name="auth_description">ゲートウェイで設定したブートストラップシークレットを入力してください。</string>
+    <string name="auth_rejected">シークレットが拒否されました。確認して再試行してください。</string>
+    <string name="bootstrap_secret">ブートストラップシークレット</string>
+    <string name="connect">接続</string>
+</resources>
