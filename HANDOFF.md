@@ -1,6 +1,6 @@
 # NanobotKT 当前工作交接
 
-> 最后更新：2026-08-07
+> 最后更新：2026-08-07（同步至 `8a83de0d648489add448f29a39292357957ea17d`）
 > 项目：`C:\Users\Administrator\AndroidStudioProjects\nanobotkt`
 > 官方上游：`C:\Users\Administrator\AndroidStudioProjects\nanobot-upstream`
 > 上游参考提交：`02a002a0e6691cffcfedf7df4a9d298224afea9b`
@@ -22,57 +22,43 @@
 
 下一阶段建议以完整 Smoke Test 为主，不要继续凭截图盲目修改 UI。
 
-## 2. Git 与工作区约束
+当前没有进行中的实现任务，仓库处于可直接移交状态。已完成代码已经提交并同步到 `origin/main`；本次按用户要求更新 `HANDOFF.md`，该文档修改尚未提交。
+
+## 2. Git 与工作区状态
 
 当前 Git 状态：
 
 ```text
 branch: main
-HEAD: ee1613bacbb48b06240c854a83dd28c88f3e575d
+HEAD: 8a83de0d648489add448f29a39292357957ea17d
+remote: origin/main = 8a83de0d648489add448f29a39292357957ea17d
+working tree: M HANDOFF.md（仅本次交接文档更新）
 ```
 
-工作区有大量未提交的用户修改。必须遵守：
+在本次更新交接文档之前，`git status --short` 无输出。当前唯一工作区修改应为：`M HANDOFF.md`。源代码相对 HEAD 没有新增未提交修改。
 
-1. 不执行 `git reset`、`git checkout`、`git clean` 或递归清理。
-2. 不覆盖、不回退、不批量格式化现有用户代码。
-3. 未经用户明确要求，不 stage、commit、push 或创建 PR。
-4. 修改前先运行 `git status --short`，只处理当前任务涉及的文件。
-5. 不输出 bootstrap secret、Token、Provider API Key 或其他凭据。
-6. 根目录当前有未跟踪的 `classes.jar`；来源未确认，不要擅自删除或提交。
-
-截至本次交接，`git status --short` 为：
+从旧交接基线 `ee1613bacbb48b06240c854a83dd28c88f3e575d` 到当前 HEAD 的提交为：
 
 ```text
- M app/src/main/java/com/nanobotkt/AppViewModel.kt
- M app/src/main/java/com/nanobotkt/NanobotRoot.kt
- M app/src/test/java/com/nanobotkt/SessionSelectionTest.kt
- M core/model/src/main/java/com/nanobotkt/core/model/BusinessModels.kt
- M core/model/src/test/java/com/nanobotkt/core/model/BusinessWireContractTest.kt
- M core/network/src/main/java/com/nanobotkt/core/network/BootstrapService.kt
- M core/network/src/main/java/com/nanobotkt/core/network/GatewayApiClient.kt
- M feature/chat/src/main/java/com/nanobotkt/feature/chat/ChatScreen.kt
- M feature/chat/src/main/res/values-es/strings.xml
- M feature/chat/src/main/res/values-fr/strings.xml
- M feature/chat/src/main/res/values-id/strings.xml
- M feature/chat/src/main/res/values-ja/strings.xml
- M feature/chat/src/main/res/values-ko/strings.xml
- M feature/chat/src/main/res/values-pt-rBR/strings.xml
- M feature/chat/src/main/res/values-vi/strings.xml
- M feature/chat/src/main/res/values-zh-rCN/strings.xml
- M feature/chat/src/main/res/values-zh-rTW/strings.xml
- M feature/chat/src/main/res/values/strings.xml
- M feature/settings/build.gradle.kts
- M feature/settings/src/main/java/com/nanobotkt/feature/settings/SettingsRepository.kt
- M feature/settings/src/main/java/com/nanobotkt/feature/settings/SettingsScreen.kt
- M feature/settings/src/main/java/com/nanobotkt/feature/settings/SettingsViewModel.kt
- M gradle/libs.versions.toml
-?? HANDOFF.md
-?? app/src/test/java/com/nanobotkt/RootUiStateTest.kt
-?? classes.jar
-?? core/model/src/main/java/com/nanobotkt/core/model/SettingsCapabilityModels.kt
-?? feature/settings/src/main/java/com/nanobotkt/feature/settings/ProviderBrand.kt
-?? feature/settings/src/test/
+8a83de0 update
+9751ca5 docs: add UI restoration handoff notes
+ee094b3 perf(network): move gateway requests to IO dispatchers
+ec9e31c fix(chat): add copy feedback and repair corrupted string separators
+7f58ddc fix(app): preserve root UI state and session selection across restarts
+81abdcb feat(settings): restore official settings UI with provider branding
 ```
+
+这些提交已经位于 `origin/main`。
+
+后续 Agent 仍需遵守：
+
+1. 开始工作前先运行 `git status --short` 和 `git log -1 --oneline`。
+2. 不执行 `git reset`、`git checkout`、`git clean` 或递归清理，除非用户明确要求。
+3. 不覆盖、不回退、不批量格式化无关代码。
+4. 一次只处理当前阶段涉及的文件，避免扩大修改范围。
+5. 未经用户明确要求，不创建新提交、push 或 PR。
+6. 不输出 bootstrap secret、Token、Provider API Key 或其他凭据。
+7. 如果工作区再次出现未知未跟踪文件，先确认来源，不要擅自删除或提交。
 
 ## 3. 必须保留的既有业务行为
 
