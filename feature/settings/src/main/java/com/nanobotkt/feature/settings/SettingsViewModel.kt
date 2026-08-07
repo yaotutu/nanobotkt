@@ -1,0 +1,10 @@
+﻿package com.nanobotkt.feature.settings
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.nanobotkt.core.persistence.*
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+@HiltViewModel class SettingsViewModel @Inject constructor(private val repository:SettingsRepository,private val preferences:UserPreferencesRepository):ViewModel(){val state=repository.state;val appearance=preferences.preferences.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),UserPreferences());init{refresh()};fun refresh()=viewModelScope.launch{repository.refresh()};fun update(update:SettingsUpdate)=viewModelScope.launch{repository.update(update)};fun provider(update:ProviderUpdate)=viewModelScope.launch{repository.updateProvider(update)};fun providerModels(name:String)=viewModelScope.launch{repository.providerModels(name)};fun oauth(name:String)=viewModelScope.launch{repository.oauthLogin(name)};fun checkVersion()=viewModelScope.launch{repository.checkVersion()};fun apiService(start:Boolean,host:String="127.0.0.1",port:Int=18765,timeout:Int=120,key:String?=null)=viewModelScope.launch{if(start)repository.startApiService(host,port,timeout,key)else repository.stopApiService()};fun network(local:Boolean,mode:String)=viewModelScope.launch{repository.networkSafety(local,mode)};fun setTheme(v:ThemePreference)=viewModelScope.launch{preferences.setTheme(v)};fun setDensity(v:DensityPreference)=viewModelScope.launch{preferences.setDensity(v)};fun setLanguage(v:String?)=viewModelScope.launch{preferences.setLanguage(v)};fun activity(v:Boolean)=viewModelScope.launch{preferences.setShowActivityDetails(v)};fun wrap(v:Boolean)=viewModelScope.launch{preferences.setWrapCode(v)};fun logos(v:Boolean)=viewModelScope.launch{preferences.setShowBrandLogos(v)};fun fileEdits(v:FileEditDisplay)=viewModelScope.launch{preferences.setFileEditDisplay(v)}}
