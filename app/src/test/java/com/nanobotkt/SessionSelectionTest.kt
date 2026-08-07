@@ -29,6 +29,18 @@ class SessionSelectionTest {
     }
 
     @Test
+    fun restoredSelectionSurvivesInitialEmptySidebar() {
+        val result = reconcileSessionSelection(
+            visibleKeys = emptyList(),
+            selectedKey = "websocket:restored",
+            draftingNewTopic = false,
+        )
+
+        assertEquals("websocket:restored", result.selectedKey)
+        assertEquals(false, result.draftingNewTopic)
+    }
+
+    @Test
     fun ordinaryMissingSelectionFallsBackToFirstVisibleSession() {
         val result = reconcileSessionSelection(
             visibleKeys = listOf("websocket:first", "websocket:second"),

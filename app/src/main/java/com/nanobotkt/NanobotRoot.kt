@@ -74,6 +74,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -92,6 +93,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.nanobotkt.core.designsystem.NanobotTheme
 import com.nanobotkt.core.model.ChatSummary
 import com.nanobotkt.core.persistence.DensityPreference
@@ -124,6 +127,13 @@ fun NanobotRoot(appViewModel: AppViewModel) {
         ThemePreference.LIGHT -> false
     }
     val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as? android.app.Activity)?.window
+        val bars = window?.let { WindowInsetsControllerCompat(it, view) }
+        bars?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        bars?.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose { }
+    }
     SideEffect {
         val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
         WindowCompat.getInsetsController(window, view).apply {
@@ -140,7 +150,7 @@ fun NanobotRoot(appViewModel: AppViewModel) {
                 is AuthState.Booting -> LoadingScreen()
                 is AuthState.Authentication -> AuthScreen(state, appViewModel::authenticate)
                 is AuthState.Unreachable -> UnreachableScreen(state.message, appViewModel::retry)
-                is AuthState.Ready -> ReadyRoot(state.sessionEpoch, appViewModel)
+                is AuthState.Ready -> ReadyRoot(state.sessionEpoch, state.tokenGeneration, appViewModel)
             }
         }
     }
@@ -176,6 +186,7 @@ private fun UnreachableScreen(message: String, onRetry: () -> Unit) {
 @Composable
 private fun ReadyRoot(
     sessionEpoch: Long,
+    tokenGeneration: Long,
     appViewModel: AppViewModel,
     sidebarViewModel: SidebarViewModel = hiltViewModel(),
     chatViewModel: ChatViewModel = hiltViewModel(),
@@ -184,13 +195,13 @@ private fun ReadyRoot(
     val transport by appViewModel.transportState.collectAsStateWithLifecycle()
     val drawerState = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var selectedKey by rememberSaveable(sessionEpoch) { mutableStateOf<String?>(null) }
-    var destination by rememberSaveable(sessionEpoch) { mutableStateOf(AppDestination.CHAT) }
-    var draftingNewTopic by rememberSaveable(sessionEpoch) { mutableStateOf(false) }
-    var settingsInitialSection by rememberSaveable(sessionEpoch) { mutableStateOf(SETTINGS_SECTION_OVERVIEW) }
+    val rootUiState by appViewModel.rootUiState.collectAsStateWithLifecycle()
+    val selectedKey = rootUiState.selectedKey
+    val destination = rootUiState.destination
+    val draftingNewTopic = rootUiState.draftingNewTopic
 
     BackHandler(enabled = destination != AppDestination.CHAT) {
-        destination = AppDestination.CHAT
+        appViewModel.navigate(AppDestination.CHAT)
     }
 
     LaunchedEffect(sessionEpoch) { sidebarViewModel.refresh() }
@@ -205,8 +216,9 @@ private fun ReadyRoot(
             selectedKey = selectedKey,
             draftingNewTopic = draftingNewTopic,
         )
-        if (selectedKey != reconciled.selectedKey) selectedKey = reconciled.selectedKey
-        if (draftingNewTopic != reconciled.draftingNewTopic) draftingNewTopic = reconciled.draftingNewTopic
+        if (selectedKey != reconciled.selectedKey || draftingNewTopic != reconciled.draftingNewTopic) {
+            appViewModel.updateSessionSelection(reconciled)
+        }
     }
     val selected = visibleSessions.firstOrNull { it.key == selectedKey }
     LaunchedEffect(selected?.key, selected?.modelPreset, selected?.workspaceScope) {
@@ -231,13 +243,11 @@ private fun ReadyRoot(
                     onClose = { scope.launch { drawerState.close() } },
                     transportStatus = transport.status,
                     onSelect = { session ->
-                        draftingNewTopic = false
-                        selectedKey = session.key
+                        appViewModel.selectSession(session.key)
                         scope.launch { drawerState.close() }
                     },
                     onNewTopic = {
-                        draftingNewTopic = true
-                        selectedKey = null
+                        appViewModel.beginNewTopic()
                         chatViewModel.startNewTopic()
                         scope.launch { drawerState.close() }
                     },
@@ -251,8 +261,11 @@ private fun ReadyRoot(
                     onShowArchived = sidebarViewModel::showArchived,
                     onToggleGroup = sidebarViewModel::toggleGroup,
                     onNavigate = { target ->
-                        if (target == AppDestination.SETTINGS) settingsInitialSection = SETTINGS_SECTION_OVERVIEW
-                        destination = target
+                        if (target == AppDestination.SETTINGS) {
+                            appViewModel.openSettings(SETTINGS_SECTION_OVERVIEW)
+                        } else {
+                            appViewModel.navigate(target)
+                        }
                         scope.launch { drawerState.close() }
                     },
                 )
@@ -271,29 +284,30 @@ private fun ReadyRoot(
                 onOpenDrawer = { scope.launch { drawerState.open() } },
                 onToggleTheme = appViewModel::toggleTheme,
                 onOpenModelSettings = {
-                    settingsInitialSection = SETTINGS_SECTION_MODELS
-                    destination = AppDestination.SETTINGS
+                    appViewModel.openSettings(SETTINGS_SECTION_MODELS)
                 },
                 onSessionCreated = { key ->
                     if (selectedKey != key || draftingNewTopic) {
                         // Keep the draft guard active until the refreshed sidebar actually contains
                         // the newly-created session. Otherwise the selection reconciliation can fall
                         // back to the first old topic while creation is still propagating.
-                        selectedKey = key
+                        appViewModel.updateSessionSelection(SessionSelection(key, draftingNewTopic))
                         sidebarViewModel.refresh()
                     }
                 },
             )
-            AppDestination.WORKSPACES -> WorkspacesScreen(onBack = { destination = AppDestination.CHAT })
-            AppDestination.APPS -> AppsScreen(onBack = { destination = AppDestination.CHAT })
-            AppDestination.SKILLS -> SkillsScreen(onBack = { destination = AppDestination.CHAT })
-            AppDestination.AUTOMATIONS -> AutomationsScreen(onBack = { destination = AppDestination.CHAT })
-            AppDestination.CHANNELS -> ChannelsScreen(onBack = { destination = AppDestination.CHAT })
-            AppDestination.SECURITY -> SecurityScreen(onBack = { destination = AppDestination.CHAT })
+            AppDestination.WORKSPACES -> WorkspacesScreen(onBack = { appViewModel.navigate(AppDestination.CHAT) })
+            AppDestination.APPS -> AppsScreen(onBack = { appViewModel.navigate(AppDestination.CHAT) })
+            AppDestination.SKILLS -> SkillsScreen(onBack = { appViewModel.navigate(AppDestination.CHAT) })
+            AppDestination.AUTOMATIONS -> AutomationsScreen(onBack = { appViewModel.navigate(AppDestination.CHAT) })
+            AppDestination.CHANNELS -> ChannelsScreen(onBack = { appViewModel.navigate(AppDestination.CHAT) })
+            AppDestination.SECURITY -> SecurityScreen(onBack = { appViewModel.navigate(AppDestination.CHAT) })
             AppDestination.SETTINGS -> SettingsScreen(
-                onBack = { destination = AppDestination.CHAT },
-                onOpenChannels = { destination = AppDestination.CHANNELS },
-                initialSection = settingsInitialSection,
+                onBack = { appViewModel.navigate(AppDestination.CHAT) },
+                onOpenChannels = { appViewModel.navigate(AppDestination.CHANNELS) },
+                initialSection = rootUiState.settingsSection,
+                onSectionChange = appViewModel::setSettingsSection,
+                refreshKey = tokenGeneration,
             )
             }
         }
@@ -318,6 +332,13 @@ internal fun reconcileSessionSelection(
         )
     }
 
+    // A restored selection arrives before the first Sidebar refresh completes. Preserve it
+    // while the list is empty so the subsequent loaded list can validate it instead of
+    // prematurely falling back to the first topic.
+    if (visibleKeys.isEmpty() && selectedKey != null) {
+        return SessionSelection(selectedKey = selectedKey, draftingNewTopic = false)
+    }
+
     val validSelection = selectedKey?.takeIf { it in visibleKeys }
     return SessionSelection(
         selectedKey = validSelection ?: visibleKeys.firstOrNull(),
@@ -325,7 +346,6 @@ internal fun reconcileSessionSelection(
     )
 }
 
-private enum class AppDestination { CHAT, WORKSPACES, APPS, SKILLS, AUTOMATIONS, CHANNELS, SECURITY, SETTINGS }
 
 @Composable
 private fun SidebarContent(

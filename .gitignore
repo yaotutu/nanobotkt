@@ -13,6 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+/classes.jar
 .worktrees/
 .superpowers/
 **/build/
