@@ -1,5 +1,22 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
-plugins {
+﻿plugins {
     alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.hilt) apply false
+    alias(libs.plugins.ksp) apply false
+}
+
+subprojects {
+    tasks.withType<Test>().configureEach {
+        val testSourceDirectory = project.layout.projectDirectory.dir("src/test").asFile
+        val hasJvmTestSources = testSourceDirectory.exists() &&
+            testSourceDirectory.walkTopDown().any { file ->
+                file.isFile && file.extension in setOf("kt", "java")
+            }
+
+        if (!hasJvmTestSources) {
+            failOnNoDiscoveredTests.set(false)
+        }
+    }
 }
