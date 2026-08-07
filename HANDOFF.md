@@ -1,8 +1,8 @@
 # NanobotKT 当前工作交接
 
-> 最后更新：2026-08-07  
-> 项目：`C:\Users\Administrator\AndroidStudioProjects\nanobotkt`  
-> 官方上游：`C:\Users\Administrator\AndroidStudioProjects\nanobot-upstream`  
+> 最后更新：2026-08-07
+> 项目：`C:\Users\Administrator\AndroidStudioProjects\nanobotkt`
+> 官方上游：`C:\Users\Administrator\AndroidStudioProjects\nanobot-upstream`
 > 上游参考提交：`02a002a0e6691cffcfedf7df4a9d298224afea9b`
 
 ## 1. 当前结论
