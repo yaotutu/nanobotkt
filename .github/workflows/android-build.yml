@@ -36,11 +36,15 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 4. 构建 Debug APK（app 模块 assembleDebug）
+      # 4. 先执行全工程 JVM 单元测试，避免仅编译成功却漏掉通信和业务回归。
+      - name: Run JVM unit tests
+        run: sh gradlew test --console=plain
+
+      # 5. 构建 Debug APK（app 模块 assembleDebug）
       - name: Build debug APK
         run: sh gradlew :app:assembleDebug --console=plain
 
-      # 5. 上传 APK 产物，可在 Actions 运行页面的 Artifacts 中下载
+      # 6. 上传 APK 产物，可在 Actions 运行页面的 Artifacts 中下载
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
