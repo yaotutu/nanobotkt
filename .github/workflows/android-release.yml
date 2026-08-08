@@ -1,18 +1,19 @@
 # ============================================================
-# NanobotKT 自动发布 workflow
-# 作用：当推送 v* 版本标签（如 v1.0.0）时，自动构建已签名的 Android
-#       Release APK（按架构拆分 + universal 通用包），并创建对应的
-#       GitHub Release，把所有 APK 作为资产附在 Release 上，实现
-#       「打标签即发布」。
+# NanobotKT 自动发布 workflow（开发期「无脑发布」版）
+# 作用：开发阶段不打版本标签，任何 push 到 main 的提交都会：
+#       1. 跑全工程 JVM 单元测试
+#       2. 构建已签名的 Release APK（按架构拆分 + universal 通用包）
+#       3. 发布/更新到一个固定的「latest」GitHub Release
+# 这样仓库里永远只有一个 latest Release，始终指向最新构建产物。
 # 注意：本文件只负责 CI 构建与发布，不修改任何应用源码。
 # ============================================================
 name: Android Release
 
 on:
   push:
-    # 只有推送 v 开头的标签（v1.0.0、v1.2.3 等）才触发发布
-    tags:
-      - 'v*'
+    branches: [ main ]
+  # 也允许在 GitHub Actions 页面手动触发
+  workflow_dispatch:
 
 # 发布 Release 需要写权限（contents: write），由 GITHUB_TOKEN 提供
 permissions:
@@ -23,7 +24,7 @@ jobs:
     name: Build and Publish Release
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出仓库代码（tag 对应的提交）
+      # 1. 检出仓库代码（当前提交）
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -49,7 +50,7 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
 
-      # 5. 构建已签名的 Release APK（按架构拆分 + universal 通用包）
+      # 6. 构建已签名的 Release APK（按架构拆分 + universal 通用包）
       - name: Build signed release APKs
         env:
           KEYSTORE_FILE: keystore.jks
@@ -58,12 +59,14 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: sh gradlew :app:assembleRelease --console=plain
 
-      # 7. 创建/更新当前 tag 对应的 GitHub Release，上传全部 APK：
-      #    app-arm64-v8a-release.apk / app-armeabi-v7a-release.apk /
-      #    app-x86-release.apk / app-x86_64-release.apk / app-universal-release.apk
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: app/build/outputs/apk/release/*.apk
-          # 自动生成 release notes（基于 commit/PR 标题）
-          generate_release_notes: true
+      # 7. 无脑发布：删除旧的 latest Release，再创建新的 latest Release，
+      #    上传全部 APK（arm64-v8a / armeabi-v7a / x86 / x86_64 / universal）。
+      #    下载链接固定：https://github.com/yaotutu/nanobotkt/releases/tag/latest
+      - name: Publish to rolling latest Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes >/dev/null 2>&1 || true
+          gh release create latest app/build/outputs/apk/release/*.apk \
+            --title "Latest dev build" \
+            --notes "自动化开发构建：commit \`${{ github.sha }}\`"
