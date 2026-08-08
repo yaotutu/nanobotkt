@@ -10,6 +10,7 @@ import com.nanobotkt.core.model.UiMcpPresetAttachment
 import com.nanobotkt.core.model.WorkspaceScope
 import com.nanobotkt.core.persistence.ComposerRecentsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +73,8 @@ class ChatViewModel @Inject constructor(
     }
 
     fun open(sessionKey: String, chatId: String, workspaceScope: WorkspaceScope? = null, modelPreset: String? = null) {
+        // 预览内容属于当前会话，重新打开会话时先关闭，避免旧文件内容短暂残留。
+        repository.clearFilePreview()
         if (openedSessionKey != sessionKey) {
             composerEpoch += 1
             voiceTimer?.cancel()
@@ -86,6 +89,7 @@ class ChatViewModel @Inject constructor(
     }
 
     fun startNewTopic() {
+        repository.clearFilePreview()
         composerEpoch += 1
         voiceTimer?.cancel()
         voiceTimer = null
@@ -210,21 +214,29 @@ class ChatViewModel @Inject constructor(
 
     fun addAttachments(uris: List<Uri>) {
         if (uris.isEmpty()) return
+
+        // 在启动协程前捕获 epoch，避免用户切换会话后协程才开始执行时，
+        // 错把旧会话的附件任务绑定到新会话的 composer。
+        val requestEpoch = composerEpoch
         val limits = ingressLimits(state.value.limits)
-        val available = (limits.maxCount - mutableComposer.value.attachments.size).coerceAtLeast(0)
+        val current = mutableComposer.value
+        // encodingCount 代表已经占用的附件名额；并发选择附件时必须把它计入
+        // available，否则多批任务可能共同超过服务端的附件数量上限。
+        val available = (
+            limits.maxCount - current.attachments.size - current.encodingCount
+            ).coerceAtLeast(0)
         if (available == 0) {
-            mutableComposer.value = mutableComposer.value.copy(error = "too_many_attachments")
+            mutableComposer.value = current.copy(error = "too_many_attachments")
             return
         }
 
+        val selected = uris.take(available)
+        mutableComposer.value = current.copy(
+            encodingCount = current.encodingCount + selected.size,
+            error = if (uris.size > available) "too_many_attachments" else null,
+        )
+
         viewModelScope.launch {
-            val requestEpoch = composerEpoch
-            val selected = uris.take(available)
-            if (requestEpoch != composerEpoch) return@launch
-            mutableComposer.value = mutableComposer.value.copy(
-                encodingCount = selected.size,
-                error = if (uris.size > available) "too_many_attachments" else null,
-            )
             selected.forEach { uri ->
                 try {
                     val attachment = attachmentEncoder.encode(uri, limits.maxFileBytes)
@@ -241,6 +253,10 @@ class ChatViewModel @Inject constructor(
                     } else {
                         mutableComposer.value = mutableComposer.value.copy(error = error)
                     }
+                } catch (error: CancellationException) {
+                    // ViewModel 被销毁或任务被取消时必须保留协程取消语义，不能把取消
+                    // 当作普通附件错误吞掉，否则上层生命周期无法正确结束编码任务。
+                    throw error
                 } catch (error: Throwable) {
                     if (requestEpoch == composerEpoch) {
                         mutableComposer.value = mutableComposer.value.copy(
@@ -279,6 +295,10 @@ class ChatViewModel @Inject constructor(
             cliApps = capabilityPayloads.cliApps,
             mcpPresets = capabilityPayloads.mcpPresets,
             workspaceScope = state.value.workspaceScope,
+            sessionGuard = ChatSessionGuard(
+                sessionKey = state.value.sessionKey,
+                chatId = state.value.chatId,
+            ),
         )
         val turnActive = state.value.activeTurnId != null
         val hasPlainTextCommandPayload = current.attachments.isEmpty() &&
@@ -328,6 +348,7 @@ class ChatViewModel @Inject constructor(
                 sideChannel = lifecycle.isSideChannel(),
                 cliApps = prompt.cliApps,
                 mcpPresets = prompt.mcpPresets,
+                sessionGuard = prompt.sessionGuard,
             ),
             restoreDraftOnFailure = true,
             requeueOnFailure = false,
@@ -367,8 +388,10 @@ class ChatViewModel @Inject constructor(
     ) {
         if (mutableComposer.value.forkingMessageId != null) return
         mutableComposer.value = mutableComposer.value.copy(forkingMessageId = messageId, error = null)
+        // 在启动 coroutine 之前捕获 epoch，避免切换会话发生在调度前时误把旧结果
+        // 应用到新会话的 Composer 状态。
+        val requestEpoch = composerEpoch
         viewModelScope.launch {
-            val requestEpoch = composerEpoch
             runCatching { repository.fork(beforeUserIndex, title) }
                 .onSuccess { sessionKey ->
                     if (requestEpoch == composerEpoch) {
@@ -492,6 +515,11 @@ class ChatViewModel @Inject constructor(
 
     fun clearError() = repository.clearError()
 
+    /** 请求当前会话的文件预览；仓储层负责校验会话并隔离迟到响应。 */
+    fun previewFile(path: String) = repository.loadFilePreview(path)
+
+    fun closeFilePreview() = repository.clearFilePreview()
+
     val loadSessionAutomations: suspend (String) -> List<SessionAutomationJob> =
         repository::loadSessionAutomations
 
@@ -594,6 +622,7 @@ data class QueuedPrompt(
     val cliApps: List<UiCliAppAttachment> = emptyList(),
     val mcpPresets: List<UiMcpPresetAttachment> = emptyList(),
     val workspaceScope: WorkspaceScope? = null,
+    val sessionGuard: ChatSessionGuard? = null,
 )
 
 data class ComposerUiState(

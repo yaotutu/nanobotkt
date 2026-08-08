@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -38,6 +39,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -108,6 +110,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nanobotkt.core.model.CliAppInfo
+import com.nanobotkt.core.model.FilePreviewPayload
 import com.nanobotkt.core.model.McpPresetInfo
 import com.nanobotkt.core.model.SkillSummary
 import com.nanobotkt.core.model.SlashCommand
@@ -189,6 +192,15 @@ fun ChatScreen(
             }
             jumpTargetId = null
         }
+    }
+
+    if (state.filePreviewLoading || state.filePreview != null || state.filePreviewError != null) {
+        FilePreviewDialog(
+            preview = state.filePreview,
+            loading = state.filePreviewLoading,
+            failed = state.filePreviewError != null,
+            onDismiss = viewModel::closeFilePreview,
+        )
     }
 
     quoteDraft?.let { draft ->
@@ -323,6 +335,7 @@ fun ChatScreen(
                         state = state,
                         loadOlder = viewModel::loadOlder,
                         onQuote = { quoteDraft = normalizeQuotedContext(it) },
+                        onPreview = viewModel::previewFile,
                         onFork = { messageId, beforeUserIndex ->
                             viewModel.fork(messageId, beforeUserIndex, forkTitle, onSessionCreated)
                         },
@@ -508,6 +521,7 @@ private fun MessageList(
     state: ChatUiState,
     loadOlder: () -> Unit,
     onQuote: (String) -> Unit,
+    onPreview: (String) -> Unit,
     onFork: (String, Int) -> Unit,
     modifier: Modifier = Modifier,
     autoFollow: Boolean = true,
@@ -537,6 +551,7 @@ private fun MessageList(
                 message = message,
                 forkIndex = forkIndexes.getOrNull(index),
                 onQuote = { onQuote(message.content) },
+                onPreview = onPreview,
                 onFork = { forkIndexes.getOrNull(index)?.let { onFork(message.id, it) } },
             )
         }
@@ -549,6 +564,7 @@ private fun MessageBubble(
     message: UiMessage,
     forkIndex: Int?,
     onQuote: () -> Unit,
+    onPreview: (String) -> Unit,
     onFork: () -> Unit,
 ) {
     val user = message.role == "user"
@@ -691,12 +707,28 @@ private fun MessageBubble(
             )
         }
         message.fileEdits?.forEach { edit ->
-            Text(
-                "${edit.path}  +${edit.added} -${edit.deleted}",
-                modifier = Modifier.padding(top = 5.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFFFF5A2A),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    "${edit.path}  +${edit.added} -${edit.deleted}",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFFFF5A2A),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                TextButton(
+                    onClick = { onPreview(edit.absolutePath ?: edit.path) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                ) {
+                    Text(stringResource(R.string.file_preview))
+                }
+            }
         }
         if (message.isStreaming == true) {
             CircularProgressIndicator(
@@ -746,6 +778,72 @@ private fun MessageBubble(
             }
         }
     }
+}
+
+@Composable
+private fun FilePreviewDialog(
+    preview: FilePreviewPayload?,
+    loading: Boolean,
+    failed: Boolean,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.file_preview_title)) },
+        text = {
+            when {
+                loading -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                failed -> Text(
+                    stringResource(R.string.file_preview_load_failed),
+                    color = MaterialTheme.colorScheme.error,
+                )
+                preview != null -> Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        preview.displayPath,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        stringResource(R.string.file_preview_language, preview.language),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        stringResource(R.string.file_preview_size, preview.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (preview.truncated) {
+                        Text(
+                            stringResource(R.string.file_preview_truncated),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            preview.content,
+                            modifier = Modifier.padding(10.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+        },
+    )
 }
 
 private fun formatMessageLatency(durationMs: Long): String {

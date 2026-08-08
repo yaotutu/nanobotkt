@@ -1,5 +1,6 @@
 package com.nanobotkt.feature.chat
 
+import android.net.TestUri
 import android.net.Uri
 import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.McpPresetInfo
@@ -67,6 +68,82 @@ class ChatViewModelTest {
         viewModel.open("websocket:a", "a")
 
         assertEquals("draft", viewModel.composer.value.text)
+    }
+
+    @Test
+    fun `late attachment result from previous session cannot mutate the new composer`() = runTest {
+        val encoder = DeferredAttachmentEncoder()
+        val viewModel = viewModel(encoder)
+        val oldUri = TestUri("test://attachments/old.txt")
+        val oldAttachment = composerAttachment(oldUri, "old.txt")
+
+        viewModel.open("websocket:a", "a")
+        viewModel.addAttachments(listOf(oldUri))
+        // 让 addAttachments 真正进入 encode 并挂起，确保 requestEpoch 已经属于旧会话。
+        runCurrent()
+        assertEquals(1, viewModel.composer.value.encodingCount)
+
+        viewModel.open("websocket:b", "b")
+        assertEquals(ComposerUiState(), viewModel.composer.value)
+
+        // 旧会话编码完成后，结果必须被 epoch guard 丢弃，不能写入 B 的 composer。
+        encoder.pending.single().completion.complete(oldAttachment)
+        runCurrent()
+
+        assertEquals(ComposerUiState(), viewModel.composer.value)
+    }
+
+    @Test
+    fun `late attachment failure from start new topic cannot mutate the new composer`() = runTest {
+        val encoder = DeferredAttachmentEncoder()
+        val viewModel = viewModel(encoder)
+        val oldUri = TestUri("test://attachments/old.txt")
+
+        viewModel.open("websocket:a", "a")
+        viewModel.addAttachments(listOf(oldUri))
+        // 先挂起旧 topic 的编码，再切换到新 topic，覆盖成功和失败两条 stale-result 路径。
+        runCurrent()
+        assertEquals(1, viewModel.composer.value.encodingCount)
+
+        viewModel.startNewTopic()
+        assertEquals(ComposerUiState(), viewModel.composer.value)
+
+        encoder.pending.single().completion.completeExceptionally(IllegalStateException("old_failure"))
+        runCurrent()
+
+        // 旧错误、旧 encodingCount 都不能污染新 topic 的空 composer。
+        assertEquals(ComposerUiState(), viewModel.composer.value)
+    }
+
+    @Test
+    fun `concurrent attachment batches keep encoding count until every encoder finishes`() = runTest {
+        val encoder = DeferredAttachmentEncoder()
+        val viewModel = viewModel(encoder)
+        val firstUri = TestUri("test://attachments/first.txt")
+        val secondUri = TestUri("test://attachments/second.txt")
+        val firstAttachment = composerAttachment(firstUri, "first.txt")
+        val secondAttachment = composerAttachment(secondUri, "second.txt")
+
+        viewModel.open("websocket:a", "a")
+        viewModel.addAttachments(listOf(firstUri))
+        viewModel.addAttachments(listOf(secondUri))
+        // 两批请求都应停在可控 encoder 上，此时两个编码任务都仍未完成。
+        runCurrent()
+
+        assertEquals(2, encoder.pending.size)
+        assertEquals(2, viewModel.composer.value.encodingCount)
+
+        encoder.pending[0].completion.complete(firstAttachment)
+        runCurrent()
+        // 第一批完成后，第二批仍在编码，send 不能因 count 提前归零而放行。
+        assertEquals(1, viewModel.composer.value.encodingCount)
+        assertEquals(listOf(firstAttachment), viewModel.composer.value.attachments)
+
+        encoder.pending[1].completion.complete(secondAttachment)
+        runCurrent()
+
+        assertEquals(0, viewModel.composer.value.encodingCount)
+        assertEquals(listOf(firstAttachment, secondAttachment), viewModel.composer.value.attachments)
     }
 
     @Test
@@ -621,13 +698,41 @@ class ChatViewModelTest {
         assertEquals(VoiceUiState(), viewModel.composer.value.voice)
     }
 
-    private fun viewModel() = ChatViewModel(
+    private fun viewModel(encoder: AttachmentEncoding = attachmentEncoding) = ChatViewModel(
         repository,
-        attachmentEncoding,
+        encoder,
         voiceRecorder,
         composerRecentsStore,
     )
 }
+
+/**
+ * 可控的挂起编码器：每次 encode 都把完成句柄暴露给测试，只有测试显式 complete
+ * 或 completeExceptionally 后，ChatViewModel 的编码协程才会继续。这样可以稳定制造
+ * “编码期间切换会话”和“多批编码交错完成”的竞态，而不依赖真实 ContentResolver。
+ */
+private class DeferredAttachmentEncoder : AttachmentEncoding {
+    data class Pending(
+        val uri: Uri,
+        val completion: CompletableDeferred<ComposerAttachment>,
+    )
+
+    val pending = mutableListOf<Pending>()
+
+    override suspend fun encode(uri: Uri, maxFileBytes: Long): ComposerAttachment {
+        val request = Pending(uri, CompletableDeferred())
+        pending += request
+        return request.completion.await()
+    }
+}
+
+private fun composerAttachment(uri: Uri, name: String): ComposerAttachment = ComposerAttachment(
+    uri = uri,
+    name = name,
+    mimeType = "text/plain",
+    bytes = 4,
+    outbound = OutboundMedia("data:text/plain;base64,AAAA", name),
+)
 
 private class FakeComposerRecentsStore : ComposerRecentsStore {
     var persisted: List<String> = emptyList()
@@ -677,6 +782,8 @@ private class FakeChatRepository : ChatRepository {
         startNewTopicCount += 1
         mutableState.value = ChatUiState(workspaceScope = mutableState.value.workspaceScope)
     }
+
+    override fun reset() = Unit
 
     override fun openSession(
         sessionKey: String,
@@ -747,6 +854,8 @@ private class FakeChatRepository : ChatRepository {
     override suspend fun transcribeAudio(dataUrl: String, durationMs: Long): String = transcript
     override suspend fun loadSessionAutomations(sessionKey: String): List<com.nanobotkt.core.model.SessionAutomationJob> =
         emptyList()
+    override fun loadFilePreview(path: String) = Unit
+    override fun clearFilePreview() = Unit
     override fun clearError() = Unit
 }
 

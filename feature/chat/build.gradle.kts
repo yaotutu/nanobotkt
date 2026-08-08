@@ -52,6 +52,8 @@ dependencies {
     implementation(libs.media3.ui)
     testImplementation(project(":core:testing"))
     testImplementation(libs.junit4)
+    // Repository 契约测试需要直接构造 Json，以验证服务端分页响应中的未知字段兼容性。
+    testImplementation(libs.kotlinx.serialization.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

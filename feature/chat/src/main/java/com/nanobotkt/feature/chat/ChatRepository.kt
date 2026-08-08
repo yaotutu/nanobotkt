@@ -2,6 +2,7 @@ package com.nanobotkt.feature.chat
 
 import kotlinx.coroutines.CancellationException
 import com.nanobotkt.core.model.AutomationsPayload
+import com.nanobotkt.core.model.FilePreviewPayload
 import com.nanobotkt.core.model.BootstrapSnapshotProvider
 import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.CliAppsPayload
@@ -47,6 +48,10 @@ import javax.inject.Singleton
 
 interface ChatRepository {
     val state: StateFlow<ChatUiState>
+    /**
+     * 清理当前登录会话留下的聊天状态，避免退出登录后旧会话内容继续显示。
+     */
+    fun reset()
     fun startNewTopic()
     fun openSession(sessionKey: String, chatId: String, workspaceScope: WorkspaceScope? = null, modelPreset: String? = null)
     suspend fun newChat(workspaceScope: WorkspaceScope? = null): String
@@ -60,6 +65,10 @@ interface ChatRepository {
     fun stop()
     suspend fun transcribeAudio(dataUrl: String, durationMs: Long): String
     suspend fun loadSessionAutomations(sessionKey: String): List<SessionAutomationJob>
+    /** 异步加载当前会话中某次文件编辑对应的文件内容。 */
+    fun loadFilePreview(path: String)
+    /** 关闭预览并清理可能已经过期的加载错误。 */
+    fun clearFilePreview()
     fun clearError()
 }
 
@@ -70,6 +79,15 @@ data class ChatSendOptions(
     val mcpPresets: List<UiMcpPresetAttachment> = emptyList(),
     val capabilityPayloadsResolved: Boolean = false,
     val workspaceScope: WorkspaceScope? = null,
+    /**
+     * 发送开始时捕获的会话身份。切换会话后，旧 prompt 必须失败而不是发到新会话。
+     */
+    val sessionGuard: ChatSessionGuard? = null,
+)
+
+data class ChatSessionGuard(
+    val sessionKey: String?,
+    val chatId: String?,
 )
 
 data class ChatUiState(
@@ -92,6 +110,9 @@ data class ChatUiState(
     val workspaces: WorkspacesPayload? = null,
     val workspaceScope: WorkspaceScope? = null,
     val model: ChatModelSelection = ChatModelSelection(),
+    val filePreview: FilePreviewPayload? = null,
+    val filePreviewLoading: Boolean = false,
+    val filePreviewError: String? = null,
 )
 
 @Singleton
@@ -114,6 +135,8 @@ class DefaultChatRepository @Inject constructor(
     private var runtimeModelName: String? = null
     private var turnModelName: String? = null
     override val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
+    /** 文件预览请求代次；同一会话内的新请求也必须淘汰旧响应。 */
+    private var filePreviewGeneration = 0L
 
     init {
         scope.launch { refreshComposerCatalogs() }
@@ -138,14 +161,33 @@ class DefaultChatRepository @Inject constructor(
             transport.state.collectLatest { transportState ->
                 publishModelSelection()
                 if (transportState.needsCanonicalRefresh && mutableState.value.sessionKey != null) {
-                    refreshCanonical()
-                    transport.clearCanonicalRefreshFlag()
+                    // 只有规范消息成功收敛后才能清除 dirty flag；HTTP 失败时保留
+                    // 标记，下一次网络恢复仍会触发 canonical refresh。
+                    if (refreshCanonical()) transport.clearCanonicalRefreshFlag()
                 }
             }
         }
     }
 
+    override fun reset() {
+        // 退出登录时必须同时清理服务端会话标识、规范化消息和所有乐观消息，
+        // 同时淘汰所有在途文件预览响应，避免旧账号内容回写到新登录会话。
+        filePreviewGeneration += 1
+        // 否则下一次登录可能短暂复用上一个账号的聊天内容。
+        activeSessionModelPreset = null
+        localModelSelection = null
+        runtimeModelName = null
+        turnModelName = null
+        modelSettings = null
+        canonical.clear()
+        optimistic.clear()
+        sideChannelTurnIds.clear()
+        streamFold.reset()
+        mutableState.value = ChatUiState()
+    }
+
     override fun startNewTopic() {
+        filePreviewGeneration += 1
         val catalogs = mutableState.value
         activeSessionModelPreset = null
         turnModelName = null
@@ -166,8 +208,15 @@ class DefaultChatRepository @Inject constructor(
     }
 
     override fun openSession(sessionKey: String, chatId: String, workspaceScope: WorkspaceScope?, modelPreset: String?) {
-        if (mutableState.value.sessionKey == sessionKey && mutableState.value.chatId == chatId) {
+        filePreviewGeneration += 1
+        val current = mutableState.value
+        if (current.sessionKey == sessionKey && current.chatId == chatId) {
             activeSessionModelPreset = modelPreset
+            // Sidebar 可能在仓库已打开该会话后才拿到规范化 workspace 信息。
+            // 同一会话重开时只接受非空值，避免缺省参数反向清掉当前已知范围。
+            current.syncReopenedWorkspaceScope(workspaceScope).let { synchronizedState ->
+                if (synchronizedState !== current) mutableState.value = synchronizedState
+            }
             publishModelSelection()
             return
         }
@@ -248,12 +297,13 @@ class DefaultChatRepository @Inject constructor(
     override fun loadOlder() {
         val current = mutableState.value
         val sessionKey = current.sessionKey ?: return
+        val chatId = current.chatId
         if (current.loadingOlder || !current.hasMoreBefore || current.beforeCursor == null) return
         mutableState.value = current.copy(loadingOlder = true)
         scope.launch {
             try {
                 val page = fetchThread(sessionKey, before = current.beforeCursor, latest = false)
-                if (mutableState.value.sessionKey != sessionKey) return@launch
+                if (!mutableState.value.matchesSession(sessionKey, chatId)) return@launch
                 if (page == null) {
                     mutableState.value = mutableState.value.copy(loadingOlder = false)
                     return@launch
@@ -269,12 +319,12 @@ class DefaultChatRepository @Inject constructor(
                     userMessageOffset = page.page?.userMessageOffset ?: 0,
                 )
             } catch (error: CancellationException) {
-                if (mutableState.value.sessionKey == sessionKey) {
+                if (mutableState.value.matchesSession(sessionKey, chatId)) {
                     mutableState.value = mutableState.value.copy(loadingOlder = false)
                 }
                 throw error
             } catch (error: Exception) {
-                if (mutableState.value.sessionKey == sessionKey) {
+                if (mutableState.value.matchesSession(sessionKey, chatId)) {
                     mutableState.value = mutableState.value.copy(
                         loadingOlder = false,
                         error = error.message ?: "thread_load_older_failed",
@@ -290,7 +340,24 @@ class DefaultChatRepository @Inject constructor(
         quotedContext: String?,
         options: ChatSendOptions,
     ) {
-        if (mutableState.value.chatId == null) newChat(options.workspaceScope)
+        val guard = options.sessionGuard
+        if (guard != null) {
+            if (guard.chatId == null) {
+                // 新主题尚未创建远程 chat 时，切换到任何已有会话都应使原 prompt 失效。
+                check(mutableState.value.sessionKey == null && mutableState.value.chatId == null) {
+                    "session_changed"
+                }
+                val createdKey = newChat(options.workspaceScope)
+                check(mutableState.value.sessionKey == createdKey) { "session_changed" }
+            } else {
+                check(
+                    mutableState.value.sessionKey == guard.sessionKey &&
+                        mutableState.value.chatId == guard.chatId,
+                ) { "session_changed" }
+            }
+        } else if (mutableState.value.chatId == null) {
+            newChat(options.workspaceScope)
+        }
         val result = enqueueMessage(text, media, quotedContext, options) ?: error("message_empty")
         result.accepted.await()
     }
@@ -405,6 +472,61 @@ class DefaultChatRepository @Inject constructor(
             deserializer = AutomationsPayload.serializer(),
         ).jobs
 
+    override fun loadFilePreview(path: String) {
+        val requestSessionKey = mutableState.value.sessionKey
+        if (requestSessionKey.isNullOrBlank()) {
+            mutableState.value = mutableState.value.copy(
+                filePreview = null,
+                filePreviewLoading = false,
+                filePreviewError = "chat_session_required",
+            )
+            return
+        }
+
+        // 捕获请求发起时的完整身份和代次。用户切换会话、重新打开同一会话，
+        // 或在同一会话中点击另一个文件后，迟到的旧响应都不能回写当前预览。
+        val requestGeneration = ++filePreviewGeneration
+        mutableState.value = mutableState.value.copy(
+            filePreview = null,
+            filePreviewLoading = true,
+            filePreviewError = null,
+        )
+        scope.launch {
+            runCatching {
+                api.request(
+                    path = "/api/sessions/${requestSessionKey.pathEncoded()}/file-preview",
+                    deserializer = FilePreviewPayload.serializer(),
+                    query = mapOf("path" to path),
+                )
+            }.onSuccess { preview ->
+                if (filePreviewGeneration == requestGeneration && mutableState.value.sessionKey == requestSessionKey) {
+                    mutableState.value = mutableState.value.copy(
+                        filePreview = preview,
+                        filePreviewLoading = false,
+                        filePreviewError = null,
+                    )
+                }
+            }.onFailure { error ->
+                if (filePreviewGeneration == requestGeneration && mutableState.value.sessionKey == requestSessionKey) {
+                    mutableState.value = mutableState.value.copy(
+                        filePreview = null,
+                        filePreviewLoading = false,
+                        filePreviewError = error.message ?: "file_preview_failed",
+                    )
+                }
+            }
+        }
+    }
+
+    override fun clearFilePreview() {
+        filePreviewGeneration += 1
+        mutableState.value = mutableState.value.copy(
+            filePreview = null,
+            filePreviewLoading = false,
+            filePreviewError = null,
+        )
+    }
+
     override fun clearError() {
         mutableState.value = mutableState.value.copy(
             error = null,
@@ -458,11 +580,14 @@ class DefaultChatRepository @Inject constructor(
         )
     }
 
-    private suspend fun refreshCanonical() {
-        val session = mutableState.value.sessionKey ?: return
+    private suspend fun refreshCanonical(): Boolean {
+        val sessionState = mutableState.value
+        val session = sessionState.sessionKey ?: return false
+        val chatId = sessionState.chatId
         try {
             val payload = fetchThread(session, before = null, latest = true)
-            if (mutableState.value.sessionKey != session) return
+            // 会话在请求期间切换时，旧响应不能被视为当前会话的成功刷新。
+            if (!mutableState.value.matchesSession(session, chatId)) return false
             if (payload == null) {
                 canonical.clear()
                 publish(
@@ -472,7 +597,7 @@ class DefaultChatRepository @Inject constructor(
                     activeTurnId = null,
                     userMessageOffset = 0,
                 )
-                return
+                return true
             }
 
             val reconciled = mergeLatestMessages(canonical, payload.messages)
@@ -495,20 +620,30 @@ class DefaultChatRepository @Inject constructor(
                 activeTurnId = payload.activeTurnId,
                 userMessageOffset = payload.page?.userMessageOffset ?: 0,
             )
+            return true
         } catch (error: CancellationException) {
-            if (mutableState.value.sessionKey == session) {
+            if (mutableState.value.matchesSession(session, chatId)) {
                 mutableState.value = mutableState.value.copy(loading = false, loadingOlder = false)
             }
             throw error
         } catch (error: Exception) {
-            if (mutableState.value.sessionKey == session) {
+            if (mutableState.value.matchesSession(session, chatId)) {
                 mutableState.value = mutableState.value.copy(
                     loading = false,
                     loadingOlder = false,
                     error = error.message ?: "thread_refresh_failed",
                 )
             }
+            return false
         }
+    }
+
+    /**
+     * Composer 使用的技能目录必须复用 WebUI 的公开只读路由。
+     * 服务端没有注册 `/api/skills`，继续使用旧路径会让聊天页静默丢失技能候选。
+     */
+    internal companion object {
+        const val COMPOSER_SKILLS_PATH = "/api/webui/skills"
     }
 
     private suspend fun refreshComposerCatalogs() {
@@ -524,7 +659,7 @@ class DefaultChatRepository @Inject constructor(
         }
         runCatching {
             api.request(
-                path = "/api/skills",
+                path = COMPOSER_SKILLS_PATH,
                 deserializer = SkillsPayload.serializer(),
             )
         }.onSuccess { payload ->
@@ -750,6 +885,23 @@ class DefaultChatRepository @Inject constructor(
         }
     }
 }
+
+/**
+ * 同一会话重开时只同步明确提供的 workspace 范围；缺省参数必须保留当前值。
+ */
+internal fun ChatUiState.syncReopenedWorkspaceScope(workspaceScope: WorkspaceScope?): ChatUiState =
+    workspaceScope
+        ?.normalized()
+        ?.takeIf { normalizedScope -> normalizedScope != this.workspaceScope }
+        ?.let { normalizedScope -> copy(workspaceScope = normalizedScope) }
+        ?: this
+
+/**
+ * 网络响应只能写回发起请求时对应的完整会话身份；sessionKey 相同但 chatId 不同
+ * 仍然代表两个独立的远程聊天，不能让旧响应覆盖当前会话。
+ */
+internal fun ChatUiState.matchesSession(sessionKey: String?, chatId: String?): Boolean =
+    this.sessionKey == sessionKey && this.chatId == chatId
 
 private fun canonicalAssistantTurnIds(messages: List<UiMessage>): Set<String> = messages
     .asSequence()
