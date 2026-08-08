@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
@@ -24,6 +24,34 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    // ============================================================
+    // 签名配置（CI 自动发布使用）
+    // 仅当检测到 keystore 文件与密码环境变量时，release 才使用正式签名；
+    // 本地开发缺少这些变量时保持原行为（release 未签名）。
+    // CI 中由 workflow 写入 keystore.jks 并注入环境变量。
+    // ============================================================
+    val keystoreFileEnv = System.getenv("KEYSTORE_FILE")
+    val keystorePasswordEnv = System.getenv("KEYSTORE_PASSWORD")
+    val keyAliasEnv = System.getenv("KEY_ALIAS")
+    val keyPasswordEnv = System.getenv("KEY_PASSWORD")
+    val releaseKeystoreFile = keystoreFileEnv?.let { rootProject.file(it) }
+        ?: rootProject.file("keystore.jks")
+    val hasReleaseKeystore = releaseKeystoreFile.isFile &&
+        keystorePasswordEnv != null &&
+        keyAliasEnv != null &&
+        keyPasswordEnv != null
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = keystorePasswordEnv
+                keyAlias = keyAliasEnv
+                keyPassword = keyPasswordEnv
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -31,10 +59,28 @@ android {
             buildConfigField("String", "NANOBOT_SERVER_URL", configuredServerUrl.getOrElse("http://localhost:8765").asBuildConfigString())
         }
         release {
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             buildConfigField("String", "NANOBOT_SERVER_URL", configuredServerUrl.getOrElse("http://192.168.55.147:8765").asBuildConfigString())
+        }
+    }
+
+    // ============================================================
+    // 按 CPU 架构拆分 APK，并额外产出 universal 通用包
+    // assembleDebug / assembleRelease 会分别生成：
+    //   app-{armeabi-v7a|arm64-v8a|x86|x86_64}-{variant}.apk
+    //   app-universal-{variant}.apk
+    // ============================================================
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
         }
     }
 

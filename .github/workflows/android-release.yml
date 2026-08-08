@@ -1,8 +1,9 @@
 # ============================================================
 # NanobotKT 自动发布 workflow
-# 作用：当推送 v* 版本标签（如 v1.0.0）时，自动构建 Android
-#       Debug APK，并创建对应的 GitHub Release，把 APK 作为
-#       资产（asset）附在 Release 上，实现「打标签即发布」。
+# 作用：当推送 v* 版本标签（如 v1.0.0）时，自动构建已签名的 Android
+#       Release APK（按架构拆分 + universal 通用包），并创建对应的
+#       GitHub Release，把所有 APK 作为资产附在 Release 上，实现
+#       「打标签即发布」。
 # 注意：本文件只负责 CI 构建与发布，不修改任何应用源码。
 # ============================================================
 name: Android Release
@@ -37,14 +38,28 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 4. 构建 Debug APK（可直接安装；未配置正式签名时 debug 产物可安装）
-      - name: Build debug APK
-        run: sh gradlew :app:assembleDebug --console=plain
+      # 4. 从 GitHub Secret 解出签名 keystore（base64 -> keystore.jks）
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
 
-      # 5. 创建/更新当前 tag 对应的 GitHub Release 并上传 APK
+      # 5. 构建已签名的 Release APK（按架构拆分 + universal 通用包）
+      - name: Build signed release APKs
+        env:
+          KEYSTORE_FILE: keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: sh gradlew :app:assembleRelease --console=plain
+
+      # 6. 创建/更新当前 tag 对应的 GitHub Release，上传全部 APK：
+      #    app-arm64-v8a-release.apk / app-armeabi-v7a-release.apk /
+      #    app-x86-release.apk / app-x86_64-release.apk / app-universal-release.apk
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: app/build/outputs/apk/release/*.apk
           # 自动生成 release notes（基于 commit/PR 标题）
           generate_release_notes: true
