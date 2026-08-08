@@ -1,6 +1,6 @@
 # NanobotKT Agent 工作规则
 
-本文件适用于在 `C:\Users\Administrator\AndroidStudioProjects\nanobotkt` 中工作的所有 Agent。
+本文件适用于在 `/Users/yaotutu/Desktop/code/nanobotkt`（同步 Windows 工作区 `C:\Users\Administrator\AndroidStudioProjects\nanobotkt`）中工作的所有 Agent。
 
 ## 1. 开始任务前
 
@@ -23,35 +23,34 @@ git rev-parse origin/main
 
 ## 2. 当前项目方向
 
-- 官方 Nanobot WebUI 是 UI、交互和数据语义的主要标准。
+- 官方 Nanobot WebUI 是 UI、交互和数据语义的主要参考标准。
 - 官方上游路径和当前参考提交记录在 `HANDOFF.md`。
 - 修改 UI 或消息行为前，优先阅读上游对应组件，不要仅凭截图重新设计。
-- 当前建议工作方向是系统化 Smoke Test、记录稳定复现步骤和最小修复，而不是扩大 UI 重写范围。
+- 当前处于开发阶段：任何问题都可以直接重构解决；不要求与旧实现保持兼容，不需要任何兼容性代码。
 - 不要把已完成的专项验证描述为“整个应用已经全部测试完成”。
 
-## 3. 必须保留的业务行为
+## 3. 重构自由度（开发阶段）
 
-除非已有明确、稳定、可复现的 Bug，否则不要重写：
+当前处于开发阶段，不再冻结任何实现细节：
 
-- 新会话首次发送后的 `SessionSelection` / `reconcileSessionSelection` 规则。
-- drafting-new-topic guard。
-- 恢复 selected session 时穿过第一次空 Sidebar 的保护。
-- Sidebar 的会话切换、置顶、取消置顶、归档、显示已归档、恢复和删除逻辑。
-- Root `SavedStateHandle` 状态恢复和 logout 清理逻辑。
-
-官方功能边界：
-
-- 不添加假的 Android Restart 按钮。
-- 不为了“官方对齐”添加上游不存在的 assistant Retry/Regenerate 操作按钮。
-- Android 已有的底层能力可以保留，但新增 UI 前必须核对上游源码和现有后端能力。
+- 任何代码都可以重构，包括此前被视为“必须保留”的逻辑：
+  - 新会话首次发送后的 `SessionSelection` / `reconcileSessionSelection` 规则。
+  - drafting-new-topic guard。
+  - 恢复 selected session 时穿过第一次空 Sidebar 的保护。
+  - Sidebar 的会话切换、置顶、取消置顶、归档、显示已归档、恢复和删除逻辑。
+  - Root `SavedStateHandle` 状态恢复和 logout 清理逻辑。
+- 重构必须保持可验证：行为语义改动时用单元测试锁定关键行为，测试随重构更新。
+- 完全不需要兼容性代码：旧数据格式、旧接口、旧 schema、旧 UI 语义的兼容层一律不做；数据可以清理、重建或直接丢弃。
+- 产品功能边界（默认保留，除非用户明确要求）：
+  - 不添加假的 Android Restart 按钮。
+  - 不为了“官方对齐”添加上游不存在的 assistant Retry/Regenerate 操作按钮。
+  - 新增 UI 前核对上游源码和现有后端能力。
 
 ## 4. 修改范围
 
-- 优先做最小、局部、可验证的改动。
-- 不批量格式化无关文件。
-- 不在修复一个问题时顺便重构相邻模块。
-- 不覆盖用户或其他 Agent 的修改。
-- 如果发现与当前任务无关的问题，记录在汇总中，不立即扩大范围。
+- 开发阶段允许结构性重构、跨模块改动和必要的格式化，前提是服务于当前任务目标。
+- 仍然不覆盖用户或其他 Agent 的修改；发现冲突时先沟通再处理。
+- 不为兼容旧行为保留死代码、兼容分支或无用参数。
 - 创建测试文档、截图或临时调试产物时，先确认它们是否应进入仓库。
 
 ## 5. Git 安全
@@ -103,7 +102,7 @@ git diff --check
 要求：
 
 - 生产代码改动必须至少编译对应模块。
-- 业务规则改动应增加或更新单元测试。
+- 业务逻辑或重构改动应增加或更新单元测试。
 - UI 行为不能只依赖编译成功；条件允许时安装 APK 并在 `emulator-5554` 验证。
 - 需要验证真实进程恢复时，使用 HOME 后的 `am kill`，并确认 PID 消失、PID 改变和 `LaunchState: COLD`。
 - 检查 logcat 是否有应用 Fatal Exception 或 ANR。
@@ -122,9 +121,9 @@ ADB reverse tcp:8765 -> tcp:8765
 
 规则：
 
-- 安装 APK 优先使用 `adb install -r`，避免无意清除数据。
-- 执行清数据、删除会话、保存远程配置、安装 App、触发 Automation 或调用真实 Provider 前，先评估外部副作用。
-- 测试 Settings dirty 状态时，除非测试目标就是保存，否则不要点击 Save。
+- 开发阶段不需要保留数据：清数据、删除会话、卸载重装等本地操作可以直接执行，无需先备份或评估数据影响。
+- 安装 APK 使用 `adb install` 即可；`-r` 仅在有明确需要时使用。
+- 涉及真实后端的外部副作用（保存远程配置、触发 Automation、调用真实 Provider）仍要留意，执行前后记录状态即可。
 - 不输出或记录 bootstrap secret、Token、Provider API Key、渠道凭据等敏感数据。
 - 不在截图、UI dump、logcat 摘要或最终回复中泄露凭据。
 
@@ -182,7 +181,7 @@ ADB reverse tcp:8765 -> tcp:8765
 2. 优先测试无外部副作用的本地功能。
 3. 每次只处理一个小范围，例如会话归档/恢复或某个 Settings section。
 4. 发现问题后先得到稳定复现，再对照官方上游。
-5. 做最小修复并运行相关测试。
+5. 修复问题（开发阶段允许直接重构）并运行相关测试。
 6. 安装 APK，在模拟器复测并保留截图或 UI dump 路径。
 7. 完成当前小阶段后停止并汇总，再由用户决定是否继续。
 
@@ -199,3 +198,7 @@ ADB reverse tcp:8765 -> tcp:8765
 - Subagent 的使用情况和实际影响。
 
 如果当前阶段已经完成，不要在汇总后继续下一阶段。
+
+
+# 重要规则，用户手动填写，禁止修改
+- nanobot的源码在这里 /Users/yaotutu/Desktop/code/nanobot
