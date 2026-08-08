@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.collections.immutable)
+    implementation("com.google.zxing:core:3.5.3")
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     testImplementation(project(":core:testing"))
