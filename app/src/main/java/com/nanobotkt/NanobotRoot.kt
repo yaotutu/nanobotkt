@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -74,7 +75,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -93,8 +93,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import com.nanobotkt.core.designsystem.NanobotTheme
 import com.nanobotkt.core.model.ChatSummary
 import com.nanobotkt.core.persistence.DensityPreference
@@ -127,13 +125,8 @@ fun NanobotRoot(appViewModel: AppViewModel) {
         ThemePreference.LIGHT -> false
     }
     val view = LocalView.current
-    DisposableEffect(view) {
-        val window = (view.context as? android.app.Activity)?.window
-        val bars = window?.let { WindowInsetsControllerCompat(it, view) }
-        bars?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        bars?.hide(WindowInsetsCompat.Type.systemBars())
-        onDispose { }
-    }
+    // 保持系统状态栏和导航栏可见。应用已经启用了 edge-to-edge，真正需要做的是让
+    // 内容避开系统栏，而不是把系统栏隐藏后再依赖固定 dp 偏移模拟安全区域。
     SideEffect {
         val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
         WindowCompat.getInsetsController(window, view).apply {
@@ -411,6 +404,9 @@ private fun SidebarContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // DrawerSheet 在不同 Material3 版本上的默认 inset 行为并不完全一致，
+                // 顶部显式保留状态栏安全区，避免 Logo/关闭按钮被状态栏覆盖。
+                .statusBarsPadding()
                 .height(56.dp)
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,

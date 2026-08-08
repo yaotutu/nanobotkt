@@ -24,9 +24,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -313,6 +315,7 @@ fun ChatScreen(
                     hostState = snackbar,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 184.dp),
                 )
             }
@@ -341,7 +344,9 @@ fun ChatScreen(
                         },
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = 44.dp),
+                            // 顶部工具栏悬浮在消息列表上方，列表需要同时避开工具栏和状态栏。
+                            .padding(top = 44.dp)
+                            .statusBarsPadding(),
                         autoFollow = autoFollow,
                     )
                     Box(
@@ -366,6 +371,7 @@ fun ChatScreen(
                     hostState = snackbar,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 142.dp),
                 )
             }
@@ -400,6 +406,7 @@ private fun HeroTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .height(44.dp)
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -447,6 +454,7 @@ private fun ConversationTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .height(44.dp)
             .background(background)
             .padding(start = 6.dp, end = 10.dp),
@@ -909,6 +917,7 @@ private fun HeroComposer(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .imePadding(),
     ) {
         val scale = (maxWidth.value / 400f).coerceIn(0.8f, 1f)
@@ -1169,7 +1178,10 @@ private fun ConversationComposer(
     val sendContentColor = if (dark && sendEnabled) Color(0xFF18191B) else Color.White
 
     BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth().imePadding(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .imePadding(),
     ) {
         val scale = (maxWidth.value / 400f).coerceIn(0.8f, 1f)
         val widthProgress = (maxWidth.value - 320f).coerceIn(0f, 80f)
