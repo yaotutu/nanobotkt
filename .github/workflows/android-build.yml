@@ -1,0 +1,50 @@
+# ============================================================
+# NanobotKT 自动打包 workflow
+# 作用：在推送到 main 分支后，自动构建 Android Debug APK
+#       并上传为 GitHub Actions artifact（可直接下载安装调试）。
+# 注意：本文件只负责 CI 打包，不修改任何应用源码。
+# ============================================================
+name: Android Debug Build
+
+on:
+  push:
+    branches: [ main ]
+  # 也允许在 GitHub Actions 页面手动触发（workflow_dispatch）
+  workflow_dispatch:
+
+# 只读权限足够：本 workflow 不需要写仓库内容
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出仓库代码（checkout 到当前提交）
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. 安装 JDK 17（AGP 9 / Gradle 9 需要 JDK 17+）
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 3. 配置 Gradle（自动使用仓库 wrapper，并缓存依赖，加快后续构建）
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 4. 构建 Debug APK（app 模块 assembleDebug）
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --console=plain
+
+      # 5. 上传 APK 产物，可在 Actions 运行页面的 Artifacts 中下载
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanobotkt-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
