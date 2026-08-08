@@ -210,20 +210,36 @@ private fun ReadyRoot(
             sidebar.sidebar.view.showArchived || session.key !in sidebar.sidebar.archivedKeys
         }
     }
-    LaunchedEffect(visibleSessions, selectedKey, draftingNewTopic) {
+    LaunchedEffect(visibleSessions, selectedKey, draftingNewTopic, sidebar.loaded) {
         val reconciled = reconcileSessionSelection(
             visibleKeys = visibleSessions.map { it.key },
             selectedKey = selectedKey,
             draftingNewTopic = draftingNewTopic,
+            sidebarLoaded = sidebar.loaded,
         )
         if (selectedKey != reconciled.selectedKey || draftingNewTopic != reconciled.draftingNewTopic) {
             appViewModel.updateSessionSelection(reconciled)
         }
     }
     val selected = visibleSessions.firstOrNull { it.key == selectedKey }
-    LaunchedEffect(selected?.key, selected?.modelPreset, selected?.workspaceScope) {
-        selected?.let {
-            chatViewModel.open(it.key, it.chatId, it.workspaceScope, it.modelPreset)
+    LaunchedEffect(
+        selected?.key,
+        selected?.modelPreset,
+        selected?.workspaceScope,
+        selectedKey,
+        draftingNewTopic,
+        sidebar.loaded,
+    ) {
+        when {
+            selected != null -> chatViewModel.open(
+                selected.key,
+                selected.chatId,
+                selected.workspaceScope,
+                selected.modelPreset,
+            )
+            // 删除最后一个已加载会话后，必须把 ChatRepository 也切回新主题，
+            // 否则 Root 虽然没有 selectedKey，聊天页仍会持有已删除的 chatId。
+            sidebar.loaded && selectedKey == null && !draftingNewTopic -> chatViewModel.startNewTopic()
         }
     }
 
@@ -287,7 +303,7 @@ private fun ReadyRoot(
                     appViewModel.openSettings(SETTINGS_SECTION_MODELS)
                 },
                 onSessionCreated = { key ->
-                    if (selectedKey != key || draftingNewTopic) {
+                    if (selectedKey != key) {
                         // Keep the draft guard active until the refreshed sidebar actually contains
                         // the newly-created session. Otherwise the selection reconciliation can fall
                         // back to the first old topic while creation is still propagating.
@@ -305,6 +321,7 @@ private fun ReadyRoot(
             AppDestination.SETTINGS -> SettingsScreen(
                 onBack = { appViewModel.navigate(AppDestination.CHAT) },
                 onOpenChannels = { appViewModel.navigate(AppDestination.CHANNELS) },
+                onLogout = appViewModel::logout,
                 initialSection = rootUiState.settingsSection,
                 onSectionChange = appViewModel::setSettingsSection,
                 refreshKey = tokenGeneration,
@@ -323,6 +340,7 @@ internal fun reconcileSessionSelection(
     visibleKeys: List<String>,
     selectedKey: String?,
     draftingNewTopic: Boolean,
+    sidebarLoaded: Boolean = false,
 ): SessionSelection {
     if (draftingNewTopic) {
         val createdSessionVisible = selectedKey != null && selectedKey in visibleKeys
@@ -335,7 +353,7 @@ internal fun reconcileSessionSelection(
     // A restored selection arrives before the first Sidebar refresh completes. Preserve it
     // while the list is empty so the subsequent loaded list can validate it instead of
     // prematurely falling back to the first topic.
-    if (visibleKeys.isEmpty() && selectedKey != null) {
+    if (!sidebarLoaded && visibleKeys.isEmpty() && selectedKey != null) {
         return SessionSelection(selectedKey = selectedKey, draftingNewTopic = false)
     }
 
@@ -459,6 +477,8 @@ private fun SidebarContent(
         SidebarNavRow(label = "Apps", icon = Icons.Rounded.Apps) { onNavigate(AppDestination.APPS) }
         SidebarNavRow(label = "Skills", icon = Icons.Rounded.AutoAwesome) { onNavigate(AppDestination.SKILLS) }
         SidebarNavRow(label = "Automations", icon = Icons.Rounded.Schedule) { onNavigate(AppDestination.AUTOMATIONS) }
+        // Pairing 请求需要从常规导航可达，否则用户无法批准或拒绝来自渠道的请求。
+        SidebarNavRow(label = "Security & pairing", icon = Icons.Rounded.Security) { onNavigate(AppDestination.SECURITY) }
         SidebarNavRow(
             label = stringResource(R.string.show_archived),
             icon = Icons.Rounded.Archive,
@@ -729,6 +749,3 @@ private fun TransportStatus.statusColor(): Color = when (this) {
     TransportStatus.ERROR -> Color(0xFFC62828)
     TransportStatus.CLOSED, TransportStatus.IDLE -> Color(0xFF757575)
 }
-
-
-

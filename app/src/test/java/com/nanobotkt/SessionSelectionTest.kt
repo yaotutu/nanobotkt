@@ -1,6 +1,7 @@
 package com.nanobotkt
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SessionSelectionTest {
@@ -37,6 +38,19 @@ class SessionSelectionTest {
         )
 
         assertEquals("websocket:restored", result.selectedKey)
+        assertEquals(false, result.draftingNewTopic)
+    }
+
+    @Test
+    fun deletedLastSessionClearsSelectionAfterSidebarFinishedLoading() {
+        val result = reconcileSessionSelection(
+            visibleKeys = emptyList(),
+            selectedKey = "websocket:deleted",
+            draftingNewTopic = false,
+            sidebarLoaded = true,
+        )
+
+        assertNull(result.selectedKey)
         assertEquals(false, result.draftingNewTopic)
     }
 

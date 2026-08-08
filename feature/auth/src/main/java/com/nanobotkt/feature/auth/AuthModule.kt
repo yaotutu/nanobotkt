@@ -12,6 +12,9 @@ import dagger.hilt.components.SingletonComponent
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AuthModule {
+    @Binds abstract fun bindAuthBootstrapGateway(implementation: DefaultAuthBootstrapGateway): AuthBootstrapGateway
+    @Binds abstract fun bindAuthSecretStore(implementation: DefaultAuthSecretStore): AuthSecretStore
+    @Binds abstract fun bindAuthPreferencesStore(implementation: DefaultAuthPreferencesStore): AuthPreferencesStore
     @Binds abstract fun bindAuthContext(repository: AuthSessionRepository): AuthContext
     @Binds abstract fun bindTransportCredentials(repository: AuthSessionRepository): TransportCredentials
     @Binds abstract fun bindIngressLimitsProvider(repository: AuthSessionRepository): IngressLimitsProvider

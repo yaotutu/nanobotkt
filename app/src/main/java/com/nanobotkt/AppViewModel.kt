@@ -12,8 +12,18 @@ import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportState
 import com.nanobotkt.feature.auth.AuthSessionRepository
 import com.nanobotkt.feature.auth.AuthState
+import com.nanobotkt.feature.apps.AppsRepository
+import com.nanobotkt.feature.automations.AutomationsRepository
+import com.nanobotkt.feature.chat.ChatRepository
+import com.nanobotkt.feature.channels.ChannelsRepository
+import com.nanobotkt.feature.security.SecurityRepository
+import com.nanobotkt.feature.skills.SkillsRepository
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
+import com.nanobotkt.feature.settings.SettingsRepository
+import com.nanobotkt.feature.sidebar.SidebarRepository
+import com.nanobotkt.feature.workspaces.WorkspacesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +60,28 @@ internal fun SavedStateHandle.readRootUiState(): RootUiState = RootUiState(
         ?: SETTINGS_SECTION_OVERVIEW,
 )
 
+/**
+ * 执行退出登录时的同步清理，并把认证仓库的异步注销排到清理之后。
+ *
+ * 将这段编排单独抽成无 Android 依赖的函数，既保持 AppViewModel 的真实执行顺序，
+ * 也让单元测试能够稳定验证“旧账号状态先失效、认证注销后触发”的不变量，避免为了
+ * 测试而 mock 具体的 Android Repository 和 WebSocket Transport 实现。
+ */
+internal fun scheduleLogoutCleanup(
+    scope: CoroutineScope,
+    resetRootUiState: () -> Unit,
+    resetRepositories: List<() -> Unit>,
+    clearAttachments: () -> Unit,
+    closeTransport: () -> Unit,
+    logout: suspend () -> Unit,
+) {
+    resetRootUiState()
+    resetRepositories.forEach { reset -> reset() }
+    clearAttachments()
+    closeTransport()
+    scope.launch { logout() }
+}
+
 private fun SavedStateHandle.writeRootUiState(value: RootUiState) {
     this[ROOT_SELECTED_KEY] = value.selectedKey
     this[ROOT_DESTINATION] = value.destination.name
@@ -62,6 +94,15 @@ class AppViewModel @Inject constructor(
     private val authRepository: AuthSessionRepository,
     private val preferencesRepository: UserPreferencesRepository,
     private val transport: NanobotTransport,
+    private val chatRepository: ChatRepository,
+    private val channelsRepository: ChannelsRepository,
+    private val appsRepository: AppsRepository,
+    private val skillsRepository: SkillsRepository,
+    private val automationsRepository: AutomationsRepository,
+    private val securityRepository: SecurityRepository,
+    private val workspacesRepository: WorkspacesRepository,
+    private val sidebarRepository: SidebarRepository,
+    private val settingsRepository: SettingsRepository,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val authState: StateFlow<AuthState> = authRepository.state
@@ -93,8 +134,30 @@ class AppViewModel @Inject constructor(
     fun authenticate(secret: String) = viewModelScope.launch { authRepository.authenticate(secret) }
     fun retry() = viewModelScope.launch { authRepository.retry() }
     fun logout() {
-        resetRootUiState()
-        viewModelScope.launch { authRepository.logout() }
+        scheduleLogoutCleanup(
+            scope = viewModelScope,
+            resetRootUiState = ::resetRootUiState,
+            resetRepositories = listOf(
+                // 先清理长生命周期 Repository，再注销认证，避免旧账号的异步响应在
+                // logout 之后重新写回 Chat/Sidebar/Settings 状态。
+                chatRepository::reset,
+                channelsRepository::reset,
+                sidebarRepository::reset,
+                // 这些 Repository 都是 Singleton，必须在 logout 时同步失效当前会话；
+                // 否则旧账号的在途请求可能在退出后重新填充对应页面。
+                appsRepository::reset,
+                skillsRepository::reset,
+                automationsRepository::reset,
+                securityRepository::reset,
+                workspacesRepository::reset,
+                settingsRepository::reset,
+            ),
+            // Logout 会改变认证主体；除了关闭连接，还必须清掉旧账号的 chat attach
+            // 登记，避免新账号建立 WebSocket 时自动恢复旧账号的会话。
+            clearAttachments = transport::clearAttachments,
+            closeTransport = transport::close,
+            logout = authRepository::logout,
+        )
     }
     fun reconnect() = transport.resume()
     fun toggleTheme() = viewModelScope.launch {
