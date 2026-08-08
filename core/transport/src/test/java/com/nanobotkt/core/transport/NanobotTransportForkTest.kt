@@ -76,9 +76,31 @@ class NanobotTransportForkTest {
         assertEquals(7, payload.getValue("before_user_index").jsonPrimitive.int)
         assertEquals("Fork title", payload.getValue("title").jsonPrimitive.content)
 
+        // ready 只是握手事件，fork 请求必须等待对应的 attached 响应。
         serverSocket.get()!!.send(
-            """{"event":"ready","chat_id":"forked-chat","client_id":"server"}""",
+            """{"event":"ready","chat_id":"default-chat","client_id":"server"}""",
         )
+        assertNull(withTimeoutOrNull(100) { request.await() })
+        serverSocket.get()!!.send("""{"event":"attached","chat_id":"forked-chat"}""")
+        assertEquals("forked-chat", withTimeout(2_000) { request.await() })
+    }
+
+    @Test
+    fun `known attach event does not complete pending fork request`() = runBlocking {
+        connectWebSocket()
+        transport.attach("existing-chat")
+        assertEquals("attach", receiveFrame().getValue("type").jsonPrimitive.content)
+
+        val request = async { transport.forkChat("source-chat", beforeUserIndex = 0) }
+        val payload = receiveFrame()
+        assertEquals("fork_chat", payload.getValue("type").jsonPrimitive.content)
+
+        // 普通会话 attach 的回执与 fork 回执共用 attached 事件名；已知 chat id
+        // 必须被忽略，避免错误完成 pending fork。
+        serverSocket.get()!!.send("""{"event":"attached","chat_id":"existing-chat"}""")
+        assertNull(withTimeoutOrNull(200) { request.await() })
+
+        serverSocket.get()!!.send("""{"event":"attached","chat_id":"forked-chat"}""")
         assertEquals("forked-chat", withTimeout(2_000) { request.await() })
     }
 
@@ -147,6 +169,9 @@ class NanobotTransportForkTest {
             transport.state.first { it.status == TransportStatus.OPEN }
         }
     }
+
+    private suspend fun receiveFrame() =
+        json.parseToJsonElement(withTimeout(2_000) { receivedFrames.receive() }).jsonObject
 
     private data class TestCredentials(
         val url: String,

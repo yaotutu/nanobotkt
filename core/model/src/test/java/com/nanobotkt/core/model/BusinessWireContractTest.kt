@@ -87,10 +87,20 @@ class BusinessWireContractTest {
                 "name": "Daily summary",
                 "enabled": true,
                 "delete_after_run": false,
+                "created_at_ms": 1785980000000,
+                "updated_at_ms": 1785981000000,
+                "kind": "scheduled",
                 "schedule": {"kind": "cron", "expr": "0 9 * * *", "tz": "Asia/Shanghai"},
-                "payload": {"message": "Summarize"},
-                "state": {"next_run_at_ms": 1785987600000, "pending": false},
-                "origin": {"session_key": "webui:chat-1", "channel": "webui", "chat_id": "chat-1"}
+                "payload": {"message": "Summarize", "kind": "message", "command": null},
+                "state": {
+                  "next_run_at_ms": 1785987600000,
+                  "last_run_at_ms": 1785987000000,
+                  "last_status": "ok",
+                  "last_error": null,
+                  "pending": false,
+                  "run_history": [{"run_at_ms": 1785987000000, "status": "ok", "duration_ms": 420}]
+                },
+                "origin": {"session_key": "webui:chat-1", "channel": "websocket", "chat_id": "chat-1", "title": "Chat", "preview": "Summarize"}
               }]
             }""",
         )
@@ -98,6 +108,13 @@ class BusinessWireContractTest {
         assertEquals("0 9 * * *", job.schedule.expr)
         assertEquals("Asia/Shanghai", job.schedule.tz)
         assertNull(job.schedule.atMs)
+        assertEquals("Summarize", job.payload.message)
+        assertEquals("message", job.payload.kind)
+        assertEquals(1785987000000, job.state.lastRunAtMs)
+        assertEquals("ok", job.state.lastStatus)
+        assertEquals(420L, job.state.runHistory?.single()?.durationMs)
+        assertEquals(1785980000000, job.createdAtMs)
+        assertEquals("websocket", job.origin?.channel)
         assertEquals("webui:chat-1", job.origin?.sessionKey)
 
         val pairing = json.decodeFromString<PairingPayload>(
@@ -127,6 +144,7 @@ class BusinessWireContractTest {
                 "enabled": true,
                 "configured": true,
                 "runtime_status": "running",
+                "error": "Channel configuration could not be inspected.",
                 "setup": {
                   "official_url": "https://example.invalid/docs",
                   "fields": [{
@@ -142,6 +160,10 @@ class BusinessWireContractTest {
         )
         assertTrue(channels.requiresRestart == true)
         assertEquals("bot_token", channels.features.single().setup?.fields?.single()?.field)
+        assertEquals(
+            "Channel configuration could not be inspected.",
+            channels.features.single().error,
+        )
 
         val settings = json.decodeFromString<SettingsPayload>(
             """{

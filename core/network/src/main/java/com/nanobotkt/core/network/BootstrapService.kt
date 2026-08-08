@@ -8,7 +8,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
-import java.net.SocketTimeoutException
+import java.io.InterruptedIOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,7 +41,11 @@ class BootstrapService @Inject constructor(
                 return@withContext payload
             }
         } catch (error: GatewayException) { throw error }
-        catch (error: SocketTimeoutException) { throw GatewayException.Timeout(error) }
+        catch (error: InterruptedIOException) {
+            // OkHttp 的超时可能表现为 SocketTimeoutException 或其他 InterruptedIOException；
+            // 两者都属于请求超时，必须与 GatewayApiClient 保持一致的错误语义。
+            throw GatewayException.Timeout(error)
+        }
         catch (error: IOException) { throw GatewayException.Network(error) }
     }
 

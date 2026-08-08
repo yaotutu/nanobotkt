@@ -50,6 +50,23 @@ data class UiFileEdit(
 )
 @Serializable data class AgentUiBlob(val kind: String, val data: JsonElement? = null)
 
+/**
+ * 服务端文件预览接口返回的内容。
+ *
+ * `content` 可能因为服务端大小限制而被截断，调用方必须同时检查
+ * `truncated`，不能把截断内容误认为完整文件。
+ */
+@Serializable
+data class FilePreviewPayload(
+    val path: String,
+    @SerialName("display_path") val displayPath: String,
+    @SerialName("project_path") val projectPath: String,
+    val language: String,
+    val content: String,
+    val size: Long,
+    val truncated: Boolean,
+)
+
 @Serializable
 data class UiMessage(
     val id: String,

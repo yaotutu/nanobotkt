@@ -7,6 +7,7 @@ import com.nanobotkt.core.model.UiCliAppAttachment
 import com.nanobotkt.core.model.UiMcpPresetAttachment
 import com.nanobotkt.core.model.WorkspaceScope
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -87,6 +88,18 @@ class NanobotTransport @Inject constructor(
         outbound.clear()
         active?.close(1000, "client_closed")
         mutableState.value = mutableState.value.copy(status = TransportStatus.CLOSED)
+    }
+
+    /**
+     * 清除当前认证会话登记的聊天连接。
+     *
+     * `knownChats` 不能在普通断线或后台切换时清空，因为这些场景需要在同一
+     * 认证会话恢复 WebSocket 后重新发送 Attach。Logout 则不同：认证主体已经
+     * 发生变化，旧账号的 chat id 不得被新账号的连接再次 attach，因此由
+     * AppViewModel 在注销前显式清理这份会话级登记。
+     */
+    @Synchronized fun clearAttachments() {
+        knownChats.clear()
     }
 
     @Synchronized fun onBackground() {
@@ -299,7 +312,10 @@ class NanobotTransport @Inject constructor(
                 if (event.requestId == null) pendingTranscriptions.values.forEach { it.completeExceptionally(error) } else pendingTranscriptions.remove(event.requestId)?.completeExceptionally(error)
             }
             is InboundEvent.MessageAccepted -> acceptMessage(event.chatId, event.turnId)
-            is InboundEvent.Ready -> resolveNewChat(event.chatId)
+            // `ready` 表示 WebSocket 握手完成，并携带服务端分配的默认会话；
+            // 它不是 `new_chat`/`fork_chat` 的响应。只有 `attached` 才能完成
+            // 当前等待中的新会话请求，避免握手期间误返回默认 chat id。
+            is InboundEvent.Ready -> mutableEvents.tryEmit(event)
             is InboundEvent.Attached -> resolveNewChat(event.chatId)
             is InboundEvent.Error -> {
                 val chatId = event.chatId
@@ -322,14 +338,49 @@ class NanobotTransport @Inject constructor(
             is InboundEvent.Delta -> { event.turnId?.let { acceptMessage(event.chatId, it) }; mutableEvents.tryEmit(event) }
             is InboundEvent.ReasoningDelta -> { event.turnId?.let { acceptMessage(event.chatId, it) }; mutableEvents.tryEmit(event) }
             is InboundEvent.StreamEnd -> { event.turnId?.let { acceptMessage(event.chatId, it) }; mutableEvents.tryEmit(event) }
-            is InboundEvent.GoalStatus -> { if (event.status == "running") acceptFirstForChat(event.chatId, startsNewRun = true); mutableEvents.tryEmit(event) }
+            is InboundEvent.GoalStatus -> {
+                if (event.status == "running") {
+                    // 新协议带有 turn_id 时必须精确匹配；旧服务端未提供 turn_id 时，
+                    // 只有该会话恰好存在一个待确认的新回合，才允许安全回退。
+                    val turnId = event.turnId
+                    if (turnId != null) {
+                        acceptMessage(event.chatId, turnId)
+                    } else {
+                        acceptUnambiguousForChat(event.chatId, startsNewRun = true)
+                    }
+                }
+                mutableEvents.tryEmit(event)
+            }
             else -> mutableEvents.tryEmit(event)
         }
     }
 
-    private fun resolveNewChat(chatId: String) { synchronized(this) { knownChats += chatId; pendingNewChat?.complete(chatId); pendingNewChat = null; removeQueued("new-chat") } }
+    private fun resolveNewChat(chatId: String) {
+        synchronized(this) {
+            // 普通 attach 的回执也使用 attached 事件。若当前正在等待 new_chat/fork_chat，
+            // 已知会话的回执只能属于普通 attach，不能误完成“创建新会话”的 deferred；
+            // 否则真正的新会话回执到达时，调用方已经停止等待并丢失新 chat id。
+            if (pendingNewChat != null && chatId in knownChats) return
+            knownChats += chatId
+            pendingNewChat?.complete(chatId)
+            pendingNewChat = null
+            removeQueued("new-chat")
+        }
+    }
     private fun acceptMessage(chatId: String, turnId: String) { pendingMessages.remove(messageKey(chatId, turnId))?.accepted?.complete(Unit); removeQueued("message:" + messageKey(chatId, turnId)) }
-    private fun acceptFirstForChat(chatId: String, startsNewRun: Boolean? = null) { pendingMessages.entries.firstOrNull { it.value.chatId == chatId && (startsNewRun == null || it.value.startsNewRun == startsNewRun) }?.let { pendingMessages.remove(it.key)?.accepted?.complete(Unit); removeQueued("message:" + it.key) } }
+    private fun acceptUnambiguousForChat(chatId: String, startsNewRun: Boolean? = null) {
+        val candidates = pendingMessages.entries.filter {
+            it.value.chatId == chatId && (startsNewRun == null || it.value.startsNewRun == startsNewRun)
+        }
+        // 没有 turn_id 且同时存在多个候选时，宁可等待带 turn_id 的事件，
+        // 也不能把服务端状态错误归属给另一条消息。
+        if (candidates.size == 1) {
+            candidates.single().let {
+                pendingMessages.remove(it.key)?.accepted?.complete(Unit)
+                removeQueued("message:" + it.key)
+            }
+        }
+    }
 
     @Synchronized private fun reconnect(reason: String) {
         val active = socket
@@ -345,13 +396,57 @@ class NanobotTransport @Inject constructor(
         val delayMs = min(30_000L, 1_000L shl min(reconnectAttempt, 5))
         reconnectAttempt += 1
         reconnectJob = scope.launch {
-            delay(delayMs)
-            val url = credentials.reauthenticateWebSocketUrl() ?: credentials.currentWebSocketUrl()
-            synchronized(this@NanobotTransport) { reconnectJob = null; if (url != null && socket == null && !intentionallyClosed && networkAvailable) open(url, reconnecting = true) }
+            var retryAfterFailure = false
+            try {
+                delay(delayMs)
+                val url = try {
+                    // 重连必须重新获取认证后的 WebSocket 地址，不能在刷新失败时
+                    // 静默回退到可能已经过期的旧地址。
+                    credentials.reauthenticateWebSocketUrl()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    retryAfterFailure = true
+                    synchronized(this@NanobotTransport) {
+                        mutableState.value = mutableState.value.copy(
+                            status = TransportStatus.RECONNECTING,
+                            error = error.message ?: "reauthentication_failed",
+                        )
+                    }
+                    null
+                }
+                synchronized(this@NanobotTransport) {
+                    if (url != null && socket == null && !intentionallyClosed && networkAvailable) {
+                        open(url, reconnecting = true)
+                    } else if (url == null && !intentionallyClosed && networkAvailable) {
+                        retryAfterFailure = true
+                    }
+                }
+            } finally {
+                // 先释放当前 Job 引用，再安排下一次退避重试；否则在 finally 内调用
+                // scheduleReconnect() 会被自身的非空引用拦截，认证失败后就不再恢复。
+                synchronized(this@NanobotTransport) {
+                    reconnectJob = null
+                    if (retryAfterFailure && !intentionallyClosed && networkAvailable && socket == null) {
+                        scheduleReconnect()
+                    }
+                }
+            }
         }
     }
 
     private fun rejectPendingOnDisconnect(messageTooBig: Boolean) {
+        // 断线时 pending deferred 会立即向调用方报告失败；对应的非幂等 frame
+        // 不能留在 outbound 队列，否则重连 flushQueue() 会把“已经失败且无人再等待”
+        // 的 new_chat/message/system/transcription 重新发送到服务端，造成无主副作用。
+        val queuedPendingIds = buildSet {
+            if (pendingNewChat != null) add("new-chat")
+            pendingMessages.keys.forEach { add("message:$it") }
+            pendingSystemCommands.keys.forEach { add("system:$it") }
+            pendingTranscriptions.keys.forEach { add("transcription:$it") }
+        }
+        outbound.removeAll { it.id in queuedPendingIds }
+
         pendingNewChat?.completeExceptionally(IllegalStateException(if (messageTooBig) "message_too_big" else "connection_closed")); pendingNewChat = null
         pendingMessages.values.forEach { pending ->
             val message = if (messageTooBig) "message_too_big" else if (pending.sent) "socket_delivery_unknown" else "connection_closed"

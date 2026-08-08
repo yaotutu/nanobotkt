@@ -34,7 +34,9 @@ class GatewayApiClient @Inject constructor(
         val base = authContext.baseUrl.trimEnd('/')
         val urlBuilder = (base + path).toHttpUrl().newBuilder()
         query.forEach { (key, value) ->
-            if (value != null && value.toString().isNotEmpty()) {
+            // null 表示调用方没有提供该字段；空字符串则是有意清空服务端值，
+            // 必须保留为 `key=`，否则逐字段 patch 无法清除已有配置。
+            if (value != null) {
                 urlBuilder.addQueryParameter(key, value.toString())
             }
         }

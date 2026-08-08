@@ -74,6 +74,28 @@ class ChatWireContractTest {
     }
 
     @Test
+    fun `file preview payload preserves display metadata and truncation`() {
+        val payload = json.decodeFromString<FilePreviewPayload>(
+            """{
+              "path": "/workspace/src/main.kt",
+              "display_path": "src/main.kt",
+              "project_path": "/workspace",
+              "language": "kotlin",
+              "content": "fun main() {}",
+              "size": 13,
+              "truncated": true
+            }""",
+        )
+
+        assertEquals("/workspace/src/main.kt", payload.path)
+        assertEquals("src/main.kt", payload.displayPath)
+        assertEquals("/workspace", payload.projectPath)
+        assertEquals("kotlin", payload.language)
+        assertEquals(13L, payload.size)
+        assertTrue(payload.truncated)
+    }
+
+    @Test
     fun `file edit event preserves diff metadata`() {
         val event = json.decodeFromString<InboundEvent>(
             """{

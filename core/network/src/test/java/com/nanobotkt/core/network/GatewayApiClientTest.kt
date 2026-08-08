@@ -1,20 +1,24 @@
 ﻿package com.nanobotkt.core.network
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class GatewayApiClientTest {
@@ -40,7 +44,7 @@ class GatewayApiClientTest {
     }
 
     @Test
-    fun `get adds bearer accept and encoded nonempty query parameters`() = runBlocking {
+    fun `get adds bearer accept and preserves explicit empty query parameters`() = runBlocking {
         server.enqueue(jsonResponse("""{"value":"ok"}"""))
         val client = client()
 
@@ -55,7 +59,7 @@ class GatewayApiClientTest {
         assertEquals("application/json", request.getHeader("Accept"))
         assertEquals("1", request.requestUrl?.queryParameter("a"))
         assertEquals("a b&c", request.requestUrl?.queryParameter("query"))
-        assertNull(request.requestUrl?.queryParameter("blank"))
+        assertEquals("", request.requestUrl?.queryParameter("blank"))
         assertNull(request.requestUrl?.queryParameter("none"))
     }
 
@@ -100,6 +104,31 @@ class GatewayApiClientTest {
 
         assertThrows(GatewayException.AuthenticationRequired::class.java) {
             runBlocking { client().get<TestPayload>("/api/items") }
+        }
+    }
+
+    @Test
+    fun `forbidden response maps to authentication required`() {
+        // 403 与 401 都表示当前凭据不能继续访问，必须保持统一的认证错误语义。
+        server.enqueue(MockResponse().setResponseCode(403).setBody("forbidden"))
+
+        assertThrows(GatewayException.AuthenticationRequired::class.java) {
+            runBlocking { client().get<TestPayload>("/api/items") }
+        }
+    }
+
+    @Test
+    fun `rate limit and server errors preserve http status`() {
+        // 429/5xx 属于服务端或限流错误，不应被误判成认证失败，方便上层决定重试策略。
+        listOf(429, 500, 503).forEach { status ->
+            server.enqueue(MockResponse().setResponseCode(status).setBody("status-$status"))
+
+            val error = assertThrows(GatewayException.Http::class.java) {
+                runBlocking { client().get<TestPayload>("/api/items") }
+            }
+
+            assertEquals(status, error.status)
+            assertTrue(error.message.orEmpty().contains("status-$status"))
         }
     }
 
@@ -153,6 +182,39 @@ class GatewayApiClientTest {
         assertThrows(GatewayException.Timeout::class.java) {
             runBlocking { GatewayApiClient(shortClient, json, auth).get<TestPayload>("/api/slow") }
         }
+    }
+
+    @Test
+    fun `ordinary io failure maps to network`() {
+        // 普通连接失败不是超时；必须保留 Network 语义，避免上层错误地进入超时提示或重试分支。
+        val failingClient = OkHttpClient.Builder()
+            .addInterceptor(Interceptor { throw IOException("connection reset") })
+            .build()
+
+        val error = assertThrows(GatewayException.Network::class.java) {
+            runBlocking {
+                GatewayApiClient(failingClient, json, auth).get<TestPayload>("/api/items")
+            }
+        }
+
+        assertEquals("network_unavailable", error.message)
+    }
+
+    @Test
+    fun `coroutine cancellation is not mapped to gateway timeout or network`() {
+        // withTimeout 触发的是协程取消，不是 OkHttp 请求超时；取消必须原样向调用方传播。
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+
+        val error = assertThrows(CancellationException::class.java) {
+            runBlocking {
+                withTimeout(250) {
+                    client().get<TestPayload>("/api/slow")
+                }
+            }
+        }
+
+        assertNotEquals(GatewayException.Timeout::class.java, error::class.java)
+        assertNotEquals(GatewayException.Network::class.java, error::class.java)
     }
 
     private fun client(): GatewayApiClient = GatewayApiClient(OkHttpClient(), json, auth)

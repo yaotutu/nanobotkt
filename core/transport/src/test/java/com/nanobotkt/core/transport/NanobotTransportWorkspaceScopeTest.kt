@@ -7,6 +7,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonObject
@@ -19,6 +20,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicReference
@@ -68,7 +70,11 @@ class NanobotTransportWorkspaceScopeTest {
 
         val newChat = async { transport.newChat(scope) }
         assertWorkspaceScope(receiveFrame("new_chat").getValue("workspace_scope").jsonObject, scope)
-        serverSocket.get()!!.send("""{"event":"ready","chat_id":"chat-1","client_id":"server"}""")
+        // 握手 ready 携带的是默认会话，不能提前完成 new_chat 请求。
+        serverSocket.get()!!.send("""{"event":"ready","chat_id":"default-chat","client_id":"server"}""")
+        assertNull(withTimeoutOrNull(100) { newChat.await() })
+
+        serverSocket.get()!!.send("""{"event":"attached","chat_id":"chat-1"}""")
         assertEquals("chat-1", withTimeout(2_000) { newChat.await() })
 
         val message = transport.sendMessage(
