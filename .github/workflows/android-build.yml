@@ -38,7 +38,7 @@ jobs:
 
       # 4. 构建 Debug APK（app 模块 assembleDebug）
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --console=plain
+        run: sh gradlew :app:assembleDebug --console=plain
 
       # 5. 上传 APK 产物，可在 Actions 运行页面的 Artifacts 中下载
       - name: Upload debug APK artifact
