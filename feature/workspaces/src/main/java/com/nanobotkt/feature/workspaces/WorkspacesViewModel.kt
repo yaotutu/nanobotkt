@@ -1,4 +1,6 @@
-﻿package com.nanobotkt.feature.workspaces
+package com.nanobotkt.feature.workspaces
+
+import com.nanobotkt.core.model.DefaultAccessMode
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -8,5 +10,8 @@ import javax.inject.Inject
     val state = repository.state
     init { refresh() }
     fun refresh() = viewModelScope.launch { repository.refresh() }
+    fun updateDefaultAccessMode(mode: DefaultAccessMode) = viewModelScope.launch {
+        repository.updateDefaultAccessMode(mode)
+    }
     fun clearError() = repository.clearError()
 }
