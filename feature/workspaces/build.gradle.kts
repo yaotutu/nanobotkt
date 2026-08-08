@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
@@ -27,6 +27,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:workspace-contract"))
     implementation(project(":core:model"))
     implementation(project(":core:network"))
     implementation(project(":core:designsystem"))

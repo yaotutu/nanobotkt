@@ -27,12 +27,12 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:workspace-contract"))
     implementation(project(":core:model"))
     implementation(project(":core:network"))
     implementation(project(":core:transport"))
     implementation(project(":core:persistence"))
     implementation(project(":core:designsystem"))
-    implementation(project(":feature:workspaces"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

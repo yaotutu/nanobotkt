@@ -1,16 +1,17 @@
-package com.nanobotkt.feature.workspaces
+package com.nanobotkt.feature.workspaces.data
 
 import com.nanobotkt.core.model.DefaultAccessMode
 import com.nanobotkt.core.model.SettingsPayload
 import com.nanobotkt.core.model.WorkspacesPayload
 import com.nanobotkt.core.network.GatewayApiClient
+import com.nanobotkt.core.workspace.WorkspaceAccessProvider
+import java.util.concurrent.atomic.AtomicLong
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.concurrent.atomic.AtomicLong
-import javax.inject.Inject
-import javax.inject.Singleton
 
 interface WorkspacesRepository {
     val state: StateFlow<WorkspacesUiState>
@@ -34,9 +35,12 @@ data class WorkspacesUiState(
 @Singleton
 class DefaultWorkspacesRepository @Inject constructor(
     private val api: GatewayApiClient,
-) : WorkspacesRepository {
+) : WorkspacesRepository, WorkspaceAccessProvider {
     private val mutableState = MutableStateFlow(WorkspacesUiState())
     override val state: StateFlow<WorkspacesUiState> = mutableState.asStateFlow()
+    // 对外只暴露工作区访问快照，避免其他 feature 依赖本 feature 的 UI 状态模型。
+    private val mutableWorkspaces = MutableStateFlow<WorkspacesPayload?>(null)
+    override val workspaces: StateFlow<WorkspacesPayload?> = mutableWorkspaces.asStateFlow()
     private val sessionGeneration = AtomicLong(0L)
     private val refreshGeneration = AtomicLong(0L)
 
@@ -45,6 +49,7 @@ class DefaultWorkspacesRepository @Inject constructor(
         sessionGeneration.incrementAndGet()
         refreshGeneration.incrementAndGet()
         mutableState.value = WorkspacesUiState()
+        mutableWorkspaces.value = null
     }
 
     override suspend fun updateDefaultAccessMode(mode: DefaultAccessMode) {
@@ -93,6 +98,7 @@ class DefaultWorkspacesRepository @Inject constructor(
                     loading = false,
                     error = null,
                 )
+                mutableWorkspaces.value = payload
             }
         } catch (error: CancellationException) {
             if (sessionGeneration.get() == expectedSession && refreshGeneration.get() == generation) {

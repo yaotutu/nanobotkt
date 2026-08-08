@@ -1,4 +1,4 @@
-﻿pluginManagement {
+pluginManagement {
     repositories {
         google {
             content {
@@ -27,6 +27,7 @@ rootProject.name = "nanobotkt"
 include(
     ":app",
     ":core:model",
+    ":core:workspace-contract",
     ":core:network",
     ":core:transport",
     ":core:persistence",

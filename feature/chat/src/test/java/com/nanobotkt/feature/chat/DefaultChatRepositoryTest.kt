@@ -1,7 +1,6 @@
 package com.nanobotkt.feature.chat
 
 import com.nanobotkt.core.model.BootstrapResponse
-import com.nanobotkt.core.model.DefaultAccessMode
 import com.nanobotkt.core.model.BootstrapSnapshotProvider
 import com.nanobotkt.core.model.IngressLimitsProvider
 import com.nanobotkt.core.model.WorkspacesPayload
@@ -10,8 +9,11 @@ import com.nanobotkt.core.network.GatewayApiClient
 import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportCredentials
 import com.nanobotkt.core.transport.TransportStatus
-import com.nanobotkt.feature.workspaces.WorkspacesRepository
-import com.nanobotkt.feature.workspaces.WorkspacesUiState
+import com.nanobotkt.core.workspace.WorkspaceAccessProvider
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -35,10 +37,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 
 class DefaultChatRepositoryTest {
     private lateinit var server: MockWebServer
@@ -629,14 +627,9 @@ class DefaultChatRepositoryTest {
         bootstrapProvider = object : BootstrapSnapshotProvider {
             override fun currentBootstrap(): BootstrapResponse? = null
         },
-            workspacesRepository = object : WorkspacesRepository {
-                private val mutableState = MutableStateFlow(WorkspacesUiState())
-                override val state = mutableState
-                override fun reset() = Unit
+            workspaceAccessProvider = object : WorkspaceAccessProvider {
+                override val workspaces = MutableStateFlow<WorkspacesPayload?>(null)
                 override suspend fun refresh() = Unit
-                // 该 fake 只服务于聊天仓储测试，工作区默认权限更新不属于本测试范围。
-                override suspend fun updateDefaultAccessMode(mode: DefaultAccessMode) = Unit
-                override fun clearError() = Unit
             },
         )
         return currentRepository

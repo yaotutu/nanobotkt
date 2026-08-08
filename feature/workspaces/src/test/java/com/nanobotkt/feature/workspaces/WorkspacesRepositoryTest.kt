@@ -3,6 +3,11 @@ package com.nanobotkt.feature.workspaces
 import com.nanobotkt.core.model.DefaultAccessMode
 import com.nanobotkt.core.network.AuthContext
 import com.nanobotkt.core.network.GatewayApiClient
+import com.nanobotkt.feature.workspaces.data.DefaultWorkspacesRepository
+import com.nanobotkt.feature.workspaces.data.WorkspacesUiState
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -21,9 +26,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 
 class WorkspacesRepositoryTest {
     private lateinit var server: MockWebServer
@@ -52,6 +54,7 @@ class WorkspacesRepositoryTest {
 
         assertEquals("/workspace", repository.state.value.payload?.defaultScope?.projectPath)
         assertEquals("Workspace", repository.state.value.payload?.defaultScope?.projectName)
+        assertEquals(repository.state.value.payload, repository.workspaces.value)
         assertFalse(repository.state.value.loading)
         assertNull(repository.state.value.error)
     }
@@ -98,6 +101,7 @@ class WorkspacesRepositoryTest {
 
         repository.reset()
         assertEquals(WorkspacesUiState(), repository.state.value)
+        assertNull(repository.workspaces.value)
 
         // reset 后旧 refresh 仍可能完成网络和 JSON 解析，但不能把旧 workspace 快照写回新会话。
         releaseResponse.countDown()

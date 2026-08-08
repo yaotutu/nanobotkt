@@ -1,30 +1,29 @@
 package com.nanobotkt.feature.chat
 
-import kotlinx.coroutines.CancellationException
 import com.nanobotkt.core.model.AutomationsPayload
-import com.nanobotkt.core.model.FilePreviewPayload
 import com.nanobotkt.core.model.BootstrapSnapshotProvider
 import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.CliAppsPayload
+import com.nanobotkt.core.model.FilePreviewPayload
 import com.nanobotkt.core.model.InboundEvent
-import com.nanobotkt.core.model.McpPresetInfo
-import com.nanobotkt.core.model.ModelPresetInfo
-import com.nanobotkt.core.model.McpPresetsPayload
 import com.nanobotkt.core.model.IngressLimitsProvider
+import com.nanobotkt.core.model.McpPresetInfo
+import com.nanobotkt.core.model.McpPresetsPayload
+import com.nanobotkt.core.model.ModelPresetInfo
 import com.nanobotkt.core.model.OutboundMedia
-import com.nanobotkt.core.model.SlashCommand
-import com.nanobotkt.core.model.SkillSummary
+import com.nanobotkt.core.model.SessionAutomationJob
 import com.nanobotkt.core.model.SettingsPayload
+import com.nanobotkt.core.model.SkillSummary
 import com.nanobotkt.core.model.SkillsPayload
+import com.nanobotkt.core.model.SlashCommand
 import com.nanobotkt.core.model.SlashCommandsPayload
 import com.nanobotkt.core.model.UiCliAppAttachment
 import com.nanobotkt.core.model.UiMcpPresetAttachment
-import com.nanobotkt.core.model.WebUiIngressLimits
 import com.nanobotkt.core.model.UiMessage
+import com.nanobotkt.core.model.WebUiIngressLimits
 import com.nanobotkt.core.model.WebUiThreadPayload
 import com.nanobotkt.core.model.WorkspaceScope
 import com.nanobotkt.core.model.WorkspacesPayload
-import com.nanobotkt.core.model.SessionAutomationJob
 import com.nanobotkt.core.model.normalized
 import com.nanobotkt.core.network.GatewayApiClient
 import com.nanobotkt.core.network.GatewayException
@@ -32,7 +31,11 @@ import com.nanobotkt.core.transport.MessageSendResult
 import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportError
 import com.nanobotkt.core.transport.TransportStatus
-import com.nanobotkt.feature.workspaces.WorkspacesRepository
+import com.nanobotkt.core.workspace.WorkspaceAccessProvider
+import java.net.URLEncoder
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,9 +45,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import java.net.URLEncoder
-import javax.inject.Inject
-import javax.inject.Singleton
 
 interface ChatRepository {
     val state: StateFlow<ChatUiState>
@@ -121,7 +121,7 @@ class DefaultChatRepository @Inject constructor(
     private val transport: NanobotTransport,
     private val limitsProvider: IngressLimitsProvider,
     private val bootstrapProvider: BootstrapSnapshotProvider,
-    private val workspacesRepository: WorkspacesRepository,
+    private val workspaceAccessProvider: WorkspaceAccessProvider,
 ) : ChatRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableState = MutableStateFlow(ChatUiState())
@@ -141,8 +141,7 @@ class DefaultChatRepository @Inject constructor(
     init {
         scope.launch { refreshComposerCatalogs() }
         scope.launch {
-            workspacesRepository.state.collectLatest { workspaceState ->
-                val payload = workspaceState.payload
+            workspaceAccessProvider.workspaces.collectLatest { payload ->
                 val current = mutableState.value
                 mutableState.value = current.copy(
                     workspaces = payload,
@@ -154,7 +153,7 @@ class DefaultChatRepository @Inject constructor(
                 )
             }
         }
-        scope.launch { workspacesRepository.refresh() }
+        scope.launch { workspaceAccessProvider.refresh() }
         scope.launch { transport.events.collect(::handleEvent) }
         scope.launch { transport.errors.collect(::handleTransportError) }
         scope.launch {
@@ -879,7 +878,7 @@ class DefaultChatRepository @Inject constructor(
         if (!relevant) return
         if (error is TransportError.WorkspaceScopeRejected) {
             mutableState.value = mutableState.value.copy(error = "workspace_scope_rejected")
-            scope.launch { workspacesRepository.refresh() }
+            scope.launch { workspaceAccessProvider.refresh() }
         } else {
             mutableState.value = mutableState.value.copy(error = error.toString())
         }

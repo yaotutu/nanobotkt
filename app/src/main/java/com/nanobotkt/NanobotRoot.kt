@@ -114,7 +114,7 @@ import com.nanobotkt.feature.settings.SETTINGS_SECTION_MODELS
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
 import com.nanobotkt.feature.settings.SettingsScreen
 import com.nanobotkt.feature.skills.SkillsScreen
-import com.nanobotkt.feature.workspaces.WorkspacesScreen
+import com.nanobotkt.feature.workspaces.ui.WorkspacesScreen
 import kotlinx.coroutines.launch
 
 @Composable

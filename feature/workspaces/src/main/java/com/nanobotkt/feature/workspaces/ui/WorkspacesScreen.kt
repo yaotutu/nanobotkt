@@ -1,4 +1,4 @@
-package com.nanobotkt.feature.workspaces
+package com.nanobotkt.feature.workspaces.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

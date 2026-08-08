@@ -21,7 +21,7 @@ import com.nanobotkt.feature.skills.SkillsRepository
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
 import com.nanobotkt.feature.settings.SettingsRepository
 import com.nanobotkt.feature.sidebar.SidebarRepository
-import com.nanobotkt.feature.workspaces.WorkspacesRepository
+import com.nanobotkt.feature.workspaces.data.WorkspacesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
