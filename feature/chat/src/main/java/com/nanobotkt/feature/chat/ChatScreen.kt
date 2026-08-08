@@ -59,6 +59,7 @@ import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.Toc
@@ -134,6 +135,7 @@ fun ChatScreen(
     onOpenDrawer: () -> Unit,
     onOpenModelSettings: () -> Unit,
     onToggleTheme: () -> Unit = {},
+    onOpenConversationList: () -> Unit = {},
     onSessionCreated: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -307,6 +309,7 @@ fun ChatScreen(
                 }
                 HeroTopBar(
                     onOpenDrawer = onOpenDrawer,
+                    onOpenConversationList = onOpenConversationList,
                     onToggleTheme = onToggleTheme,
                     dark = dark,
                     modifier = Modifier.align(Alignment.TopCenter),
@@ -361,6 +364,7 @@ fun ChatScreen(
                     hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
                     hasSessionInfo = state.sessionKey != null,
                     onOpenDrawer = onOpenDrawer,
+                    onOpenConversationList = onOpenConversationList,
                     onOpenPromptNavigator = { promptNavigatorOpen = true },
                     onOpenSessionInfo = { sessionInfoOpen = true },
                     onToggleTheme = onToggleTheme,
@@ -398,6 +402,7 @@ fun ChatScreen(
 @Composable
 private fun HeroTopBar(
     onOpenDrawer: () -> Unit,
+    onOpenConversationList: () -> Unit,
     onToggleTheme: () -> Unit,
     dark: Boolean,
     modifier: Modifier = Modifier,
@@ -434,6 +439,17 @@ private fun HeroTopBar(
                 tint = iconTint,
             )
         }
+        IconButton(
+            onClick = onOpenConversationList,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                Icons.Rounded.ChatBubbleOutline,
+                stringResource(R.string.open_conversation_list),
+                modifier = Modifier.size(17.dp),
+                tint = iconTint,
+            )
+        }
     }
 }
 
@@ -443,6 +459,7 @@ private fun ConversationTopBar(
     hasPromptNavigator: Boolean,
     hasSessionInfo: Boolean,
     onOpenDrawer: () -> Unit,
+    onOpenConversationList: () -> Unit,
     onOpenPromptNavigator: () -> Unit,
     onOpenSessionInfo: () -> Unit,
     onToggleTheme: () -> Unit,
@@ -494,6 +511,14 @@ private fun ConversationTopBar(
             Icon(
                 Icons.Rounded.DarkMode,
                 contentDescription = "Toggle theme",
+                modifier = Modifier.size(17.dp),
+                tint = iconTint,
+            )
+        }
+        IconButton(onClick = onOpenConversationList, modifier = Modifier.size(36.dp)) {
+            Icon(
+                Icons.Rounded.ChatBubbleOutline,
+                stringResource(R.string.open_conversation_list),
                 modifier = Modifier.size(17.dp),
                 tint = iconTint,
             )

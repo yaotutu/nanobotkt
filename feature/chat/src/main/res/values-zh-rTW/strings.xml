@@ -1,6 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="open_navigation">Open navigation</string>
+    <string name="open_conversation_list">開啟會話列表</string>
+    <string name="conversation_list_title">會話</string>
+    <string name="conversation_search_hint">搜尋會話</string>
+    <string name="clear_search">清除搜尋</string>
+    <string name="conversation_pinned_section">置頂會話</string>
+    <string name="conversation_recent_section">最近會話</string>
+    <string name="conversation_empty">還沒有會話</string>
+    <string name="conversation_no_results">沒有符合的會話</string>
+    <string name="conversation_new_topic">建立新會話</string>
+    <string name="topic_actions">對話操作</string>
+    <string name="pin">釘選</string>
+    <string name="unpin">取消釘選</string>
+    <string name="rename">重新命名</string>
+    <string name="archive">封存</string>
+    <string name="delete">刪除</string>
+    <string name="delete_topic">刪除對話？</string>
+    <string name="delete_topic_confirmation">確定刪除「%1$s」嗎？此操作無法復原。</string>
+    <string name="rename_topic">重新命名對話</string>
+    <string name="save">儲存</string>
+    <string name="conversation_back">返回聊天</string>
     <string name="refresh">Refresh</string>
     <string name="empty_title">No topics yet</string>
     <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>

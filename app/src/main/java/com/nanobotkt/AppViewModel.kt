@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-internal enum class AppDestination { CHAT, WORKSPACES, APPS, SKILLS, AUTOMATIONS, CHANNELS, SECURITY, SETTINGS }
+internal enum class AppDestination { CHAT, CONVERSATIONS, WORKSPACES, APPS, SKILLS, AUTOMATIONS, CHANNELS, SECURITY, SETTINGS }
 
 internal data class RootUiState(
     val selectedKey: String? = null,

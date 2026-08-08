@@ -102,6 +102,8 @@ import com.nanobotkt.feature.auth.AuthScreen
 import com.nanobotkt.feature.auth.AuthState
 import com.nanobotkt.feature.chat.ChatScreen
 import com.nanobotkt.feature.chat.ChatViewModel
+import com.nanobotkt.feature.chat.ConversationListItem
+import com.nanobotkt.feature.chat.ConversationListScreen
 import com.nanobotkt.feature.sidebar.SidebarUiState
 import com.nanobotkt.feature.sidebar.SidebarViewModel
 import com.nanobotkt.feature.apps.AppsScreen
@@ -215,6 +217,18 @@ private fun ReadyRoot(
         }
     }
     val selected = visibleSessions.firstOrNull { it.key == selectedKey }
+    // 会话页只接收已经过 Sidebar 归档过滤和标题覆盖处理后的 UI 数据，避免在二级页面
+    // 再次读取或修改会话仓库，从而继续复用现有的选择、刷新和竞态保护。
+    val conversationItems = remember(visibleSessions, sidebar.sidebar) {
+        visibleSessions.map { session ->
+            ConversationListItem(
+                key = session.key,
+                title = session.displayTitle(sidebar),
+                preview = session.preview,
+                pinned = session.key in sidebar.sidebar.pinnedKeys,
+            )
+        }
+    }
     LaunchedEffect(
         selected?.key,
         selected?.modelPreset,
@@ -291,6 +305,7 @@ private fun ReadyRoot(
                 viewModel = chatViewModel,
                 title = selected?.displayTitle(sidebar) ?: stringResource(R.string.new_topic),
                 onOpenDrawer = { scope.launch { drawerState.open() } },
+                onOpenConversationList = { appViewModel.navigate(AppDestination.CONVERSATIONS) },
                 onToggleTheme = appViewModel::toggleTheme,
                 onOpenModelSettings = {
                     appViewModel.openSettings(SETTINGS_SECTION_MODELS)
@@ -304,6 +319,24 @@ private fun ReadyRoot(
                         sidebarViewModel.refresh()
                     }
                 },
+            )
+            AppDestination.CONVERSATIONS -> ConversationListScreen(
+                items = conversationItems,
+                selectedKey = selectedKey,
+                onBack = { appViewModel.navigate(AppDestination.CHAT) },
+                onSelect = { item ->
+                    appViewModel.selectSession(item.key)
+                    appViewModel.navigate(AppDestination.CHAT)
+                },
+                onNewTopic = {
+                    appViewModel.beginNewTopic()
+                    chatViewModel.startNewTopic()
+                    appViewModel.navigate(AppDestination.CHAT)
+                },
+                onTogglePinned = sidebarViewModel::togglePinned,
+                onRename = { item, title -> sidebarViewModel.rename(item.key, title) },
+                onArchive = sidebarViewModel::toggleArchived,
+                onDelete = { item -> sidebarViewModel.delete(item.key) },
             )
             AppDestination.WORKSPACES -> WorkspacesScreen(onBack = { appViewModel.navigate(AppDestination.CHAT) })
             AppDestination.APPS -> AppsScreen(onBack = { appViewModel.navigate(AppDestination.CHAT) })

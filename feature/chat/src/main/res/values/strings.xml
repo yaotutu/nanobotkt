@@ -1,6 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="open_navigation">Open navigation</string>
+    <string name="open_conversation_list">Open conversations</string>
+    <string name="conversation_list_title">Conversations</string>
+    <string name="conversation_search_hint">Search conversations</string>
+    <string name="clear_search">Clear search</string>
+    <string name="conversation_pinned_section">Pinned</string>
+    <string name="conversation_recent_section">Recent</string>
+    <string name="conversation_empty">No conversations yet.</string>
+    <string name="conversation_no_results">No matching conversations.</string>
+    <string name="conversation_new_topic">New topic</string>
+    <string name="topic_actions">Conversation actions</string>
+    <string name="pin">Pin</string>
+    <string name="unpin">Unpin</string>
+    <string name="rename">Rename</string>
+    <string name="archive">Archive</string>
+    <string name="delete">Delete</string>
+    <string name="delete_topic">Delete conversation?</string>
+    <string name="delete_topic_confirmation">Delete “%1$s”? This cannot be undone.</string>
+    <string name="rename_topic">Rename conversation</string>
+    <string name="save">Save</string>
+    <string name="conversation_back">Back to chat</string>
     <string name="refresh">Refresh</string>
     <string name="empty_title">Where should we start?</string>
     <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
