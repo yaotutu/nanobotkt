@@ -48,9 +48,9 @@ dependencies {
     ksp(libs.hilt.compiler)
     testImplementation(project(":core:testing"))
     testImplementation(libs.junit4)
+    testImplementation(libs.mockwebserver)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }
-
 
 
