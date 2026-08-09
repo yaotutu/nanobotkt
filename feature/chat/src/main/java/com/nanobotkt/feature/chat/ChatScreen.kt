@@ -1,9 +1,7 @@
 package com.nanobotkt.feature.chat
 
-import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,7 +9,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -37,7 +34,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -57,7 +53,6 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Menu
-import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
@@ -97,12 +92,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -110,11 +103,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.FilePreviewPayload
 import com.nanobotkt.core.model.McpPresetInfo
@@ -145,23 +138,13 @@ fun ChatScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val composer by viewModel.composer.collectAsStateWithLifecycle()
+    val spacing = NanobotThemeDefaults.spacing
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     val forkTitle = stringResource(R.string.fork_title, title)
     var quoteDraft by remember { mutableStateOf<String?>(null) }
     var promptNavigatorOpen by remember { mutableStateOf(false) }
     var sessionInfoOpen by remember { mutableStateOf(false) }
-    var microphoneGranted by remember {
-        mutableStateOf(
-            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
-        )
-    }
-    val microphonePermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        microphoneGranted = granted
-        if (!granted) viewModel.startVoiceRecording(permissionGranted = false)
-    }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(8)) {
         viewModel.addAttachments(it)
     }
@@ -276,30 +259,22 @@ fun ChatScreen(
                 imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
             onPickFiles = { filePicker.launch(arrayOf("*/*")) },
-            onVoiceStart = {
-                if (microphoneGranted) {
-                    viewModel.startVoiceRecording(permissionGranted = true)
-                } else {
-                    microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            },
-            onVoiceStop = viewModel::stopVoiceRecording,
+            onOpenConversationList = onOpenConversationList,
         )
     }
 
     Box(modifier = modifier.fillMaxSize()) {
         if (hero) {
-            val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            val heroBackground = if (dark) Color(0xFF101113) else Color.White
+            // 页面背景直接使用 Material 3 background，避免 Light/Dark 被旧黑白色覆盖。
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(heroBackground),
+                    .background(MaterialTheme.colorScheme.background),
             ) {
                 if (state.loading) {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center),
-                        color = if (dark) Color.White else Color(0xFF33343A),
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 } else {
                     EmptyChat(Modifier.fillMaxSize())
@@ -315,7 +290,6 @@ fun ChatScreen(
                     onOpenDrawer = onOpenDrawer,
                     onOpenConversationList = onOpenConversationList,
                     onToggleTheme = onToggleTheme,
-                    dark = dark,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
                 SnackbarHost(
@@ -323,21 +297,20 @@ fun ChatScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 184.dp),
+                        .padding(horizontal = spacing.md, vertical = 184.dp),
                 )
             }
         } else {
-            val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            val conversationBackground = if (dark) Color(0xFF101113) else Color.White
+            // 会话页与空页面共享同一背景角色，状态和内容层级通过 surface 角色区分。
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(conversationBackground),
+                    .background(MaterialTheme.colorScheme.background),
             ) {
                 if (state.loading) {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center),
-                        color = if (dark) Color.White else Color(0xFF33343A),
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 } else {
                     MessageList(
@@ -351,8 +324,8 @@ fun ChatScreen(
                         },
                         modifier = Modifier
                             .fillMaxSize()
-                            // 顶部工具栏悬浮在消息列表上方，列表需要同时避开工具栏和状态栏。
-                            .padding(top = 44.dp)
+                            // 顶部工具栏为 56dp，列表需同时避开工具栏和系统状态栏。
+                            .padding(top = 56.dp)
                             .statusBarsPadding(),
                         autoFollow = autoFollow,
                     )
@@ -372,7 +345,6 @@ fun ChatScreen(
                     onOpenPromptNavigator = { promptNavigatorOpen = true },
                     onOpenSessionInfo = { sessionInfoOpen = true },
                     onToggleTheme = onToggleTheme,
-                    dark = dark,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
                 SnackbarHost(
@@ -380,7 +352,7 @@ fun ChatScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 142.dp),
+                        .padding(horizontal = spacing.md, vertical = 142.dp),
                 )
             }
         }
@@ -408,16 +380,15 @@ private fun HeroTopBar(
     onOpenDrawer: () -> Unit,
     onOpenConversationList: () -> Unit,
     onToggleTheme: () -> Unit,
-    dark: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val iconTint = if (dark) Color(0xFFB8B8BA) else Color(0xFF777779)
+    val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .height(44.dp)
-            .padding(horizontal = 6.dp),
+            .height(56.dp)
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
@@ -467,18 +438,17 @@ private fun ConversationTopBar(
     onOpenPromptNavigator: () -> Unit,
     onOpenSessionInfo: () -> Unit,
     onToggleTheme: () -> Unit,
-    dark: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val iconTint = if (dark) Color(0xFFB8B8BA) else Color(0xFF777779)
-    val background = if (dark) Color(0xFF101113) else Color.White
+    val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+    val background = MaterialTheme.colorScheme.surface
     Row(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .height(44.dp)
+            .height(56.dp)
             .background(background)
-            .padding(start = 6.dp, end = 10.dp),
+            .padding(start = 4.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onOpenDrawer, modifier = Modifier.size(40.dp)) {
@@ -489,7 +459,11 @@ private fun ConversationTopBar(
                 tint = iconTint,
             )
         }
-        Text(text = "😊", modifier = Modifier.padding(start = 5.dp), fontSize = 12.sp)
+        Text(
+            text = "😊",
+            modifier = Modifier.padding(start = 4.dp),
+            style = MaterialTheme.typography.labelLarge,
+        )
         Spacer(Modifier.weight(1f))
         if (hasPromptNavigator) {
             IconButton(onClick = onOpenPromptNavigator, modifier = Modifier.size(36.dp)) {
@@ -531,22 +505,15 @@ private fun ConversationTopBar(
 }
 @Composable
 private fun EmptyChat(modifier: Modifier = Modifier) {
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     BoxWithConstraints(modifier = modifier) {
-        val titleSize = (maxWidth.value * 0.09f).coerceIn(28f, 36f)
         Text(
             text = stringResource(R.string.empty_title),
             modifier = Modifier.offset(
-                x = 14.dp,
+                x = 16.dp,
                 y = maxHeight * 0.394f,
             ),
-            color = if (dark) Color(0xFFF4F4F5) else Color(0xFF151515),
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = FontWeight.Normal,
-                fontSize = titleSize.sp,
-                lineHeight = (titleSize * 1.18f).sp,
-                letterSpacing = 0.sp,
-            ),
+            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.displaySmall,
             maxLines = 1,
         )
     }
@@ -572,8 +539,13 @@ private fun MessageList(
     LazyColumn(
         state = listState,
         modifier = modifier,
-        contentPadding = PaddingValues(start = 12.dp, top = 20.dp, end = 12.dp, bottom = 144.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(
+            start = NanobotThemeDefaults.spacing.sm,
+            top = NanobotThemeDefaults.spacing.lg,
+            end = NanobotThemeDefaults.spacing.sm,
+            bottom = 144.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(NanobotThemeDefaults.spacing.md),
     ) {
         if (state.hasMoreBefore) {
             item {
@@ -605,10 +577,11 @@ private fun MessageBubble(
     onFork: () -> Unit,
 ) {
     val user = message.role == "user"
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val textColor = if (dark) Color(0xFFF2F2F3) else Color(0xFF151517)
-    val mutedColor = if (dark) Color(0xFF9A9A9E) else Color(0xFF858589)
-    val userBubbleColor = if (dark) Color(0xFF202125) else Color(0xFFF7F7F7)
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    // 用户消息使用 primaryContainer，助手消息保持页面背景，阅读层级更接近 MD3 的 tonal surface。
+    val userBubbleColor = MaterialTheme.colorScheme.primaryContainer
+    val userTextColor = MaterialTheme.colorScheme.onPrimaryContainer
     val context = LocalContext.current
     val clipboard = remember(context) { context.getSystemService(ClipboardManager::class.java) }
     val copyText: (String) -> Boolean = { text ->
@@ -640,7 +613,7 @@ private fun MessageBubble(
                             onClick = {},
                             onLongClick = { copyText(message.content) },
                         ),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
                     color = userBubbleColor,
                     tonalElevation = 0.dp,
                     shadowElevation = 0.dp,
@@ -651,11 +624,8 @@ private fun MessageBubble(
                     ) {
                         Text(
                             text = message.content,
-                            color = textColor,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 16.sp,
-                                lineHeight = 24.sp,
-                            ),
+                            color = userTextColor,
+                            style = MaterialTheme.typography.bodyLarge,
                         )
                     }
                 }
@@ -702,10 +672,7 @@ private fun MessageBubble(
                         else -> "Thought"
                     },
                     color = mutedColor,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                    ),
+                    style = MaterialTheme.typography.bodyMedium,
                 )
                 Icon(
                     Icons.Rounded.ExpandMore,
@@ -729,10 +696,7 @@ private fun MessageBubble(
             Text(
                 text = message.content,
                 color = textColor,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 16.sp,
-                    lineHeight = 25.sp,
-                ),
+                style = MaterialTheme.typography.bodyLarge,
             )
         }
         message.toolEvents?.takeIf { it.isNotEmpty() }?.let { tools ->
@@ -755,7 +719,7 @@ private fun MessageBubble(
                     "${edit.path}  +${edit.added} -${edit.deleted}",
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFFFF5A2A),
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -809,7 +773,7 @@ private fun MessageBubble(
                         text = formatMessageLatency(it),
                         modifier = Modifier.padding(start = 8.dp),
                         color = mutedColor,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
             }
@@ -866,7 +830,7 @@ private fun FilePreviewDialog(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(
                             preview.content,
@@ -891,11 +855,6 @@ private fun formatMessageLatency(durationMs: Long): String {
 }
 
 
-/**
- * 输入框本身的语音按钮只负责“录音后转成文字”，不会绕过编辑流程直接发送消息。
- * 左侧的 VoiceRecordButton 与这里复用同一条真实的 Gateway 转写链路，但通过位置和无障碍文案区分两种入口：
- * 左侧是按住说话模式，输入框内是把语音插入当前草稿。
- */
 @Composable
 private fun ComposerTextField(
     state: ComposerUiState,
@@ -906,9 +865,6 @@ private fun ComposerTextField(
     mutedColor: Color,
     onTextChange: (String, Int) -> Unit,
     onSend: () -> Unit,
-    onVoiceStart: () -> Unit,
-    onVoiceStop: (cancelled: Boolean, maxReached: Boolean) -> Unit,
-    voiceEnabled: Boolean = true,
 ) {
     val hasDraft = state.text.isNotBlank() ||
         state.attachments.isNotEmpty() ||
@@ -926,9 +882,8 @@ private fun ComposerTextField(
             ),
             onValueChange = { value -> onTextChange(value.text, value.selection.end) },
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(end = (40f * scale).dp),
-            enabled = !state.voice.isRecording && !state.voice.isTranscribing && !state.sending,
+                .fillMaxWidth(),
+            enabled = !state.sending,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
                 color = textColor,
                 fontSize = (16f * scale).coerceAtLeast(14f).sp,
@@ -952,18 +907,6 @@ private fun ComposerTextField(
                     innerTextField()
                 }
             },
-        )
-        VoiceRecordButton(
-            recording = state.voice.isRecording,
-            enabled = voiceEnabled && !state.voice.isTranscribing && !state.sending,
-            onStart = onVoiceStart,
-            onStop = onVoiceStop,
-            descriptionOverride = stringResource(R.string.voice_to_text),
-            compact = true,
-            heroStyle = true,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .size((34f * scale).dp),
         )
     }
 }
@@ -1053,7 +996,8 @@ private fun ComposerActionButton(
             modifier = Modifier.size((44f * scale).dp),
             shape = CircleShape,
             color = if (showSendAction || stopButton) sendColor else controlColor,
-            shadowElevation = (2f * scale).dp,
+            tonalElevation = 2.dp,
+            shadowElevation = 0.dp,
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 when {
@@ -1301,7 +1245,7 @@ private fun ComposerMoreModelPage(
                     enabled = model.pendingPreset == null && !disabled,
                     modifier = Modifier.fillMaxWidth(),
                     color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -1414,7 +1358,7 @@ private fun ComposerMoreAccessOption(
         modifier = Modifier.fillMaxWidth(),
         enabled = enabled,
         color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(Modifier.padding(12.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge)
@@ -1477,8 +1421,7 @@ private fun HeroComposer(
     onRemoveAttachment: (Int) -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onVoiceStart: () -> Unit,
-    onVoiceStop: (cancelled: Boolean, maxReached: Boolean) -> Unit,
+    onOpenConversationList: () -> Unit,
 ) {
     val hasDraft = state.text.isNotBlank() || state.attachments.isNotEmpty() || !state.quotedContext.isNullOrBlank()
     val stopButton = active && !hasDraft
@@ -1494,16 +1437,20 @@ private fun HeroComposer(
         cliApps,
         mcpPresets,
     )
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val cardColor = if (dark) Color(0xFF1A1B1E) else Color(0xFFFAFAFA)
-    val controlColor = if (dark) Color(0xFF292A2E) else Color.White
-    val textColor = if (dark) Color(0xFFF4F4F5) else Color(0xFF171719)
-    val mutedColor = if (dark) Color(0xFFA8A8AB) else Color(0xFF949496)
-    val sendColor = when {
-        stopButton || (sendEnabled && hasDraft) -> if (dark) Color(0xFFE4E4E5) else Color(0xFF3C3C40)
-        else -> if (dark) Color(0xFF6F7074) else Color(0xFF929295)
+    val cardColor = MaterialTheme.colorScheme.surfaceContainer
+    val controlColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val sendColor = if (stopButton || (sendEnabled && hasDraft)) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
     }
-    val sendContentColor = if (dark && sendEnabled) Color(0xFF18191B) else Color.White
+    val sendContentColor = if (stopButton || (sendEnabled && hasDraft)) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -1541,15 +1488,14 @@ private fun HeroComposer(
                     }
                 }
             }
-            VoiceStatus(state.voice)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = (72f * scale).dp, max = (112f * scale).dp),
-                shape = RoundedCornerShape((30f * scale).dp),
+                shape = MaterialTheme.shapes.extraLarge,
                 color = cardColor,
-                tonalElevation = 0.dp,
-                shadowElevation = (4f * scale).dp,
+                tonalElevation = 2.dp,
+                shadowElevation = 0.dp,
             ) {
                 Row(
                     modifier = Modifier
@@ -1557,15 +1503,19 @@ private fun HeroComposer(
                         .padding(horizontal = (12f * scale).dp, vertical = (12f * scale).dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    VoiceRecordButton(
-                        recording = state.voice.isRecording,
-                        enabled = !active && !state.voice.isTranscribing && !state.sending,
-                        onStart = onVoiceStart,
-                        onStop = onVoiceStop,
-                        compact = true,
-                        heroStyle = true,
+                    // 语音入口已从 Composer 移除；这里复用顶部导航的会话列表动作，
+                    // 让新会话和已有会话都能从输入区直接回到会话列表。
+                    IconButton(
+                        onClick = onOpenConversationList,
                         modifier = Modifier.size((34f * scale).dp),
-                    )
+                    ) {
+                        Icon(
+                            Icons.Rounded.ChatBubbleOutline,
+                            contentDescription = stringResource(R.string.open_conversation_list),
+                            modifier = Modifier.size((17f * scale).dp),
+                            tint = mutedColor,
+                        )
+                    }
                     Spacer(Modifier.width((8f * scale).dp))
                     ComposerTextField(
                         state = state,
@@ -1576,9 +1526,6 @@ private fun HeroComposer(
                         mutedColor = mutedColor,
                         onTextChange = onTextChange,
                         onSend = onSend,
-                        onVoiceStart = onVoiceStart,
-                        onVoiceStop = onVoiceStop,
-                        voiceEnabled = !active,
                     )
                     Spacer(Modifier.width((8f * scale).dp))
                     ComposerActionButton(
@@ -1636,8 +1583,7 @@ private fun ConversationComposer(
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onVoiceStart: () -> Unit,
-    onVoiceStop: (cancelled: Boolean, maxReached: Boolean) -> Unit,
+    onOpenConversationList: () -> Unit,
 ) {
     val hasDraft = state.text.isNotBlank() || state.attachments.isNotEmpty() || !state.quotedContext.isNullOrBlank()
     val stopButton = active && !hasDraft
@@ -1653,16 +1599,20 @@ private fun ConversationComposer(
         cliApps,
         mcpPresets,
     )
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val cardColor = if (dark) Color(0xFF1A1B1E) else Color(0xFFFAFAFA)
-    val controlColor = if (dark) Color(0xFF292A2E) else Color.White
-    val textColor = if (dark) Color(0xFFF4F4F5) else Color(0xFF171719)
-    val mutedColor = if (dark) Color(0xFFA8A8AB) else Color(0xFF949496)
-    val sendColor = when {
-        stopButton || (sendEnabled && hasDraft) -> if (dark) Color(0xFFE4E4E5) else Color(0xFF3C3C40)
-        else -> if (dark) Color(0xFF6F7074) else Color(0xFF929295)
+    val cardColor = MaterialTheme.colorScheme.surfaceContainer
+    val controlColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val sendColor = if (stopButton || (sendEnabled && hasDraft)) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
     }
-    val sendContentColor = if (dark && sendEnabled) Color(0xFF18191B) else Color.White
+    val sendContentColor = if (stopButton || (sendEnabled && hasDraft)) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -1708,9 +1658,9 @@ private fun ConversationComposer(
             }
             state.quotedContext?.let { quote ->
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (dark) Color(0xFF242529) else Color.White,
-                    shadowElevation = 1.dp,
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 1.dp,
                 ) {
                     Row(
                         modifier = Modifier
@@ -1746,15 +1696,14 @@ private fun ConversationComposer(
                     }
                 }
             }
-            VoiceStatus(state.voice)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = (64f * scale).dp, max = (104f * scale).dp),
-                shape = RoundedCornerShape((28f * scale).dp),
+                shape = MaterialTheme.shapes.extraLarge,
                 color = cardColor,
-                tonalElevation = 0.dp,
-                shadowElevation = (3f * scale).dp,
+                tonalElevation = 2.dp,
+                shadowElevation = 0.dp,
             ) {
                 Row(
                     modifier = Modifier
@@ -1762,15 +1711,18 @@ private fun ConversationComposer(
                         .padding(horizontal = (12f * scale).dp, vertical = (10f * scale).dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    VoiceRecordButton(
-                        recording = state.voice.isRecording,
-                        enabled = !active && !state.voice.isTranscribing && !state.sending,
-                        onStart = onVoiceStart,
-                        onStop = onVoiceStop,
-                        compact = true,
-                        heroStyle = true,
+                    // 与顶部导航保持同一语义：该入口打开会话列表，而不是启动录音。
+                    IconButton(
+                        onClick = onOpenConversationList,
                         modifier = Modifier.size((34f * scale).dp),
-                    )
+                    ) {
+                        Icon(
+                            Icons.Rounded.ChatBubbleOutline,
+                            contentDescription = stringResource(R.string.open_conversation_list),
+                            modifier = Modifier.size((17f * scale).dp),
+                            tint = mutedColor,
+                        )
+                    }
                     Spacer(Modifier.width((8f * scale).dp))
                     ComposerTextField(
                         state = state,
@@ -1781,9 +1733,6 @@ private fun ConversationComposer(
                         mutedColor = mutedColor,
                         onTextChange = onTextChange,
                         onSend = onSend,
-                        onVoiceStart = onVoiceStart,
-                        onVoiceStop = onVoiceStop,
-                        voiceEnabled = !active,
                     )
                     Spacer(Modifier.width((8f * scale).dp))
                     ComposerActionButton(
@@ -1842,8 +1791,7 @@ private fun Composer(
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onVoiceStart: () -> Unit,
-    onVoiceStop: (cancelled: Boolean, maxReached: Boolean) -> Unit,
+    onOpenConversationList: () -> Unit,
 ) {
     if (isHero) {
         HeroComposer(
@@ -1869,8 +1817,7 @@ private fun Composer(
             onRemoveAttachment = onRemoveAttachment,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
-            onVoiceStart = onVoiceStart,
-            onVoiceStop = onVoiceStop,
+            onOpenConversationList = onOpenConversationList,
         )
     } else {
         ConversationComposer(
@@ -1898,8 +1845,7 @@ private fun Composer(
             onClearQuote = onClearQuote,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
-            onVoiceStart = onVoiceStart,
-            onVoiceStop = onVoiceStop,
+            onOpenConversationList = onOpenConversationList,
         )
     }
 }
@@ -1922,19 +1868,19 @@ private fun ModelPresetControl(
 
     Row(modifier, horizontalArrangement = Arrangement.End) {
         if (compact) {
-            val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
             val controlColor = if (heroStyle) {
-                if (dark) Color(0xFF292A2E) else Color.White
+                MaterialTheme.colorScheme.surfaceContainerHigh
             } else {
                 MaterialTheme.colorScheme.surface
             }
-            val labelColor = if (dark) Color(0xFFF4F4F5) else Color(0xFF171719)
+            val labelColor = MaterialTheme.colorScheme.onSurface
             Surface(
                 onClick = { if (options.isEmpty()) onOpenSettings() else open = true },
                 enabled = !disabled,
                 shape = CircleShape,
                 color = controlColor,
-                shadowElevation = if (heroStyle) 2.dp else 1.dp,
+                tonalElevation = if (heroStyle) 2.dp else 1.dp,
+                shadowElevation = 0.dp,
                 modifier = Modifier
                     .then(if (heroStyle) Modifier.fillMaxSize() else Modifier)
                     .semantics { contentDescription = model.displayLabel },
@@ -1952,14 +1898,14 @@ private fun ModelPresetControl(
                         Box(
                             modifier = Modifier
                                 .size((18f * heroScale).dp)
-                                .background(Color(0xFFFF5FA2), CircleShape),
+                                .background(MaterialTheme.colorScheme.tertiaryContainer, CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 Icons.Rounded.SmartToy,
                                 contentDescription = null,
                                 modifier = Modifier.size((11f * heroScale).dp),
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
                             )
                         }
                     } else {
@@ -1977,7 +1923,6 @@ private fun ModelPresetControl(
                         style = if (heroStyle) {
                             MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = (12f * heroScale).coerceAtLeast(10.5f).sp,
                             )
                         } else {
                             MaterialTheme.typography.labelMedium
@@ -2085,7 +2030,7 @@ private fun ModelPresetDialog(
                             } else {
                                 MaterialTheme.colorScheme.surface
                             },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -2193,25 +2138,25 @@ private fun WorkspaceControls(
                 if (full) R.string.workspace_access_full_short else R.string.workspace_access_default_short,
             )
             if (compact) {
-                val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
                 val controlColor = if (heroStyle) {
-                    if (dark) Color(0xFF292A2E) else Color.White
+                    MaterialTheme.colorScheme.surfaceContainerHigh
                 } else {
                     MaterialTheme.colorScheme.surface
                 }
-                val accentColor = Color(0xFFFF5A2A)
-                val labelColor = when {
-                    heroStyle && full -> accentColor
-                    heroStyle && dark -> Color(0xFFF4F4F5)
-                    heroStyle -> Color(0xFF4C4C4F)
-                    else -> MaterialTheme.colorScheme.onSurface
+                // FULL 权限仍然保留警示语义，但使用主题 tertiary 角色，不重新引入旧橙色。
+                val accentColor = MaterialTheme.colorScheme.tertiary
+                val labelColor = if (heroStyle && full) {
+                    accentColor
+                } else {
+                    MaterialTheme.colorScheme.onSurface
                 }
                 Surface(
                     onClick = { accessDialogOpen = true },
                     enabled = !disabled,
                     shape = CircleShape,
                     color = controlColor,
-                    shadowElevation = if (heroStyle) 2.dp else 1.dp,
+                    tonalElevation = if (heroStyle) 2.dp else 1.dp,
+                    shadowElevation = 0.dp,
                     modifier = Modifier
                         .then(if (heroStyle) Modifier.fillMaxSize() else Modifier)
                         .semantics { contentDescription = accessLabel },
@@ -2240,7 +2185,6 @@ private fun WorkspaceControls(
                             style = if (heroStyle) {
                                 MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp,
                                 )
                             } else {
                                 MaterialTheme.typography.labelMedium
@@ -2311,7 +2255,7 @@ private fun WorkspaceControls(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(
                         onClick = { applyPath(defaultScope.projectPath, defaultScope.projectName) },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -2398,7 +2342,7 @@ private fun WorkspaceAccessDialog(
                     } else {
                         MaterialTheme.colorScheme.surface
                     },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         Text(stringResource(R.string.workspace_access_default), style = MaterialTheme.typography.labelLarge)
@@ -2423,7 +2367,7 @@ private fun WorkspaceAccessDialog(
                     } else {
                         MaterialTheme.colorScheme.surface
                     },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         Text(
@@ -2636,7 +2580,7 @@ private fun MentionSuggestionRow(
                     modifier = Modifier
                         .background(
                             MaterialTheme.colorScheme.secondaryContainer,
-                            RoundedCornerShape(8.dp),
+                            MaterialTheme.shapes.small,
                         )
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
@@ -2652,148 +2596,3 @@ private fun queuedPromptPreview(prompt: QueuedPrompt): String = when {
     prompt.attachments.isNotEmpty() -> stringResource(R.string.queued_attachment_count, prompt.attachments.size)
     else -> stringResource(R.string.queued_prompt_fallback)
 }
-
-@Composable
-private fun VoiceRecordButton(
-    recording: Boolean,
-    enabled: Boolean,
-    onStart: () -> Unit,
-    onStop: (cancelled: Boolean, maxReached: Boolean) -> Unit,
-    descriptionOverride: String? = null,
-    modifier: Modifier = Modifier,
-    compact: Boolean = false,
-    heroStyle: Boolean = false,
-) {
-    val description = if (recording) {
-        stringResource(R.string.release_to_transcribe)
-    } else {
-        descriptionOverride ?: stringResource(R.string.hold_to_record)
-    }
-    val interactionModifier = modifier
-        .then(if (heroStyle) Modifier else Modifier.size(if (compact) 30.dp else 48.dp))
-        .semantics {
-            contentDescription = description
-            onClick {
-                if (!enabled) return@onClick false
-                if (recording) onStop(false, false) else onStart()
-                true
-            }
-        }
-        .pointerInput(enabled, recording) {
-            if (!enabled) return@pointerInput
-            detectTapGestures(
-                onPress = {
-                    onStart()
-                    val released = tryAwaitRelease()
-                    onStop(!released, false)
-                },
-            )
-        }
-
-    if (heroStyle) {
-        val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-        Box(
-            modifier = interactionModifier.then(
-                if (recording) {
-                    Modifier.background(MaterialTheme.colorScheme.errorContainer, CircleShape)
-                } else {
-                    Modifier
-                },
-            ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Rounded.Mic,
-                description,
-                modifier = Modifier.size(15.dp),
-                tint = if (dark) Color(0xFFB0B0B3) else Color(0xFF7D7D80),
-            )
-        }
-        return
-    }
-
-    Surface(
-        shape = CircleShape,
-        color = when {
-            recording -> MaterialTheme.colorScheme.errorContainer
-            compact -> MaterialTheme.colorScheme.surfaceContainerLow
-            else -> MaterialTheme.colorScheme.secondaryContainer
-        },
-        modifier = interactionModifier,
-    ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Mic, description, Modifier.size(if (compact) 16.dp else 24.dp))
-        }
-    }
-}
-
-@Composable
-private fun VoiceStatus(voice: VoiceUiState) {
-    when {
-        voice.isRecording -> {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f).height(24.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        voice.waveform.forEach { level ->
-                            Box(
-                                Modifier
-                                    .width(3.dp)
-                                    .height((4 + level * 20).dp)
-                                    .background(MaterialTheme.colorScheme.primary, CircleShape),
-                            )
-                        }
-                    }
-                    Text(formatDuration(voice.durationMs), style = MaterialTheme.typography.labelMedium)
-                }
-                if (voice.noInputHint) {
-                    Text(
-                        stringResource(R.string.no_audio_input),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-            }
-        }
-
-        voice.isTranscribing -> Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            Text(stringResource(R.string.transcribing_audio), style = MaterialTheme.typography.labelMedium)
-        }
-
-        voice.error != null -> Text(
-            voiceErrorLabel(voice.error),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.labelMedium,
-        )
-    }
-}
-
-private fun formatDuration(durationMs: Long): String {
-    val totalSeconds = durationMs.coerceAtLeast(0) / 1_000
-    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
-}
-
-@Composable
-private fun voiceErrorLabel(error: VoiceRecorderError): String = stringResource(
-    when (error) {
-        VoiceRecorderError.UNSUPPORTED -> R.string.voice_unsupported
-        VoiceRecorderError.PERMISSION -> R.string.voice_permission
-        VoiceRecorderError.NOT_CONFIGURED -> R.string.voice_not_configured
-        VoiceRecorderError.TOO_LONG -> R.string.voice_too_long
-        VoiceRecorderError.TOO_SHORT -> R.string.voice_too_short
-        VoiceRecorderError.NO_INPUT -> R.string.no_audio_input
-        VoiceRecorderError.NO_DEVICE -> R.string.voice_no_device
-        VoiceRecorderError.FAILED -> R.string.voice_failed
-    },
-)

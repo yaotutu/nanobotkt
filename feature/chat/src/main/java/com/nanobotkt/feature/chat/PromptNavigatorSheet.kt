@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.UiMessage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -105,9 +105,10 @@ fun PromptNavigatorSheet(
                     .widthIn(max = 384.dp)
                     .fillMaxWidth(0.92f)
                     .align(Alignment.CenterEnd),
-                shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
-                tonalElevation = 3.dp,
-                shadowElevation = 12.dp,
+                // 右侧提示导航使用统一的大形状和 tonal elevation，避免弹层继续依赖旧阴影数值。
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = 2.dp,
+                shadowElevation = 0.dp,
             ) {
                 Column(
                     modifier = Modifier
@@ -118,10 +119,10 @@ fun PromptNavigatorSheet(
                     // Header
                     Column(
                         modifier = Modifier.padding(
-                            start = 18.dp,
-                            end = 8.dp,
+                            start = NanobotThemeDefaults.spacing.md,
+                            end = NanobotThemeDefaults.spacing.xs,
                             top = 0.dp,
-                            bottom = 12.dp,
+                            bottom = NanobotThemeDefaults.spacing.sm,
                         ),
                     ) {
                         Row(
@@ -172,7 +173,7 @@ fun PromptNavigatorSheet(
                                 }
                             },
                             singleLine = true,
-                            shape = RoundedCornerShape(24.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MaterialTheme.colorScheme.outline,
                                 unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
@@ -199,7 +200,7 @@ fun PromptNavigatorSheet(
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(8.dp),
+                            contentPadding = PaddingValues(NanobotThemeDefaults.spacing.xs),
                         ) {
                             items(filtered, key = { it.stableId }) { item ->
                                 Surface(
@@ -208,13 +209,13 @@ fun PromptNavigatorSheet(
                                         onClose()
                                         onJumpToPrompt(item.messageId)
                                     },
-                                    shape = RoundedCornerShape(14.dp),
+                                    shape = MaterialTheme.shapes.medium,
                                     color = MaterialTheme.colorScheme.surface,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 4.dp, vertical = 2.dp),
                                 ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
+                                    Column(modifier = Modifier.padding(NanobotThemeDefaults.spacing.md)) {
                                         Text(
                                             text = item.preview,
                                             maxLines = 4,
