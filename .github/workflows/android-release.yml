@@ -43,7 +43,11 @@ jobs:
       - name: Run JVM unit tests
         run: sh gradlew test --console=plain
 
-      # 5. 从 GitHub Secret 解出签名 keystore（base64 -> keystore.jks）
+      # 5. Lint 必须在签名和发布前通过，避免把已知 Android 配置错误带入 Release。
+      - name: Run Android lint
+        run: sh gradlew :app:lintDebug --console=plain
+
+      # 6. 从 GitHub Secret 解出签名 keystore（base64 -> keystore.jks）
       - name: Decode signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}

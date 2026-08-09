@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Nanobotkt" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!--
+        基础主题只声明所有 Android 24+ 都支持的属性。
+        API 27 才引入的导航栏明暗属性放到 values-v27，避免低版本在解析资源时访问不存在的框架属性。
+    -->
+    <style name="Theme.Nanobotkt.Base" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- 启动窗口只负责过渡；正式界面由 Compose MaterialTheme 接管。 -->
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">@color/md3_light_background</item>
         <item name="android:colorAccent">@color/md3_light_primary</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+
+    <style name="Theme.Nanobotkt" parent="Theme.Nanobotkt.Base" />
 </resources>

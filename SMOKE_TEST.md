@@ -1338,3 +1338,64 @@ uv run pytest -q                                      # /Users/yaotutu/Desktop/c
 - `git diff --check` 待最终收尾时再次执行。
 
 本轮没有 stage、commit、push 或 PR；除了 APK 增量安装、真实 Gateway 上上述可恢复写操作和临时自动化/会话创建后删除外，没有其他外部副作用。
+
+## 2026-08-09：本轮收尾设备 Smoke Test
+
+### DEVICE-RECOVERY-012：真实 Android 设备进程恢复
+
+环境与前置条件：
+
+- 设备：真实 Android 设备 `Pixel_XL`，序列号 `HT7390201404`。
+- APK：当前工作区构建的 `com.nanobotkt.debug` Debug APK；设备保留既有应用数据和认证会话。
+- Gateway：沿用已认证的真实 Gateway 会话；本轮没有清除数据、注销账号或读取任何凭据。
+- 当前环境没有可用 AVD，`emulator -list-avds` 无输出，因此本项不是模拟器验证。
+
+操作步骤：
+
+1. 记录进程、前台 Activity 和 ADB reverse 状态。
+2. 返回 HOME。
+3. 执行 `adb shell am kill com.nanobotkt.debug`，模拟系统回收应用进程；不执行 `pm clear`。
+4. 确认旧 PID 消失后重新启动应用。
+5. 等待页面、会话和 Transport 恢复，检查 UI dump、截图和最近 logcat。
+
+实际结果：
+
+- 旧 PID `27497` 在 `am kill` 后消失，新 PID 为 `27682`。
+- 重新启动后的前台 Activity 为 `com.nanobotkt.debug/com.nanobotkt.MainActivity`。
+- 当前会话标题和历史 Markdown 内容恢复，输入框正常显示，Transport 状态显示为“就绪”。
+- 最近 5000 行 logcat 未发现 `FATAL EXCEPTION`、`ANR in com.nanobotkt.debug`、Force Finish 或应用进程死亡标记。
+- ADB reverse 与真实 Gateway 会话保持可用；本轮没有产生新的 Gateway 写操作。
+
+状态：**PASS（真实 Android 设备进程恢复）**。
+
+证据文件：
+
+- `/tmp/nanobotkt-process-recovery-20260809-224912/pid-before.txt`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/pid-after-kill.txt`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/pid-after-relaunch.txt`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/activities-after.txt`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/ui.xml`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/screenshot.png`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/logcat.txt`
+
+### 本轮设备验证边界
+
+- 已完成真实设备上的认证会话恢复、真实 Gateway Chat 加载、WebSocket 建连/收发/断链恢复和进程恢复；相关历史证据见 `REAL-RESTORE-008`、`REAL-009`、`REAL-010`、`REAL-011`。
+- 本轮没有可用 Android Emulator/AVD，不能将真实设备结果描述为模拟器结果。
+- 本轮没有再次执行真实 Gateway 写操作、真实登录注销、Provider 调用、频道消息收发或 Feishu 扫码流程。
+
+### FINAL-013：最终目标地址 APK 与 Gateway 只读可达性复核
+
+- 使用当前工作区代码执行 `:app:assembleDebug -PNANOBOT_SERVER_URL=http://192.168.55.147:8765`，构建成功。
+- `BuildConfig.NANOBOT_SERVER_URL` 确认为 `http://192.168.55.147:8765`。
+- `app-universal-debug.apk` 增量安装到 `HT7390201404` 成功；重新启动后 PID 为 `27945`，前台 Activity 为 `com.nanobotkt.debug/com.nanobotkt.MainActivity`。
+- 最终 UI 仍恢复到既有会话，输入框和 Transport“就绪”可见；最近 5000 行 logcat 未发现应用崩溃、ANR 或 Force Finish。
+- 主机对真实 Gateway 执行只读探测：`/health` 和 `/` 返回 HTTP 200；未携带认证信息访问 `/webui/bootstrap` 返回 HTTP 401，符合认证边界预期；没有输出响应体中的潜在敏感内容。
+
+状态：**PASS（最终产物/真实 Gateway 只读可达性）**。
+
+证据文件：
+
+- `/tmp/nanobotkt-final-ui-20260809.xml`
+- `/tmp/nanobotkt-final-20260809.png`
+- `/tmp/nanobotkt-final-launch.txt`（若存在，仅包含启动命令输出）

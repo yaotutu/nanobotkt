@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式下 API 27+ 的导航栏图标使用浅色方案。 -->
+    <style name="Theme.Nanobotkt" parent="Theme.Nanobotkt.Base">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

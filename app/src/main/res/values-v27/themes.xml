@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 27+ 才安全解析该属性；低版本继续使用基础主题。 -->
+    <style name="Theme.Nanobotkt" parent="Theme.Nanobotkt.Base">
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

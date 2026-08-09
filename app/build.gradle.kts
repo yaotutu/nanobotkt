@@ -1,8 +1,7 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
+    id("nanobot.android.application")
+    id("nanobot.android.compose")
+    id("nanobot.android.hilt")
 }
 
 fun String.asBuildConfigString(): String = "\"${replace("\"", "\\\"")}\""
@@ -12,15 +11,12 @@ val configuredServerUrl = providers.gradleProperty("NANOBOT_SERVER_URL")
 
 android {
     namespace = "com.nanobotkt"
-    compileSdk { version = release(37) }
 
     defaultConfig {
         applicationId = "com.nanobotkt"
-        minSdk = 24
         targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -108,10 +104,6 @@ android {
         buildConfig = true
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
 
     packaging.resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
     lint {
@@ -122,6 +114,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation(project(":core:session-contract"))
     implementation(project(":core:network"))
     implementation(project(":core:transport"))
     implementation(project(":core:persistence"))

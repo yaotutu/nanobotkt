@@ -6,22 +6,14 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nanobotkt.core.persistence.ThemePreference
+import com.nanobotkt.core.session.SessionStateOwner
 import com.nanobotkt.core.persistence.UserPreferences
 import com.nanobotkt.core.persistence.UserPreferencesRepository
 import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportState
 import com.nanobotkt.feature.auth.AuthSessionRepository
 import com.nanobotkt.feature.auth.AuthState
-import com.nanobotkt.feature.apps.AppsRepository
-import com.nanobotkt.feature.automations.AutomationsRepository
-import com.nanobotkt.feature.chat.ChatRepository
-import com.nanobotkt.feature.channels.ChannelsRepository
-import com.nanobotkt.feature.security.SecurityRepository
-import com.nanobotkt.feature.skills.SkillsRepository
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
-import com.nanobotkt.feature.settings.SettingsRepository
-import com.nanobotkt.feature.sidebar.SidebarRepository
-import com.nanobotkt.feature.workspaces.data.WorkspacesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +26,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.jvm.JvmSuppressWildcards
 
 internal enum class AppDestination { CHAT, CONVERSATIONS, WORKSPACES, APPS, SKILLS, AUTOMATIONS, CHANNELS, SECURITY, SETTINGS }
 
@@ -94,16 +87,8 @@ class AppViewModel @Inject constructor(
     private val authRepository: AuthSessionRepository,
     private val preferencesRepository: UserPreferencesRepository,
     private val transport: NanobotTransport,
-    private val chatRepository: ChatRepository,
-    private val channelsRepository: ChannelsRepository,
-    private val appsRepository: AppsRepository,
-    private val skillsRepository: SkillsRepository,
-    private val automationsRepository: AutomationsRepository,
-    private val securityRepository: SecurityRepository,
-    private val workspacesRepository: WorkspacesRepository,
-    private val sidebarRepository: SidebarRepository,
-    private val settingsRepository: SettingsRepository,
     private val savedStateHandle: SavedStateHandle,
+    private val sessionStateOwners: List<@JvmSuppressWildcards SessionStateOwner>,
 ) : ViewModel() {
     val authState: StateFlow<AuthState> = authRepository.state
     val preferences: StateFlow<UserPreferences> = preferencesRepository.preferences.stateIn(
@@ -137,21 +122,9 @@ class AppViewModel @Inject constructor(
         scheduleLogoutCleanup(
             scope = viewModelScope,
             resetRootUiState = ::resetRootUiState,
-            resetRepositories = listOf(
-                // 先清理长生命周期 Repository，再注销认证，避免旧账号的异步响应在
-                // logout 之后重新写回 Chat/Sidebar/Settings 状态。
-                chatRepository::reset,
-                channelsRepository::reset,
-                sidebarRepository::reset,
-                // 这些 Repository 都是 Singleton，必须在 logout 时同步失效当前会话；
-                // 否则旧账号的在途请求可能在退出后重新填充对应页面。
-                appsRepository::reset,
-                skillsRepository::reset,
-                automationsRepository::reset,
-                securityRepository::reset,
-                workspacesRepository::reset,
-                settingsRepository::reset,
-            ),
+            // 清理职责通过 core:session-contract 注入，Root 只负责统一编排，不再直接
+            // 依赖各 feature Repository 的具体类型。
+            resetRepositories = sessionStateOwners.map { owner -> owner::resetSessionState },
             // Logout 会改变认证主体；除了关闭连接，还必须清掉旧账号的 chat attach
             // 登记，避免新账号建立 WebSocket 时自动恢复旧账号的会话。
             clearAttachments = transport::clearAttachments,
