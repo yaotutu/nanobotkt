@@ -35,6 +35,8 @@
     <string name="send">Send message</string>
     <string name="attach_image">Attach images</string>
     <string name="attach_file">Attach files</string>
+    <string name="composer_more">更多選項</string>
+    <string name="voice_to_text">按住說話並轉成文字</string>
     <string name="ask_about_this">根據此內容提問</string>
     <string name="fork">建立分支</string>
     <string name="retry_message">重試</string>

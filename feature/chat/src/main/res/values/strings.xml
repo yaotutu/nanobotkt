@@ -35,6 +35,8 @@
     <string name="send">Send message</string>
     <string name="attach_image">Attach images</string>
     <string name="attach_file">Attach files</string>
+    <string name="composer_more">More options</string>
+    <string name="voice_to_text">Hold to add speech-to-text</string>
     <string name="ask_about_this">Ask about this</string>
     <string name="fork">Fork</string>
     <string name="retry_message">Retry</string>
