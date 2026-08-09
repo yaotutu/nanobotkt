@@ -10,4 +10,7 @@
     <locale android:name="vi" />
     <locale android:name="zh-CN" />
     <locale android:name="zh-TW" />
+    <!-- 支持系统返回的简体中文脚本/地区标签，例如 zh-Hans-SG。 -->
+    <locale android:name="zh-Hans" />
+    <locale android:name="zh-Hans-SG" />
 </locale-config>

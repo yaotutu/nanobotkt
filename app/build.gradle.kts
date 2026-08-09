@@ -85,7 +85,22 @@ android {
     }
 
     androidResources {
-        localeFilters += setOf("en", "es", "fr", "id", "ja", "ko", "pt-rBR", "vi", "zh-rCN", "zh-rTW")
+        // 设备可能返回带脚本的 BCP-47 Locale（例如 zh-Hans-SG），只保留 zh-rCN/zh-rTW 会在 APK 打包时过滤掉对应资源，导致界面回退到英文。
+        localeFilters += setOf(
+            "en",
+            "es",
+            "fr",
+            "id",
+            "ja",
+            "ko",
+            "pt-rBR",
+            "vi",
+            "zh",
+            "zh-rCN",
+            "zh-rTW",
+            "b+zh+Hans",
+            "b+zh+Hans+SG",
+        )
     }
 
     buildFeatures {

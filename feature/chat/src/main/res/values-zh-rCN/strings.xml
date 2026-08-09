@@ -30,11 +30,11 @@
     <string name="reasoning">Reasoning</string>
     <string name="copy">复制</string>
     <string name="copied">已复制</string>
-    <string name="composer_placeholder">Type your message…</string>
+    <string name="composer_placeholder">输入消息…</string>
     <string name="stop">Stop response</string>
     <string name="send">Send message</string>
-    <string name="attach_image">Attach images</string>
-    <string name="attach_file">Attach files</string>
+    <string name="attach_image">选择图片</string>
+    <string name="attach_file">选择文件</string>
     <string name="composer_more">更多选项</string>
     <string name="voice_to_text">按住说话并转成文字</string>
     <string name="ask_about_this">基于此内容提问</string>

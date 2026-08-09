@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        覆盖“简体中文但地区不是中国大陆”的系统语言，例如 zh-Hans-SG。
+        Android 会优先选择带地区的 values-zh-rCN/strings.xml；没有匹配地区时，
+        再使用本目录，避免 BottomSheet 因语言回退而显示英文或中英文混杂。
+    -->
+    <string name="composer_more">更多选项</string>
+    <string name="attach_image">选择图片</string>
+    <string name="attach_file">选择文件</string>
+    <string name="model_select_title">选择模型</string>
+    <string name="model_select_help">用于新的回复。</string>
+    <string name="model_settings">模型与提供商</string>
+    <string name="workspace_access_title">工作区访问权限</string>
+    <string name="workspace_access_default_short">默认</string>
+    <string name="workspace_access_full_short">完全</string>
+    <string name="workspace_access_default">默认访问</string>
+    <string name="workspace_access_default_description">将命令与文件访问限制在工作区内。</string>
+    <string name="workspace_access_full">完全访问</string>
+    <string name="workspace_access_full_description">允许访问工作区外部，请谨慎使用。</string>
+    <string name="cancel">取消</string>
+</resources>
