@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="open_navigation">Open navigation</string>
+    <string name="open_navigation">打开导航</string>
     <string name="open_conversation_list">打开会话列表</string>
     <string name="conversation_list_title">会话</string>
     <string name="conversation_search_hint">搜索会话</string>
@@ -21,18 +21,18 @@
     <string name="rename_topic">重命名会话</string>
     <string name="save">保存</string>
     <string name="conversation_back">返回聊天</string>
-    <string name="refresh">Refresh</string>
-    <string name="empty_title">No topics yet</string>
-    <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
-    <string name="new_topic">New topic</string>
-    <string name="load_older">Load older messages</string>
-    <string name="thinking">Thinking…</string>
-    <string name="reasoning">Reasoning</string>
+    <string name="refresh">刷新</string>
+    <string name="empty_title">还没有话题</string>
+    <string name="empty_body">开始新的话题，与你的 nanobot 工作区聊天。</string>
+    <string name="new_topic">新建话题</string>
+    <string name="load_older">加载较早的消息</string>
+    <string name="thinking">思考中…</string>
+    <string name="reasoning">推理</string>
     <string name="copy">复制</string>
     <string name="copied">已复制</string>
     <string name="composer_placeholder">输入消息…</string>
-    <string name="stop">Stop response</string>
-    <string name="send">Send message</string>
+    <string name="stop">停止回复</string>
+    <string name="send">发送消息</string>
     <string name="attach_image">选择图片</string>
     <string name="attach_file">选择文件</string>
     <string name="composer_more">更多选项</string>
@@ -108,7 +108,7 @@
     <string name="session_info_load_failed">无法加载自动任务。</string>
     <string name="session_info_empty">这个会话暂时没有自动任务。</string>
     <string name="session_info_disabled">已关闭</string>
-    <string name="session_info_schedule_at">%1$s</string>
+    <string name="session_info_schedule_at">于 %1$s</string>
     <string name="session_info_schedule_every">每 %1$s</string>
     <string name="session_info_schedule_cron">Cron %1$s</string>
     <string name="session_info_schedule_cron_with_tz">Cron %1$s · %2$s</string>
@@ -131,4 +131,20 @@
     <plurals name="session_info_duration_second">
         <item quantity="other">%1$d 秒</item>
     </plurals>
+    <!-- 补齐聊天导航、附件预览和语音输入文案，避免回退到默认英文。 -->
+    <string name="toggle_theme">切换主题</string>
+    <string name="more_actions">更多操作</string>
+    <string name="jump_to_latest_messages">新消息</string>
+    <string name="attachments">附件</string>
+    <string name="file_preview">预览</string>
+    <string name="file_preview_title">文件预览</string>
+    <string name="file_preview_language">语言：%1$s</string>
+    <string name="file_preview_size">大小：%1$d 字节</string>
+    <string name="file_preview_truncated">预览内容已被服务器截断。</string>
+    <string name="file_preview_load_failed">无法加载文件预览。</string>
+    <string name="close">关闭</string>
+    <string name="remove_attachment">移除附件</string>
+    <string name="transcribing">转写中…</string>
+    <string name="recording">录音中…</string>
+    <string name="composer_ready_label">就绪</string>
 </resources>

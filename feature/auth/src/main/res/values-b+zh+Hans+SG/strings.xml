@@ -1,0 +1,8 @@
+<resources>
+    <!-- 为 zh-Hans / zh-Hans-SG 提供简体中文回退，避免系统语言使用脚本标签时回退到英文。 -->
+    <string name="auth_title">连接 nanobot</string>
+    <string name="auth_description">请输入网关中配置的引导密钥。</string>
+    <string name="auth_rejected">密钥被拒绝，请检查后重试。</string>
+    <string name="bootstrap_secret">引导密钥</string>
+    <string name="connect">连接</string>
+</resources>

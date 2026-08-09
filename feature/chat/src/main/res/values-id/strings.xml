@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="open_navigation">Open navigation</string>
-    <string name="refresh">Refresh</string>
+    <string name="open_navigation">Buka navigasi</string>
+    <string name="refresh">Muat ulang</string>
     <string name="empty_title">No topics yet</string>
-    <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
-    <string name="new_topic">New topic</string>
-    <string name="load_older">Load older messages</string>
-    <string name="thinking">Thinking…</string>
-    <string name="reasoning">Reasoning</string>
+    <string name="empty_body">Mulai topik baru untuk mengobrol dengan ruang kerja nanobot Anda.</string>
+    <string name="new_topic">Topik baru</string>
+    <string name="load_older">Muat pesan lama</string>
+    <string name="thinking">Sedang berpikir…</string>
+    <string name="reasoning">Penalaran</string>
     <string name="copy">Salin</string>
     <string name="copied">Disalin</string>
-    <string name="composer_placeholder">Type your message…</string>
-    <string name="stop">Stop response</string>
-    <string name="send">Send message</string>
-    <string name="attach_image">Attach images</string>
-    <string name="attach_file">Attach files</string>
+    <string name="composer_placeholder">Ketik pesan Anda…</string>
+    <string name="stop">Hentikan respons</string>
+    <string name="send">Kirim pesan</string>
+    <string name="attach_image">Lampirkan gambar</string>
+    <string name="attach_file">Lampirkan file</string>
     <string name="ask_about_this">Tanyakan tentang ini</string>
     <string name="fork">Cabangkan</string>
     <string name="retry_message">Coba lagi</string>
@@ -60,7 +60,7 @@
     <string name="workspace_path_example">/Users/nama/proyek</string>
     <string name="workspace_absolute_path_required">Masukkan path absolut.</string>
     <string name="workspace_use_path">Gunakan path</string>
-    <string name="workspace_access_default_short">Default</string>
+    <string name="workspace_access_default_short">Bawaan</string>
     <string name="workspace_access_full_short">Penuh</string>
     <string name="workspace_access_title">Akses workspace</string>
     <string name="workspace_access_default">Akses default</string>
@@ -77,8 +77,8 @@
     <string name="prompt_navigator_search">Cari prompt</string>
     <string name="prompt_navigator_no_results">Tidak ada prompt yang cocok.</string>
     <string name="prompt_navigator_jump_to">Lompat ke prompt: %1$s</string>
-    <string name="session_info_title">Session details</string>
-    <string name="session_info_label">Session</string>
+    <string name="session_info_title">Detail sesi</string>
+    <string name="session_info_label">Sesi</string>
     <string name="session_info_untitled">Topik tanpa judul</string>
     <string name="session_info_automations">Otomasi</string>
     <string name="session_info_count">%1$d</string>
@@ -109,4 +109,42 @@
     <plurals name="session_info_duration_second">
         <item quantity="other">%1$d detik</item>
     </plurals>
+    <!-- 补齐聊天导航、附件预览和语音输入文案，避免回退到默认英文。 -->
+    <string name="toggle_theme">Ubah tema</string>
+    <string name="more_actions">Tindakan lainnya</string>
+    <string name="jump_to_latest_messages">Pesan baru</string>
+    <string name="open_conversation_list">Buka percakapan</string>
+    <string name="conversation_list_title">Percakapan</string>
+    <string name="conversation_search_hint">Cari percakapan</string>
+    <string name="clear_search">Hapus pencarian</string>
+    <string name="conversation_pinned_section">Disematkan</string>
+    <string name="conversation_recent_section">Terbaru</string>
+    <string name="conversation_empty">Belum ada percakapan.</string>
+    <string name="conversation_no_results">Tidak ada percakapan yang cocok.</string>
+    <string name="conversation_new_topic">Topik baru</string>
+    <string name="topic_actions">Tindakan percakapan</string>
+    <string name="pin">Sematkan</string>
+    <string name="unpin">Lepas sematan</string>
+    <string name="rename">Ganti nama</string>
+    <string name="archive">Arsipkan</string>
+    <string name="delete">Hapus</string>
+    <string name="delete_topic">Hapus percakapan?</string>
+    <string name="delete_topic_confirmation">Hapus “%1$s”? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="rename_topic">Ganti nama percakapan</string>
+    <string name="save">Simpan</string>
+    <string name="conversation_back">Kembali ke chat</string>
+    <string name="composer_more">Opsi lainnya</string>
+    <string name="voice_to_text">Tahan untuk menambahkan ucapan-ke-teks</string>
+    <string name="file_preview">Pratinjau</string>
+    <string name="file_preview_title">Pratinjau file</string>
+    <string name="file_preview_language">Bahasa: %1$s</string>
+    <string name="file_preview_size">Ukuran: %1$d byte</string>
+    <string name="file_preview_truncated">Pratinjau dipotong oleh server.</string>
+    <string name="file_preview_load_failed">Tidak dapat memuat pratinjau file ini.</string>
+    <string name="close">Tutup</string>
+    <string name="attachments">Lampiran</string>
+    <string name="remove_attachment">Hapus lampiran</string>
+    <string name="transcribing">Mentranskripsi…</string>
+    <string name="recording">Merekam…</string>
+    <string name="composer_ready_label">Siap</string>
 </resources>

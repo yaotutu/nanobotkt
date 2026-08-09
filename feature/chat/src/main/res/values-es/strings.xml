@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="open_navigation">Open navigation</string>
-    <string name="refresh">Refresh</string>
+    <string name="open_navigation">Abrir navegación</string>
+    <string name="refresh">Actualizar</string>
     <string name="empty_title">No topics yet</string>
-    <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
-    <string name="new_topic">New topic</string>
-    <string name="load_older">Load older messages</string>
-    <string name="thinking">Thinking…</string>
-    <string name="reasoning">Reasoning</string>
+    <string name="empty_body">Inicia un tema nuevo para chatear con tu espacio de trabajo de nanobot.</string>
+    <string name="new_topic">Nuevo tema</string>
+    <string name="load_older">Cargar mensajes anteriores</string>
+    <string name="thinking">Pensando…</string>
+    <string name="reasoning">Razonamiento</string>
     <string name="copy">Copiar</string>
     <string name="copied">Copiado</string>
-    <string name="composer_placeholder">Type your message…</string>
-    <string name="stop">Stop response</string>
-    <string name="send">Send message</string>
-    <string name="attach_image">Attach images</string>
-    <string name="attach_file">Attach files</string>
+    <string name="composer_placeholder">Escribe tu mensaje…</string>
+    <string name="stop">Detener respuesta</string>
+    <string name="send">Enviar mensaje</string>
+    <string name="attach_image">Adjuntar imágenes</string>
+    <string name="attach_file">Adjuntar archivos</string>
     <string name="ask_about_this">Preguntar sobre esto</string>
     <string name="fork">Bifurcar</string>
     <string name="retry_message">Reintentar</string>
@@ -77,8 +77,8 @@
     <string name="prompt_navigator_search">Buscar prompts</string>
     <string name="prompt_navigator_no_results">No hay prompts que coincidan.</string>
     <string name="prompt_navigator_jump_to">Ir al prompt: %1$s</string>
-    <string name="session_info_title">Session details</string>
-    <string name="session_info_label">Session</string>
+    <string name="session_info_title">Detalles de la sesión</string>
+    <string name="session_info_label">Sesión</string>
     <string name="session_info_untitled">Tema sin título</string>
     <string name="session_info_automations">Automatizaciones</string>
     <string name="session_info_count">%1$d</string>
@@ -113,4 +113,42 @@
         <item quantity="one">%1$d segundo</item>
         <item quantity="other">%1$d segundos</item>
     </plurals>
+    <!-- 补齐聊天导航、附件预览和语音输入文案，避免回退到默认英文。 -->
+    <string name="toggle_theme">Cambiar tema</string>
+    <string name="more_actions">Más acciones</string>
+    <string name="jump_to_latest_messages">Nuevos mensajes</string>
+    <string name="open_conversation_list">Abrir conversaciones</string>
+    <string name="conversation_list_title">Conversaciones</string>
+    <string name="conversation_search_hint">Buscar conversaciones</string>
+    <string name="clear_search">Borrar búsqueda</string>
+    <string name="conversation_pinned_section">Fijadas</string>
+    <string name="conversation_recent_section">Recientes</string>
+    <string name="conversation_empty">Aún no hay conversaciones.</string>
+    <string name="conversation_no_results">No hay conversaciones coincidentes.</string>
+    <string name="conversation_new_topic">Nuevo tema</string>
+    <string name="topic_actions">Acciones de la conversación</string>
+    <string name="pin">Fijar</string>
+    <string name="unpin">Desfijar</string>
+    <string name="rename">Cambiar nombre</string>
+    <string name="archive">Archivar</string>
+    <string name="delete">Eliminar</string>
+    <string name="delete_topic">¿Eliminar conversación?</string>
+    <string name="delete_topic_confirmation">¿Eliminar “%1$s”? Esta acción no se puede deshacer.</string>
+    <string name="rename_topic">Cambiar nombre de la conversación</string>
+    <string name="save">Guardar</string>
+    <string name="conversation_back">Volver al chat</string>
+    <string name="composer_more">Más opciones</string>
+    <string name="voice_to_text">Mantén pulsado para añadir voz a texto</string>
+    <string name="file_preview">Vista previa</string>
+    <string name="file_preview_title">Vista previa del archivo</string>
+    <string name="file_preview_language">Idioma: %1$s</string>
+    <string name="file_preview_size">Tamaño: %1$d bytes</string>
+    <string name="file_preview_truncated">Vista previa truncada por el servidor.</string>
+    <string name="file_preview_load_failed">No se pudo cargar la vista previa del archivo.</string>
+    <string name="close">Cerrar</string>
+    <string name="attachments">Archivos adjuntos</string>
+    <string name="remove_attachment">Eliminar archivo adjunto</string>
+    <string name="transcribing">Transcribiendo…</string>
+    <string name="recording">Grabando…</string>
+    <string name="composer_ready_label">Listo</string>
 </resources>

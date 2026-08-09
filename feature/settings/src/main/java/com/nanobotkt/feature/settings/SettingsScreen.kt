@@ -671,7 +671,14 @@ private fun AppearancePage(preferences: UserPreferences, viewModel: SettingsView
 
 @Composable
 private fun LanguagePreference(languageTag: String?, onChange: (String?) -> Unit) {
+    /**
+     * null 代表跟随 Android 系统语言，而不是英文。
+     * 之前把 null 当成 English 展示并默认勾选英文，会让系统中文设备看起来像是
+     * “设置页英文、聊天页其他语言”的混杂状态；这里把系统默认作为显式选项，
+     * 让持久化值、界面展示和实际 Locale 行为保持一致。
+     */
     val languages = listOf(
+        null to "System default",
         "en" to "English",
         "zh-CN" to "简体中文",
         "zh-TW" to "繁體中文",
@@ -684,7 +691,7 @@ private fun LanguagePreference(languageTag: String?, onChange: (String?) -> Unit
         "id" to "Indonesia",
     )
     var expanded by remember { mutableStateOf(false) }
-    val currentName = languages.firstOrNull { it.first == languageTag }?.second ?: "English"
+    val currentName = languages.firstOrNull { it.first == languageTag }?.second ?: "System default"
 
     Box {
         Column(
@@ -708,7 +715,7 @@ private fun LanguagePreference(languageTag: String?, onChange: (String?) -> Unit
                 DropdownMenuItem(
                     text = { Text(label) },
                     trailingIcon = {
-                        if (tag == languageTag || (languageTag == null && tag == "en")) {
+                        if (tag == languageTag) {
                             Icon(Icons.Rounded.Check, null, Modifier.size(17.dp))
                         }
                     },

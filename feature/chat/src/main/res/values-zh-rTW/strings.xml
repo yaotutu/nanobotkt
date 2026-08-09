@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="open_navigation">Open navigation</string>
+    <string name="open_navigation">開啟導覽</string>
     <string name="open_conversation_list">開啟會話列表</string>
     <string name="conversation_list_title">會話</string>
     <string name="conversation_search_hint">搜尋會話</string>
@@ -21,20 +21,20 @@
     <string name="rename_topic">重新命名對話</string>
     <string name="save">儲存</string>
     <string name="conversation_back">返回聊天</string>
-    <string name="refresh">Refresh</string>
-    <string name="empty_title">No topics yet</string>
-    <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
-    <string name="new_topic">New topic</string>
-    <string name="load_older">Load older messages</string>
-    <string name="thinking">Thinking…</string>
-    <string name="reasoning">Reasoning</string>
+    <string name="refresh">重新整理</string>
+    <string name="empty_title">尚無主題</string>
+    <string name="empty_body">開始新的主題，與你的 nanobot 工作區聊天。</string>
+    <string name="new_topic">新主題</string>
+    <string name="load_older">載入較早的訊息</string>
+    <string name="thinking">思考中…</string>
+    <string name="reasoning">推理</string>
     <string name="copy">複製</string>
     <string name="copied">已複製</string>
-    <string name="composer_placeholder">Type your message…</string>
-    <string name="stop">Stop response</string>
-    <string name="send">Send message</string>
-    <string name="attach_image">Attach images</string>
-    <string name="attach_file">Attach files</string>
+    <string name="composer_placeholder">輸入訊息…</string>
+    <string name="stop">停止回應</string>
+    <string name="send">傳送訊息</string>
+    <string name="attach_image">附加圖片</string>
+    <string name="attach_file">附加檔案</string>
     <string name="composer_more">更多選項</string>
     <string name="voice_to_text">按住說話並轉成文字</string>
     <string name="ask_about_this">根據此內容提問</string>
@@ -99,8 +99,8 @@
     <string name="prompt_navigator_search">搜尋輸入</string>
     <string name="prompt_navigator_no_results">沒有符合的輸入。</string>
     <string name="prompt_navigator_jump_to">跳轉到輸入：%1$s</string>
-    <string name="session_info_title">對話詳細資料</string>
-    <string name="session_info_label">對話</string>
+    <string name="session_info_title">工作階段詳細資料</string>
+    <string name="session_info_label">工作階段</string>
     <string name="session_info_untitled">未命名話題</string>
     <string name="session_info_automations">自動任務</string>
     <string name="session_info_count">%1$d</string>
@@ -108,13 +108,13 @@
     <string name="session_info_load_failed">無法載入自動任務。</string>
     <string name="session_info_empty">這個對話目前沒有自動任務。</string>
     <string name="session_info_disabled">已關閉</string>
-    <string name="session_info_schedule_at">%1$s</string>
+    <string name="session_info_schedule_at">於 %1$s</string>
     <string name="session_info_schedule_every">每 %1$s</string>
     <string name="session_info_schedule_cron">Cron %1$s</string>
     <string name="session_info_schedule_cron_with_tz">Cron %1$s · %2$s</string>
     <string name="session_info_schedule_local">本機觸發器</string>
     <string name="session_info_schedule_unknown">自訂排程</string>
-    <string name="session_info_next_label">%1$s</string>
+    <string name="session_info_next_label">下一次 %1$s</string>
     <string name="session_info_next_pending">即將執行</string>
     <string name="session_info_next_disabled">已暫停</string>
     <string name="session_info_next_local">等待觸發</string>
@@ -131,4 +131,20 @@
     <plurals name="session_info_duration_second">
         <item quantity="other">%1$d 秒</item>
     </plurals>
+    <!-- 补齐聊天导航、附件预览和语音输入文案，避免回退到默认英文。 -->
+    <string name="toggle_theme">切換主題</string>
+    <string name="more_actions">更多操作</string>
+    <string name="jump_to_latest_messages">新訊息</string>
+    <string name="attachments">附件</string>
+    <string name="file_preview">預覽</string>
+    <string name="file_preview_title">檔案預覽</string>
+    <string name="file_preview_language">語言：%1$s</string>
+    <string name="file_preview_size">大小：%1$d 位元組</string>
+    <string name="file_preview_truncated">預覽內容已由伺服器截斷。</string>
+    <string name="file_preview_load_failed">無法載入檔案預覽。</string>
+    <string name="close">關閉</string>
+    <string name="remove_attachment">移除附件</string>
+    <string name="transcribing">轉寫中…</string>
+    <string name="recording">錄音中…</string>
+    <string name="composer_ready_label">準備就緒</string>
 </resources>
