@@ -9,6 +9,10 @@ name: Android Debug Build
 on:
   push:
     branches: [ main ]
+  # PR 必须在合并前执行同一套测试、Lint 和 Debug 构建，避免只依赖本地验收。
+  # Release workflow 仍只响应 main push，防止 PR 意外使用签名凭据或发布产物。
+  pull_request:
+    branches: [ main ]
   # 也允许在 GitHub Actions 页面手动触发（workflow_dispatch）
   workflow_dispatch:
 
