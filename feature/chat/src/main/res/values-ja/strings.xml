@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="open_navigation">Open navigation</string>
-    <string name="refresh">Refresh</string>
+    <string name="open_navigation">ナビゲーションを開く</string>
+    <string name="refresh">更新</string>
     <string name="empty_title">No topics yet</string>
-    <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
-    <string name="new_topic">New topic</string>
-    <string name="load_older">Load older messages</string>
-    <string name="thinking">Thinking…</string>
-    <string name="reasoning">Reasoning</string>
+    <string name="empty_body">新しいトピックを開始して nanobot ワークスペースとチャットしましょう。</string>
+    <string name="new_topic">新しいトピック</string>
+    <string name="load_older">過去のメッセージを読み込む</string>
+    <string name="thinking">考え中…</string>
+    <string name="reasoning">推論</string>
     <string name="copy">コピー</string>
     <string name="copied">コピー済み</string>
-    <string name="composer_placeholder">Type your message…</string>
-    <string name="stop">Stop response</string>
-    <string name="send">Send message</string>
-    <string name="attach_image">Attach images</string>
-    <string name="attach_file">Attach files</string>
+    <string name="composer_placeholder">メッセージを入力…</string>
+    <string name="stop">応答を停止</string>
+    <string name="send">メッセージを送信</string>
+    <string name="attach_image">画像を添付</string>
+    <string name="attach_file">ファイルを添付</string>
     <string name="ask_about_this">これについて質問</string>
     <string name="fork">フォーク</string>
     <string name="retry_message">再試行</string>
@@ -77,8 +77,8 @@
     <string name="prompt_navigator_search">プロンプトを検索</string>
     <string name="prompt_navigator_no_results">一致するプロンプトはありません。</string>
     <string name="prompt_navigator_jump_to">プロンプトに移動: %1$s</string>
-    <string name="session_info_title">Session details</string>
-    <string name="session_info_label">Session</string>
+    <string name="session_info_title">セッションの詳細</string>
+    <string name="session_info_label">セッション</string>
     <string name="session_info_untitled">無題のトピック</string>
     <string name="session_info_automations">自動タスク</string>
     <string name="session_info_count">%1$d</string>
@@ -86,7 +86,7 @@
     <string name="session_info_load_failed">自動タスクを読み込めませんでした。</string>
     <string name="session_info_empty">このセッションにはまだ自動タスクがありません。</string>
     <string name="session_info_disabled">オフ</string>
-    <string name="session_info_schedule_at">%1$s</string>
+    <string name="session_info_schedule_at">時刻：%1$s</string>
     <string name="session_info_schedule_every">%1$sごと</string>
     <string name="session_info_schedule_cron">Cron %1$s</string>
     <string name="session_info_schedule_cron_with_tz">Cron %1$s · %2$s</string>
@@ -109,4 +109,42 @@
     <plurals name="session_info_duration_second">
         <item quantity="other">%1$d秒</item>
     </plurals>
+    <!-- 补齐聊天导航、附件预览和语音输入文案，避免回退到默认英文。 -->
+    <string name="toggle_theme">テーマを切り替え</string>
+    <string name="more_actions">その他の操作</string>
+    <string name="jump_to_latest_messages">新しいメッセージ</string>
+    <string name="open_conversation_list">会話を開く</string>
+    <string name="conversation_list_title">会話</string>
+    <string name="conversation_search_hint">会話を検索</string>
+    <string name="clear_search">検索をクリア</string>
+    <string name="conversation_pinned_section">ピン留め済み</string>
+    <string name="conversation_recent_section">最近</string>
+    <string name="conversation_empty">まだ会話はありません。</string>
+    <string name="conversation_no_results">一致する会話はありません。</string>
+    <string name="conversation_new_topic">新しいトピック</string>
+    <string name="topic_actions">会話の操作</string>
+    <string name="pin">ピン留め</string>
+    <string name="unpin">ピン留めを解除</string>
+    <string name="rename">名前を変更</string>
+    <string name="archive">アーカイブ</string>
+    <string name="delete">削除</string>
+    <string name="delete_topic">会話を削除しますか？</string>
+    <string name="delete_topic_confirmation">「%1$s」を削除しますか？この操作は取り消せません。</string>
+    <string name="rename_topic">会話の名前を変更</string>
+    <string name="save">保存</string>
+    <string name="conversation_back">チャットに戻る</string>
+    <string name="composer_more">その他のオプション</string>
+    <string name="voice_to_text">長押しして音声をテキストに追加</string>
+    <string name="file_preview">プレビュー</string>
+    <string name="file_preview_title">ファイルプレビュー</string>
+    <string name="file_preview_language">言語：%1$s</string>
+    <string name="file_preview_size">サイズ：%1$dバイト</string>
+    <string name="file_preview_truncated">プレビューはサーバーによって切り捨てられました。</string>
+    <string name="file_preview_load_failed">ファイルプレビューを読み込めませんでした。</string>
+    <string name="close">閉じる</string>
+    <string name="attachments">添付ファイル</string>
+    <string name="remove_attachment">添付ファイルを削除</string>
+    <string name="transcribing">文字起こし中…</string>
+    <string name="recording">録音中…</string>
+    <string name="composer_ready_label">準備完了</string>
 </resources>

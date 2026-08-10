@@ -1,29 +1,14 @@
 ﻿plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
+    id("nanobot.android.library")
+    id("nanobot.android.compose")
+    id("nanobot.android.hilt")
 }
 
 android {
     namespace = "com.nanobotkt.feature.security"
-    compileSdk { version = release(37) }
 
-    defaultConfig {
-        minSdk = 24
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        consumerProguardFiles("consumer-rules.pro")
-    }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    buildFeatures { compose = true }
 
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
 }
 
 dependencies {
@@ -42,7 +27,7 @@ dependencies {
     implementation(libs.kotlinx.collections.immutable)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-    testImplementation(project(":core:testing"))
+    testImplementation(libs.bundles.unit.test)
     testImplementation(libs.kotlinx.serialization.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

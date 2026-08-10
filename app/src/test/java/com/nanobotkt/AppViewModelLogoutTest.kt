@@ -18,12 +18,10 @@ class AppViewModelLogoutTest {
         scheduleLogoutCleanup(
             scope = this,
             resetRootUiState = { events += "root" },
-            resetRepositories = (1..9).map { index ->
-                {
-                    // 用编号记录 9 个 Singleton Repository 的清理调用，保证测试不会
-                    // 因为把某个具体 Repository 的实现细节复制进来而失去焦点。
-                    events += "repository-$index"
-                }
+            resetSessionState = {
+                // 具体 Repository 的 reset 行为由各 feature 测试覆盖；这里仅验证组合根
+                // 必须在关闭传输和异步认证注销前完成整组会话状态失效。
+                events += "session-state"
             },
             clearAttachments = { events += "transport-clear-attachments" },
             closeTransport = { events += "transport-close" },
@@ -38,15 +36,7 @@ class AppViewModelLogoutTest {
         assertEquals(
             listOf(
                 "root",
-                "repository-1",
-                "repository-2",
-                "repository-3",
-                "repository-4",
-                "repository-5",
-                "repository-6",
-                "repository-7",
-                "repository-8",
-                "repository-9",
+                "session-state",
                 "transport-clear-attachments",
                 "transport-close",
             ),

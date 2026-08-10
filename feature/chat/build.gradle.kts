@@ -1,29 +1,14 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
+    id("nanobot.android.library")
+    id("nanobot.android.compose")
+    id("nanobot.android.hilt")
 }
 
 android {
     namespace = "com.nanobotkt.feature.chat"
-    compileSdk { version = release(37) }
 
-    defaultConfig {
-        minSdk = 24
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        consumerProguardFiles("consumer-rules.pro")
-    }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    buildFeatures { compose = true }
 
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
 }
 
 dependencies {
@@ -50,8 +35,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
-    testImplementation(project(":core:testing"))
-    testImplementation(libs.junit4)
+    testImplementation(libs.bundles.unit.test)
     // Repository 契约测试需要直接构造 Json，以验证服务端分页响应中的未知字段兼容性。
     testImplementation(libs.kotlinx.serialization.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -1,8 +1,7 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
+    id("nanobot.android.application")
+    id("nanobot.android.compose")
+    id("nanobot.android.hilt")
 }
 
 fun String.asBuildConfigString(): String = "\"${replace("\"", "\\\"")}\""
@@ -12,15 +11,12 @@ val configuredServerUrl = providers.gradleProperty("NANOBOT_SERVER_URL")
 
 android {
     namespace = "com.nanobotkt"
-    compileSdk { version = release(37) }
 
     defaultConfig {
         applicationId = "com.nanobotkt"
-        minSdk = 24
         targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -85,7 +81,22 @@ android {
     }
 
     androidResources {
-        localeFilters += setOf("en", "es", "fr", "id", "ja", "ko", "pt-rBR", "vi", "zh-rCN", "zh-rTW")
+        // 设备可能返回带脚本的 BCP-47 Locale（例如 zh-Hans-SG），只保留 zh-rCN/zh-rTW 会在 APK 打包时过滤掉对应资源，导致界面回退到英文。
+        localeFilters += setOf(
+            "en",
+            "es",
+            "fr",
+            "id",
+            "ja",
+            "ko",
+            "pt-rBR",
+            "vi",
+            "zh",
+            "zh-rCN",
+            "zh-rTW",
+            "b+zh+Hans",
+            "b+zh+Hans+SG",
+        )
     }
 
     buildFeatures {
@@ -93,10 +104,6 @@ android {
         buildConfig = true
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
 
     packaging.resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
     lint {
@@ -141,7 +148,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     ksp(libs.hilt.compiler)
 
-    testImplementation(project(":core:testing"))
+    testImplementation(libs.bundles.unit.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)

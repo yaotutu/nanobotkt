@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="open_navigation">Open navigation</string>
-    <string name="refresh">Refresh</string>
+    <string name="open_navigation">Ouvrir la navigation</string>
+    <string name="refresh">Actualiser</string>
     <string name="empty_title">No topics yet</string>
-    <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
-    <string name="new_topic">New topic</string>
-    <string name="load_older">Load older messages</string>
-    <string name="thinking">Thinking…</string>
-    <string name="reasoning">Reasoning</string>
+    <string name="empty_body">Commencez un nouveau sujet pour discuter avec votre espace de travail nanobot.</string>
+    <string name="new_topic">Nouveau sujet</string>
+    <string name="load_older">Charger les anciens messages</string>
+    <string name="thinking">Réflexion…</string>
+    <string name="reasoning">Raisonnement</string>
     <string name="copy">Copier</string>
     <string name="copied">Copié</string>
-    <string name="composer_placeholder">Type your message…</string>
-    <string name="stop">Stop response</string>
-    <string name="send">Send message</string>
-    <string name="attach_image">Attach images</string>
-    <string name="attach_file">Attach files</string>
+    <string name="composer_placeholder">Saisissez votre message…</string>
+    <string name="stop">Arrêter la réponse</string>
+    <string name="send">Envoyer le message</string>
+    <string name="attach_image">Joindre des images</string>
+    <string name="attach_file">Joindre des fichiers</string>
     <string name="ask_about_this">Poser une question</string>
     <string name="fork">Dupliquer</string>
     <string name="retry_message">Réessayer</string>
@@ -77,7 +77,7 @@
     <string name="prompt_navigator_search">Rechercher des prompts</string>
     <string name="prompt_navigator_no_results">Aucun prompt correspondant.</string>
     <string name="prompt_navigator_jump_to">Aller au prompt : %1$s</string>
-    <string name="session_info_title">Session details</string>
+    <string name="session_info_title">Détails de la session</string>
     <string name="session_info_label">Session</string>
     <string name="session_info_untitled">Sujet sans titre</string>
     <string name="session_info_automations">Automatisations</string>
@@ -113,4 +113,42 @@
         <item quantity="one">%1$d seconde</item>
         <item quantity="other">%1$d secondes</item>
     </plurals>
+    <!-- 补齐聊天导航、附件预览和语音输入文案，避免回退到默认英文。 -->
+    <string name="toggle_theme">Changer de thème</string>
+    <string name="more_actions">Plus d’actions</string>
+    <string name="jump_to_latest_messages">Nouveaux messages</string>
+    <string name="open_conversation_list">Ouvrir les conversations</string>
+    <string name="conversation_list_title">Conversations</string>
+    <string name="conversation_search_hint">Rechercher des conversations</string>
+    <string name="clear_search">Effacer la recherche</string>
+    <string name="conversation_pinned_section">Épinglées</string>
+    <string name="conversation_recent_section">Récentes</string>
+    <string name="conversation_empty">Aucune conversation pour le moment.</string>
+    <string name="conversation_no_results">Aucune conversation correspondante.</string>
+    <string name="conversation_new_topic">Nouveau sujet</string>
+    <string name="topic_actions">Actions de la conversation</string>
+    <string name="pin">Épingler</string>
+    <string name="unpin">Désépingler</string>
+    <string name="rename">Renommer</string>
+    <string name="archive">Archiver</string>
+    <string name="delete">Supprimer</string>
+    <string name="delete_topic">Supprimer la conversation ?</string>
+    <string name="delete_topic_confirmation">Supprimer « %1$s » ? Cette action est irréversible.</string>
+    <string name="rename_topic">Renommer la conversation</string>
+    <string name="save">Enregistrer</string>
+    <string name="conversation_back">Retour au chat</string>
+    <string name="composer_more">Plus d’options</string>
+    <string name="voice_to_text">Maintenez pour ajouter une transcription vocale</string>
+    <string name="file_preview">Aperçu</string>
+    <string name="file_preview_title">Aperçu du fichier</string>
+    <string name="file_preview_language">Langue : %1$s</string>
+    <string name="file_preview_size">Taille : %1$d octets</string>
+    <string name="file_preview_truncated">Aperçu tronqué par le serveur.</string>
+    <string name="file_preview_load_failed">Impossible de charger l’aperçu de ce fichier.</string>
+    <string name="close">Fermer</string>
+    <string name="attachments">Pièces jointes</string>
+    <string name="remove_attachment">Supprimer la pièce jointe</string>
+    <string name="transcribing">Transcription…</string>
+    <string name="recording">Enregistrement…</string>
+    <string name="composer_ready_label">Prêt</string>
 </resources>

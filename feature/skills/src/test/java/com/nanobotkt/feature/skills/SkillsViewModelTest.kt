@@ -2,6 +2,7 @@ package com.nanobotkt.feature.skills
 
 import com.nanobotkt.core.model.SkillDetail
 import com.nanobotkt.core.model.SkillsPayload
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -21,8 +24,7 @@ import org.junit.runner.Description
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SkillsViewModelTest {
-    @get:Rule
-    val mainDispatcherRule = SkillsMainDispatcherRule()
+    @get:Rule val mainDispatcherRule = SkillsMainDispatcherRule()
 
     @Test
     fun initRefreshesSkillsAndRefreshCanBeTriggeredAgain() = runTest {
@@ -37,55 +39,127 @@ class SkillsViewModelTest {
     }
 
     @Test
-    fun selectForwardsSkillNameAndCloseDetailClearsSelection() = runTest {
+    fun selectPublishesDetailAndCloseClearsOnlyPageSelection() = runTest {
         val repository = FakeSkillsRepository()
         val viewModel = SkillsViewModel(repository)
         runCurrent()
 
         viewModel.select("codex-subagent")
         runCurrent()
-        assertEquals(listOf("codex-subagent"), repository.selectedNames)
+        assertTrue(viewModel.state.value.detailLoading)
+        repository.completeDetail("codex-subagent", SkillDetail(name = "codex-subagent"))
+        runCurrent()
+        assertEquals("codex-subagent", viewModel.state.value.selected?.name)
 
         viewModel.closeDetail()
-        assertEquals(1, repository.clearSelectionCalls)
+        runCurrent()
+        assertNull(viewModel.state.value.selected)
+        assertFalse(viewModel.state.value.detailLoading)
+        // 关闭详情不应清空 Singleton Repository 中仍可复用的技能列表。
+        assertEquals(SkillsPayload(), repository.state.value.skills)
+    }
+
+    @Test
+    fun newerSelectionCannotBeOverwrittenByCancelledOlderRequest() = runTest {
+        val repository = FakeSkillsRepository()
+        val viewModel = SkillsViewModel(repository)
+        runCurrent()
+
+        viewModel.select("slow")
+        runCurrent()
+        viewModel.select("new")
+        runCurrent()
+
+        repository.completeDetail("slow", SkillDetail(name = "slow"))
+        repository.completeDetail("new", SkillDetail(name = "new"))
+        runCurrent()
+
+        assertEquals("new", viewModel.state.value.selected?.name)
+        assertFalse(viewModel.state.value.detailLoading)
+    }
+
+    @Test
+    fun closeDetailPreventsLateResponseFromReopeningDialog() = runTest {
+        val repository = FakeSkillsRepository()
+        val viewModel = SkillsViewModel(repository)
+        runCurrent()
+
+        viewModel.select("slow")
+        runCurrent()
+        viewModel.closeDetail()
+        repository.completeDetail("slow", SkillDetail(name = "slow"))
+        runCurrent()
+
+        assertNull(viewModel.state.value.selected)
+        assertFalse(viewModel.state.value.detailLoading)
+    }
+
+    @Test
+    fun repositoryResetImmediatelyMasksDetailFromPreviousLogin() = runTest {
+        val repository = FakeSkillsRepository()
+        val viewModel = SkillsViewModel(repository)
+        runCurrent()
+
+        viewModel.select("old-account")
+        runCurrent()
+        repository.reset()
+        runCurrent()
+        repository.completeDetail("old-account", SkillDetail(name = "old-account"))
+        runCurrent()
+
+        // generation 不同后，旧详情和 loading 都不能跨登录主体显示。
+        assertEquals(SkillsUiState(), viewModel.state.value)
+    }
+
+    @Test
+    fun detailFailureStopsLoadingAndExposesError() = runTest {
+        val repository = FakeSkillsRepository()
+        val viewModel = SkillsViewModel(repository)
+        runCurrent()
+
+        viewModel.select("broken")
+        runCurrent()
+        repository.failDetail("broken", IllegalStateException("detail unavailable"))
+        runCurrent()
+
+        assertNull(viewModel.state.value.selected)
+        assertFalse(viewModel.state.value.detailLoading)
+        assertEquals("detail unavailable", viewModel.state.value.error)
     }
 }
 
 private class FakeSkillsRepository : SkillsRepository {
-    private val mutableState = MutableStateFlow(SkillsUiState())
-    override val state: StateFlow<SkillsUiState> = mutableState.asStateFlow()
+    private val mutableState = MutableStateFlow(SkillsRepositoryState())
+    override val state: StateFlow<SkillsRepositoryState> = mutableState.asStateFlow()
+    private val details = mutableMapOf<String, CompletableDeferred<SkillDetail>>()
     var refreshCalls = 0
-    val selectedNames = mutableListOf<String>()
-    var clearSelectionCalls = 0
 
-    override fun reset() = Unit
+    override fun reset() {
+        mutableState.value =
+            SkillsRepositoryState(sessionGeneration = mutableState.value.sessionGeneration + 1)
+    }
 
     override suspend fun refresh() {
         refreshCalls += 1
         mutableState.value = mutableState.value.copy(skills = SkillsPayload())
     }
 
-    override suspend fun select(name: String) {
-        selectedNames += name
-        mutableState.value = mutableState.value.copy(
-            selected = SkillDetail(name = name),
-            detailLoading = false,
-        )
+    override suspend fun loadDetail(name: String): SkillDetail =
+        details.getOrPut(name) { CompletableDeferred() }.await()
+
+    fun completeDetail(name: String, detail: SkillDetail) {
+        details.getOrPut(name) { CompletableDeferred() }.complete(detail)
     }
 
-    override fun clearSelection() {
-        clearSelectionCalls += 1
-        mutableState.value = mutableState.value.copy(selected = null, detailLoading = false)
+    fun failDetail(name: String, error: Throwable) {
+        details.getOrPut(name) { CompletableDeferred() }.completeExceptionally(error)
     }
 }
 
+/** 为 ViewModel 测试提供可控主线程，保证 Job 取消和 StateFlow 组合顺序可复现。 */
 @OptIn(ExperimentalCoroutinesApi::class)
-/**
- * 为 ViewModel 测试提供可控的主线程调度器，避免测试依赖真实 Android 主线程。
- */
-class SkillsMainDispatcherRule(
-    private val dispatcher: TestDispatcher = StandardTestDispatcher(),
-) : TestWatcher() {
+class SkillsMainDispatcherRule(private val dispatcher: TestDispatcher = StandardTestDispatcher()) :
+    TestWatcher() {
     override fun starting(description: Description) {
         kotlinx.coroutines.Dispatchers.setMain(dispatcher)
     }

@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="open_navigation">Open navigation</string>
-    <string name="refresh">Refresh</string>
+    <string name="open_navigation">Mở điều hướng</string>
+    <string name="refresh">Làm mới</string>
     <string name="empty_title">No topics yet</string>
-    <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
-    <string name="new_topic">New topic</string>
-    <string name="load_older">Load older messages</string>
-    <string name="thinking">Thinking…</string>
-    <string name="reasoning">Reasoning</string>
+    <string name="empty_body">Bắt đầu một chủ đề mới để trò chuyện với không gian làm việc nanobot của bạn.</string>
+    <string name="new_topic">Chủ đề mới</string>
+    <string name="load_older">Tải các tin nhắn cũ hơn</string>
+    <string name="thinking">Đang suy nghĩ…</string>
+    <string name="reasoning">Lập luận</string>
     <string name="copy">Sao chép</string>
     <string name="copied">Đã sao chép</string>
-    <string name="composer_placeholder">Type your message…</string>
-    <string name="stop">Stop response</string>
-    <string name="send">Send message</string>
-    <string name="attach_image">Attach images</string>
-    <string name="attach_file">Attach files</string>
+    <string name="composer_placeholder">Nhập tin nhắn…</string>
+    <string name="stop">Dừng phản hồi</string>
+    <string name="send">Gửi tin nhắn</string>
+    <string name="attach_image">Đính kèm hình ảnh</string>
+    <string name="attach_file">Đính kèm tệp</string>
     <string name="ask_about_this">Hỏi về nội dung này</string>
     <string name="fork">Tạo nhánh</string>
     <string name="retry_message">Thử lại</string>
@@ -77,8 +77,8 @@
     <string name="prompt_navigator_search">Tìm kiếm prompt</string>
     <string name="prompt_navigator_no_results">Không có prompt phù hợp.</string>
     <string name="prompt_navigator_jump_to">Chuyển đến prompt: %1$s</string>
-    <string name="session_info_title">Session details</string>
-    <string name="session_info_label">Session</string>
+    <string name="session_info_title">Chi tiết phiên</string>
+    <string name="session_info_label">Phiên</string>
     <string name="session_info_untitled">Chủ đề không có tiêu đề</string>
     <string name="session_info_automations">Tự động hóa</string>
     <string name="session_info_count">%1$d</string>
@@ -109,4 +109,42 @@
     <plurals name="session_info_duration_second">
         <item quantity="other">%1$d giây</item>
     </plurals>
+    <!-- 补齐聊天导航、附件预览和语音输入文案，避免回退到默认英文。 -->
+    <string name="toggle_theme">Chuyển đổi giao diện</string>
+    <string name="more_actions">Tùy chọn khác</string>
+    <string name="jump_to_latest_messages">Tin nhắn mới</string>
+    <string name="open_conversation_list">Mở các cuộc trò chuyện</string>
+    <string name="conversation_list_title">Cuộc trò chuyện</string>
+    <string name="conversation_search_hint">Tìm kiếm cuộc trò chuyện</string>
+    <string name="clear_search">Xóa tìm kiếm</string>
+    <string name="conversation_pinned_section">Đã ghim</string>
+    <string name="conversation_recent_section">Gần đây</string>
+    <string name="conversation_empty">Chưa có cuộc trò chuyện nào.</string>
+    <string name="conversation_no_results">Không có cuộc trò chuyện phù hợp.</string>
+    <string name="conversation_new_topic">Chủ đề mới</string>
+    <string name="topic_actions">Thao tác cuộc trò chuyện</string>
+    <string name="pin">Ghim</string>
+    <string name="unpin">Bỏ ghim</string>
+    <string name="rename">Đổi tên</string>
+    <string name="archive">Lưu trữ</string>
+    <string name="delete">Xóa</string>
+    <string name="delete_topic">Xóa cuộc trò chuyện?</string>
+    <string name="delete_topic_confirmation">Xóa “%1$s”? Thao tác này không thể hoàn tác.</string>
+    <string name="rename_topic">Đổi tên cuộc trò chuyện</string>
+    <string name="save">Lưu</string>
+    <string name="conversation_back">Quay lại trò chuyện</string>
+    <string name="composer_more">Tùy chọn khác</string>
+    <string name="voice_to_text">Nhấn giữ để thêm giọng nói thành văn bản</string>
+    <string name="file_preview">Xem trước</string>
+    <string name="file_preview_title">Xem trước tệp</string>
+    <string name="file_preview_language">Ngôn ngữ: %1$s</string>
+    <string name="file_preview_size">Kích thước: %1$d byte</string>
+    <string name="file_preview_truncated">Bản xem trước đã bị máy chủ cắt ngắn.</string>
+    <string name="file_preview_load_failed">Không thể tải bản xem trước của tệp này.</string>
+    <string name="close">Đóng</string>
+    <string name="attachments">Tệp đính kèm</string>
+    <string name="remove_attachment">Xóa tệp đính kèm</string>
+    <string name="transcribing">Đang chuyển ngữ…</string>
+    <string name="recording">Đang ghi…</string>
+    <string name="composer_ready_label">Sẵn sàng</string>
 </resources>

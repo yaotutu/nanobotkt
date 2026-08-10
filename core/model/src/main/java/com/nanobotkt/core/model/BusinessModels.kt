@@ -1,67 +1,633 @@
-﻿package com.nanobotkt.core.model
+package com.nanobotkt.core.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
-@Serializable data class SkillSummary(val name: String, val description: String = "", val source: String = "", val available: Boolean = false, @SerialName("unavailable_reason") val unavailableReason: String? = null)
-@Serializable data class SkillRequirements(val bins: List<String> = emptyList(), val env: List<String> = emptyList(), @SerialName("missing_bins") val missingBins: List<String> = emptyList(), @SerialName("missing_env") val missingEnv: List<String> = emptyList())
-@Serializable data class SkillDetail(val name: String, val description: String = "", val source: String = "", val available: Boolean = false, @SerialName("unavailable_reason") val unavailableReason: String? = null, val requirements: SkillRequirements = SkillRequirements(), @SerialName("raw_markdown") val rawMarkdown: String = "")
+@Serializable
+data class SkillSummary(
+    val name: String,
+    val description: String = "",
+    val source: String = "",
+    val available: Boolean = false,
+    @SerialName("unavailable_reason") val unavailableReason: String? = null,
+)
+
+@Serializable
+data class SkillRequirements(
+    val bins: List<String> = emptyList(),
+    val env: List<String> = emptyList(),
+    @SerialName("missing_bins") val missingBins: List<String> = emptyList(),
+    @SerialName("missing_env") val missingEnv: List<String> = emptyList(),
+)
+
+@Serializable
+data class SkillDetail(
+    val name: String,
+    val description: String = "",
+    val source: String = "",
+    val available: Boolean = false,
+    @SerialName("unavailable_reason") val unavailableReason: String? = null,
+    val requirements: SkillRequirements = SkillRequirements(),
+    @SerialName("raw_markdown") val rawMarkdown: String = "",
+)
+
 @Serializable data class SkillsPayload(val skills: List<SkillSummary> = emptyList())
 
 @Serializable data class AppPackageRef(val manager: String = "", val name: String? = null)
-@Serializable data class AppField(val name: String, val target: String? = null, val required: Boolean? = null, val secret: Boolean? = null, @SerialName("env_var") val envVar: String? = null)
-@Serializable data class AppCapability(val type: String, @SerialName("entry_point") val entryPoint: String? = null, val `package`: AppPackageRef? = null, val path: String? = null, val transport: String? = null, val command: String? = null, val args: List<String>? = null, val url: String? = null, val fields: List<AppField>? = null)
-@Serializable data class AppPlan(val supported: Boolean = false, val strategy: String? = null, @SerialName("managed_paths") val managedPaths: List<String>? = null, val verification: List<String>? = null)
-@Serializable data class AppTrust(val registry: String = "", val level: String = "", @SerialName("review_status") val reviewStatus: String = "")
-@Serializable data class AppManifest(val schema: String = "", val id: String = "", @SerialName("display_name") val displayName: String = "", val version: String? = null, val description: String = "", val category: String = "", val source: String = "", @SerialName("logo_url") val logoUrl: String? = null, @SerialName("brand_color") val brandColor: String? = null, @SerialName("docs_url") val docsUrl: String? = null, val capabilities: List<AppCapability> = emptyList(), val install: AppPlan = AppPlan(), val remove: AppPlan = AppPlan(), val trust: AppTrust = AppTrust())
-@Serializable data class CliAppInfo(val name: String, @SerialName("display_name") val displayName: String = name, val category: String = "", val description: String = "", val requires: String = "", val source: String = "", @SerialName("entry_point") val entryPoint: String = "", @SerialName("install_supported") val installSupported: Boolean = false, val installed: Boolean = false, val available: Boolean = false, val status: String = "", @SerialName("logo_url") val logoUrl: String? = null, @SerialName("brand_color") val brandColor: String? = null, @SerialName("skill_installed") val skillInstalled: Boolean = false, val manifest: AppManifest? = null)
-@Serializable data class CapabilityAction(val ok: Boolean = false, val message: String = "", val installed: Boolean? = null, val removed: Boolean? = null, val output: String? = null, @SerialName("still_available") val stillAvailable: Boolean? = null, val verification: List<String>? = null, @SerialName("verification_failed") val verificationFailed: List<String>? = null, @SerialName("tool_count") val toolCount: Int? = null, @SerialName("tool_names") val toolNames: List<String>? = null, @SerialName("checked_at") val checkedAt: String? = null, val error: String? = null)
-@Serializable data class CliAppsPayload(val apps: List<CliAppInfo> = emptyList(), @SerialName("installed_count") val installedCount: Int = 0, @SerialName("catalog_updated_at") val catalogUpdatedAt: String? = null, @SerialName("catalog_refresh_pending") val catalogRefreshPending: Boolean? = null, @SerialName("last_action") val lastAction: CapabilityAction? = null)
-@Serializable data class McpPresetField(val name: String, val label: String = name, val secret: Boolean = false, val required: Boolean = false, val configured: Boolean = false, val placeholder: String? = null, @SerialName("env_var") val envVar: String? = null)
-@Serializable data class McpPresetInfo(val name: String, @SerialName("display_name") val displayName: String = name, val category: String = "", val description: String = "", @SerialName("docs_url") val docsUrl: String = "", val transport: String = "", val requires: String = "", val note: String = "", @SerialName("install_supported") val installSupported: Boolean = false, val installed: Boolean = false, val configured: Boolean = false, val available: Boolean = false, val status: String = "", @SerialName("logo_url") val logoUrl: String? = null, @SerialName("brand_color") val brandColor: String? = null, @SerialName("required_fields") val requiredFields: List<McpPresetField> = emptyList(), @SerialName("connection_summary") val connectionSummary: String = "", @SerialName("tool_count") val toolCount: Int? = null, @SerialName("tool_names") val toolNames: List<String>? = null, @SerialName("checked_at") val checkedAt: String? = null, val error: String? = null, @SerialName("enabled_tools") val enabledTools: List<String>? = null, val source: String? = null, val manifest: AppManifest? = null)
-@Serializable data class McpHotReload(val ok: Boolean = false, val message: String = "", val added: List<String>? = null, val changed: List<String>? = null, val removed: List<String>? = null, val retried: List<String>? = null, val connected: List<String>? = null, val configured: List<String>? = null, val failed: List<String>? = null, @SerialName("tools_removed") val toolsRemoved: Int? = null, @SerialName("requires_restart") val requiresRestart: Boolean? = null)
-@Serializable data class McpPresetsPayload(val presets: List<McpPresetInfo> = emptyList(), @SerialName("installed_count") val installedCount: Int = 0, @SerialName("requires_restart") val requiresRestart: Boolean? = null, @SerialName("hot_reload") val hotReload: McpHotReload? = null, @SerialName("last_action") val lastAction: CapabilityAction? = null)
-@Serializable data class SlashCommand(val command: String, val title: String, val description: String, val icon: String, @SerialName("arg_hint") val argHint: String = "", val lifecycle: String, @SerialName("accepts_args") val acceptsArgs: Boolean = false)
+
+@Serializable
+data class AppField(
+    val name: String,
+    val target: String? = null,
+    val required: Boolean? = null,
+    val secret: Boolean? = null,
+    @SerialName("env_var") val envVar: String? = null,
+)
+
+@Serializable
+data class AppCapability(
+    val type: String,
+    @SerialName("entry_point") val entryPoint: String? = null,
+    val `package`: AppPackageRef? = null,
+    val path: String? = null,
+    val transport: String? = null,
+    val command: String? = null,
+    val args: List<String>? = null,
+    val url: String? = null,
+    val fields: List<AppField>? = null,
+)
+
+@Serializable
+data class AppPlan(
+    val supported: Boolean = false,
+    val strategy: String? = null,
+    @SerialName("managed_paths") val managedPaths: List<String>? = null,
+    val verification: List<String>? = null,
+)
+
+@Serializable
+data class AppTrust(
+    val registry: String = "",
+    val level: String = "",
+    @SerialName("review_status") val reviewStatus: String = "",
+)
+
+@Serializable
+data class AppManifest(
+    val schema: String = "",
+    val id: String = "",
+    @SerialName("display_name") val displayName: String = "",
+    val version: String? = null,
+    val description: String = "",
+    val category: String = "",
+    val source: String = "",
+    @SerialName("logo_url") val logoUrl: String? = null,
+    @SerialName("brand_color") val brandColor: String? = null,
+    @SerialName("docs_url") val docsUrl: String? = null,
+    val capabilities: List<AppCapability> = emptyList(),
+    val install: AppPlan = AppPlan(),
+    val remove: AppPlan = AppPlan(),
+    val trust: AppTrust = AppTrust(),
+)
+
+@Serializable
+data class CliAppInfo(
+    val name: String,
+    @SerialName("display_name") val displayName: String = name,
+    val category: String = "",
+    val description: String = "",
+    val requires: String = "",
+    val source: String = "",
+    @SerialName("entry_point") val entryPoint: String = "",
+    @SerialName("install_supported") val installSupported: Boolean = false,
+    val installed: Boolean = false,
+    val available: Boolean = false,
+    val status: String = "",
+    @SerialName("logo_url") val logoUrl: String? = null,
+    @SerialName("brand_color") val brandColor: String? = null,
+    @SerialName("skill_installed") val skillInstalled: Boolean = false,
+    val manifest: AppManifest? = null,
+)
+
+@Serializable
+data class CapabilityAction(
+    val ok: Boolean = false,
+    val message: String = "",
+    val installed: Boolean? = null,
+    val removed: Boolean? = null,
+    val output: String? = null,
+    @SerialName("still_available") val stillAvailable: Boolean? = null,
+    val verification: List<String>? = null,
+    @SerialName("verification_failed") val verificationFailed: List<String>? = null,
+    @SerialName("tool_count") val toolCount: Int? = null,
+    @SerialName("tool_names") val toolNames: List<String>? = null,
+    @SerialName("checked_at") val checkedAt: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class CliAppsPayload(
+    val apps: List<CliAppInfo> = emptyList(),
+    @SerialName("installed_count") val installedCount: Int = 0,
+    @SerialName("catalog_updated_at") val catalogUpdatedAt: String? = null,
+    @SerialName("catalog_refresh_pending") val catalogRefreshPending: Boolean? = null,
+    @SerialName("last_action") val lastAction: CapabilityAction? = null,
+)
+
+@Serializable
+data class McpPresetField(
+    val name: String,
+    val label: String = name,
+    val secret: Boolean = false,
+    val required: Boolean = false,
+    val configured: Boolean = false,
+    val placeholder: String? = null,
+    @SerialName("env_var") val envVar: String? = null,
+)
+
+@Serializable
+data class McpPresetInfo(
+    val name: String,
+    @SerialName("display_name") val displayName: String = name,
+    val category: String = "",
+    val description: String = "",
+    @SerialName("docs_url") val docsUrl: String = "",
+    val transport: String = "",
+    val requires: String = "",
+    val note: String = "",
+    @SerialName("install_supported") val installSupported: Boolean = false,
+    val installed: Boolean = false,
+    val configured: Boolean = false,
+    val available: Boolean = false,
+    val status: String = "",
+    @SerialName("logo_url") val logoUrl: String? = null,
+    @SerialName("brand_color") val brandColor: String? = null,
+    @SerialName("required_fields") val requiredFields: List<McpPresetField> = emptyList(),
+    @SerialName("connection_summary") val connectionSummary: String = "",
+    @SerialName("tool_count") val toolCount: Int? = null,
+    @SerialName("tool_names") val toolNames: List<String>? = null,
+    @SerialName("checked_at") val checkedAt: String? = null,
+    val error: String? = null,
+    @SerialName("enabled_tools") val enabledTools: List<String>? = null,
+    val source: String? = null,
+    val manifest: AppManifest? = null,
+)
+
+@Serializable
+data class McpHotReload(
+    val ok: Boolean = false,
+    val message: String = "",
+    val added: List<String>? = null,
+    val changed: List<String>? = null,
+    val removed: List<String>? = null,
+    val retried: List<String>? = null,
+    val connected: List<String>? = null,
+    val configured: List<String>? = null,
+    val failed: List<String>? = null,
+    @SerialName("tools_removed") val toolsRemoved: Int? = null,
+    @SerialName("requires_restart") val requiresRestart: Boolean? = null,
+)
+
+@Serializable
+data class McpPresetsPayload(
+    val presets: List<McpPresetInfo> = emptyList(),
+    @SerialName("installed_count") val installedCount: Int = 0,
+    @SerialName("requires_restart") val requiresRestart: Boolean? = null,
+    @SerialName("hot_reload") val hotReload: McpHotReload? = null,
+    @SerialName("last_action") val lastAction: CapabilityAction? = null,
+)
+
+@Serializable
+data class SlashCommand(
+    val command: String,
+    val title: String,
+    val description: String,
+    val icon: String,
+    @SerialName("arg_hint") val argHint: String = "",
+    val lifecycle: String,
+    @SerialName("accepts_args") val acceptsArgs: Boolean = false,
+)
+
 @Serializable data class SlashCommandsPayload(val commands: List<SlashCommand> = emptyList())
 
-@Serializable data class AutomationRunHistoryEntry(@SerialName("run_at_ms") val runAtMs: Long, val status: String, @SerialName("duration_ms") val durationMs: Long? = null, val error: String? = null)
-@Serializable data class AutomationSchedule(val kind: String, @SerialName("at_ms") val atMs: Long? = null, @SerialName("every_ms") val everyMs: Long? = null, val expr: String? = null, val tz: String? = null)
-@Serializable data class AutomationPayload(val message: String = "", val kind: String? = null, val command: String? = null)
-@Serializable data class AutomationState(@SerialName("next_run_at_ms") val nextRunAtMs: Long? = null, @SerialName("last_run_at_ms") val lastRunAtMs: Long? = null, @SerialName("last_status") val lastStatus: String? = null, @SerialName("last_error") val lastError: String? = null, val pending: Boolean? = null, @SerialName("run_history") val runHistory: List<AutomationRunHistoryEntry>? = null)
-@Serializable data class AutomationOrigin(@SerialName("session_key") val sessionKey: String? = null, val channel: String = "", @SerialName("chat_id") val chatId: String? = null, val title: String? = null, val preview: String? = null)
+@Serializable
+data class AutomationRunHistoryEntry(
+    @SerialName("run_at_ms") val runAtMs: Long,
+    val status: String,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class AutomationSchedule(
+    val kind: String,
+    @SerialName("at_ms") val atMs: Long? = null,
+    @SerialName("every_ms") val everyMs: Long? = null,
+    val expr: String? = null,
+    val tz: String? = null,
+)
+
+@Serializable
+data class AutomationPayload(
+    val message: String = "",
+    val kind: String? = null,
+    val command: String? = null,
+)
+
+@Serializable
+data class AutomationState(
+    @SerialName("next_run_at_ms") val nextRunAtMs: Long? = null,
+    @SerialName("last_run_at_ms") val lastRunAtMs: Long? = null,
+    @SerialName("last_status") val lastStatus: String? = null,
+    @SerialName("last_error") val lastError: String? = null,
+    val pending: Boolean? = null,
+    @SerialName("run_history") val runHistory: List<AutomationRunHistoryEntry>? = null,
+)
+
+@Serializable
+data class AutomationOrigin(
+    @SerialName("session_key") val sessionKey: String? = null,
+    val channel: String = "",
+    @SerialName("chat_id") val chatId: String? = null,
+    val title: String? = null,
+    val preview: String? = null,
+)
+
 @Serializable data class AutomationTrigger(val id: String, val command: String)
-@Serializable data class SessionAutomationJob(val id: String, val name: String, val enabled: Boolean, val protected: Boolean? = null, @SerialName("delete_after_run") val deleteAfterRun: Boolean? = null, @SerialName("created_at_ms") val createdAtMs: Long? = null, @SerialName("updated_at_ms") val updatedAtMs: Long? = null, val kind: String? = null, val schedule: AutomationSchedule, val payload: AutomationPayload, val state: AutomationState = AutomationState(), val origin: AutomationOrigin? = null, val trigger: AutomationTrigger? = null)
+
+@Serializable
+data class SessionAutomationJob(
+    val id: String,
+    val name: String,
+    val enabled: Boolean,
+    val protected: Boolean? = null,
+    @SerialName("delete_after_run") val deleteAfterRun: Boolean? = null,
+    @SerialName("created_at_ms") val createdAtMs: Long? = null,
+    @SerialName("updated_at_ms") val updatedAtMs: Long? = null,
+    val kind: String? = null,
+    val schedule: AutomationSchedule,
+    val payload: AutomationPayload,
+    val state: AutomationState = AutomationState(),
+    val origin: AutomationOrigin? = null,
+    val trigger: AutomationTrigger? = null,
+)
+
 @Serializable data class AutomationsPayload(val jobs: List<SessionAutomationJob> = emptyList())
-@Serializable data class AutomationUpdatePayload(val name: String? = null, val message: String? = null, val schedule: AutomationSchedule? = null)
 
-@Serializable data class ChannelValidationCheck(val id: String, val label: String, val status: String, val message: String? = null, @SerialName("action_url") val actionUrl: String? = null)
-@Serializable data class ChannelIdentity(val name: String? = null, val workspace: String? = null, val account: String? = null, @SerialName("avatar_url") val avatarUrl: String? = null)
-@Serializable data class ChannelValidationPayload(val name: String, val status: String, val checks: List<ChannelValidationCheck> = emptyList(), val identity: ChannelIdentity? = null, @SerialName("missing_fields") val missingFields: List<String> = emptyList(), @SerialName("can_enable") val canEnable: Boolean = false, @SerialName("requires_restart") val requiresRestart: Boolean = false, @SerialName("checked_at") val checkedAt: String? = null, val message: String? = null)
-@Serializable data class PairingRequestInfo(val code: String, val channel: String, @SerialName("sender_id") val senderId: String, @SerialName("created_at_ms") val createdAtMs: Long? = null, @SerialName("expires_at_ms") val expiresAtMs: Long? = null, @SerialName("expires_in_seconds") val expiresInSeconds: Long? = null)
-@Serializable data class PairingLastAction(val ok: Boolean, val action: String, val message: String, val code: String? = null, val channel: String? = null, @SerialName("sender_id") val senderId: String? = null)
-@Serializable data class PairingPayload(val requests: List<PairingRequestInfo> = emptyList(), @SerialName("last_action") val lastAction: PairingLastAction? = null)
-@Serializable data class ChannelConnectPayload(@SerialName("session_id") val sessionId: String, @SerialName("instance_id") val instanceId: String? = null, val status: String, val message: String? = null, @SerialName("qr_url") val qrUrl: String? = null, val domain: String? = null, @SerialName("interval_ms") val intervalMs: Long? = null, @SerialName("expires_at_ms") val expiresAtMs: Long? = null, @SerialName("app_id") val appId: String? = null, val account: String? = null, @SerialName("nanobot_features") val nanobotFeatures: NanobotFeaturesPayload? = null)
-@Serializable data class ChannelConfigurePayload(val name: String, val saved: Boolean, @SerialName("saved_keys") val savedKeys: List<String>? = null, @SerialName("nanobot_features") val nanobotFeatures: NanobotFeaturesPayload? = null)
-@Serializable data class ChannelSetupContractField(val key: String, val field: String, val kind: String, val choices: List<String> = emptyList(), val required: Boolean = false, @SerialName("default_value") val defaultValue: String? = null)
-@Serializable data class ChannelSetupContract(val fields: List<ChannelSetupContractField> = emptyList(), @SerialName("official_url") val officialUrl: String? = null)
-@Serializable data class NanobotChannelInstanceInfo(val id: String, val name: String, @SerialName("display_name") val displayName: String? = null, @SerialName("avatar_url") val avatarUrl: String? = null, val enabled: Boolean = false, val running: Boolean? = null, @SerialName("runtime_status") val runtimeStatus: String? = null, @SerialName("runtime_error") val runtimeError: String? = null, val configured: Boolean = false, @SerialName("config_values") val configValues: Map<String, String> = emptyMap(), @SerialName("configured_fields") val configuredFields: List<String> = emptyList())
-@Serializable data class NanobotFeatureInfo(val name: String, @SerialName("display_name") val displayName: String = name, val capabilities: List<String>? = null, @SerialName("settings_visible") val settingsVisible: Boolean? = null, @SerialName("connect_supported") val connectSupported: Boolean? = null, val webui: String? = null, val type: String = "feature", val enabled: Boolean = false, val running: Boolean? = null, @SerialName("runtime_status") val runtimeStatus: String? = null, @SerialName("runtime_error") val runtimeError: String? = null, val error: String? = null, val configured: Boolean? = null, @SerialName("config_values") val configValues: Map<String, String>? = null, @SerialName("configured_fields") val configuredFields: List<String>? = null, val setup: ChannelSetupContract? = null, val instances: List<NanobotChannelInstanceInfo>? = null, val installed: Boolean = false, val ready: Boolean = false, val status: String = "", @SerialName("install_supported") val installSupported: Boolean = false, @SerialName("requires_restart") val requiresRestart: Boolean = false)
-@Serializable data class NanobotFeatureAction(val ok: Boolean, val message: String, val enabled: Boolean? = null)
-@Serializable data class NanobotFeaturesPayload(val features: List<NanobotFeatureInfo> = emptyList(), @SerialName("enabled_count") val enabledCount: Int = 0, @SerialName("requires_restart") val requiresRestart: Boolean? = null, @SerialName("last_action") val lastAction: NanobotFeatureAction? = null)
+@Serializable
+data class AutomationUpdatePayload(
+    val name: String? = null,
+    val message: String? = null,
+    val schedule: AutomationSchedule? = null,
+)
 
-@Serializable data class ProviderModelInfo(val id: String, val label: String? = null, val description: String? = null, @SerialName("owned_by") val ownedBy: String? = null, @SerialName("context_window") val contextWindow: Int? = null)
-@Serializable data class ProviderModelsPayload(val provider: String, val label: String, val status: String, @SerialName("catalog_kind") val catalogKind: String, val models: List<ProviderModelInfo> = emptyList(), @SerialName("model_count") val modelCount: Int = models.size, val message: String? = null, @SerialName("fetched_at") val fetchedAt: Long? = null)
-@Serializable data class ModelPresetInfo(val name: String, val label: String, val active: Boolean, @SerialName("is_default") val isDefault: Boolean, val model: String, val provider: String, @SerialName("resolved_provider") val resolvedProvider: String? = null, @SerialName("max_tokens") val maxTokens: Int = 0, @SerialName("context_window_tokens") val contextWindowTokens: Int = 0, val temperature: Double = 0.0, @SerialName("reasoning_effort") val reasoningEffort: String? = null, @SerialName("reasoning_effort_values") val reasoningEffortValues: List<String>? = null)
-@Serializable data class ProviderSettingsInfo(val name: String, val label: String = name, @SerialName("is_custom") val isCustom: Boolean? = null, val configured: Boolean = false, @SerialName("auth_type") val authType: String? = null, @SerialName("api_key_required") val apiKeyRequired: Boolean? = null, @SerialName("api_key_hint") val apiKeyHint: String? = null, @SerialName("api_base") val apiBase: String? = null, @SerialName("default_api_base") val defaultApiBase: String? = null, @SerialName("model_selectable") val modelSelectable: Boolean? = null, @SerialName("model_catalog") val modelCatalog: String? = null, @SerialName("api_type") val apiType: String? = null, @SerialName("oauth_account") val oauthAccount: String? = null, @SerialName("oauth_expires_at") val oauthExpiresAt: Long? = null, @SerialName("oauth_login_supported") val oauthLoginSupported: Boolean? = null, val proxy: String? = null, @SerialName("advanced_fields") val advancedFields: List<String>? = null, @SerialName("extra_headers") val extraHeaders: Map<String, String>? = null, @SerialName("extra_body") val extraBody: JsonElement? = null, @SerialName("extra_query") val extraQuery: Map<String, String>? = null, @SerialName("thinking_style") val thinkingStyle: String? = null, val region: String? = null, val profile: String? = null)
-@Serializable data class AgentSettings(val model: String = "", val provider: String = "", @SerialName("resolved_provider") val resolvedProvider: String? = null, @SerialName("has_api_key") val hasApiKey: Boolean = false, @SerialName("model_preset") val modelPreset: String? = null, @SerialName("max_tokens") val maxTokens: Int = 0, @SerialName("context_window_tokens") val contextWindowTokens: Int = 0, val temperature: Double = 0.0, @SerialName("reasoning_effort") val reasoningEffort: String? = null, val timezone: String = "", @SerialName("bot_name") val botName: String = "", @SerialName("bot_icon") val botIcon: String = "", @SerialName("tool_hint_max_length") val toolHintMaxLength: Int = 0)
-@Serializable data class SettingsApplyState(val status: String = "idle", val sections: List<String> = emptyList())
-@Serializable data class UsageDayInfo(val date: String, @SerialName("prompt_tokens") val promptTokens: Long = 0, @SerialName("completion_tokens") val completionTokens: Long = 0, @SerialName("cached_tokens") val cachedTokens: Long = 0, @SerialName("total_tokens") val totalTokens: Long = 0, val requests: Long = 0)
-@Serializable data class SettingsUsage(val days: List<UsageDayInfo> = emptyList(), @SerialName("total_tokens") val totalTokens: Long = 0, @SerialName("total_tokens_30d") val totalTokens30d: Long = 0, @SerialName("total_tokens_365d") val totalTokens365d: Long = 0, @SerialName("peak_day_tokens") val peakDayTokens: Long = 0, @SerialName("current_streak_days") val currentStreakDays: Int = 0, @SerialName("longest_streak_days") val longestStreakDays: Int = 0, @SerialName("active_days_30d") val activeDays30d: Int = 0, @SerialName("requests_30d") val requests30d: Long = 0, @SerialName("updated_at") val updatedAt: String? = null)
-@Serializable data class RuntimeSettings(@SerialName("config_path") val configPath: String = "", @SerialName("workspace_path") val workspacePath: String = "", @SerialName("gateway_host") val gatewayHost: String = "", @SerialName("gateway_port") val gatewayPort: Int = 0, val heartbeat: JsonElement? = null, val dream: JsonElement? = null, @SerialName("unified_session") val unifiedSession: Boolean = false)
-@Serializable data class AdvancedSettings(@SerialName("restrict_to_workspace") val restrictToWorkspace: Boolean = false, @SerialName("workspace_sandbox") val workspaceSandbox: WorkspaceSandboxStatus? = null, @SerialName("ssrf_whitelist_count") val ssrfWhitelistCount: Int = 0, @SerialName("webui_allow_local_service_access") val webuiAllowLocalServiceAccess: Boolean = false, @SerialName("allow_local_preview_access") val allowLocalPreviewAccess: Boolean? = null, @SerialName("webui_default_access_mode") val webuiDefaultAccessMode: String = "default", @SerialName("private_service_protection_enabled") val privateServiceProtectionEnabled: Boolean = true, @SerialName("mcp_server_count") val mcpServerCount: Int = 0, @SerialName("exec_enabled") val execEnabled: Boolean = false, @SerialName("exec_sandbox") val execSandbox: String? = null, @SerialName("exec_path_prepend_set") val execPathPrependSet: Boolean = false, @SerialName("exec_path_append_set") val execPathAppendSet: Boolean = false)
-@Serializable data class SettingsPayload(@SerialName("runtime_surface") val runtimeSurface: RuntimeSurface? = null, @SerialName("runtime_capabilities") val runtimeCapabilities: RuntimeCapabilities? = null, @SerialName("apply_state") val applyState: SettingsApplyState? = null, val agent: AgentSettings = AgentSettings(), @SerialName("model_presets") val modelPresets: List<ModelPresetInfo> = emptyList(), @SerialName("model_call_order") val modelCallOrder: List<String> = emptyList(), @SerialName("model_call_order_editable") val modelCallOrderEditable: Boolean = false, @SerialName("created_model_preset") val createdModelPreset: String? = null, @SerialName("created_provider") val createdProvider: String? = null, val providers: List<ProviderSettingsInfo> = emptyList(), @SerialName("web_search") val webSearch: WebSearchSettings? = null, val web: WebSettings? = null, val api: JsonElement? = null, val observability: JsonElement? = null, @SerialName("image_generation") val imageGeneration: ImageGenerationSettings? = null, val transcription: TranscriptionSettings? = null, val runtime: RuntimeSettings = RuntimeSettings(), val usage: SettingsUsage? = null, val advanced: AdvancedSettings = AdvancedSettings(), @SerialName("requires_restart") val requiresRestart: Boolean = false, @SerialName("restart_required_sections") val restartRequiredSections: List<String>? = null, val version: Map<String, String>? = null, val docs: Map<String, String>? = null)
-@Serializable data class ApiServicePayload(val installed: Boolean = false, val running: Boolean = false, val managed: Boolean = false, val host: String = "", val port: Int = 0, val timeout: Int = 0, @SerialName("api_key_hint") val apiKeyHint: String? = null, val endpoint: String = "", val command: String = "", @SerialName("log_path") val logPath: String? = null, @SerialName("last_action") val lastAction: String? = null)
-@Serializable data class VersionUpdateInfo(@SerialName("currentVersion") val currentVersion: String = "", @SerialName("latestVersion") val latestVersion: String = "", @SerialName("pypiUrl") val pypiUrl: String? = null)
-@Serializable data class VersionCheckResult(@SerialName("updateAvailable") val updateAvailable: VersionUpdateInfo? = null)
-@Serializable data class ProviderOAuthResult(val status: String? = null, val provider: String? = null, @SerialName("flow_id") val flowId: String? = null, @SerialName("authorization_url") val authorizationUrl: String? = null, @SerialName("expires_in") val expiresIn: Long? = null)
+@Serializable
+data class ChannelValidationCheck(
+    val id: String,
+    val label: String,
+    val status: String,
+    val message: String? = null,
+    @SerialName("action_url") val actionUrl: String? = null,
+)
+
+@Serializable
+data class ChannelIdentity(
+    val name: String? = null,
+    val workspace: String? = null,
+    val account: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+)
+
+@Serializable
+data class ChannelValidationPayload(
+    val name: String,
+    val status: String,
+    val checks: List<ChannelValidationCheck> = emptyList(),
+    val identity: ChannelIdentity? = null,
+    @SerialName("missing_fields") val missingFields: List<String> = emptyList(),
+    @SerialName("can_enable") val canEnable: Boolean = false,
+    @SerialName("requires_restart") val requiresRestart: Boolean = false,
+    @SerialName("checked_at") val checkedAt: String? = null,
+    val message: String? = null,
+)
+
+@Serializable
+data class PairingRequestInfo(
+    val code: String,
+    val channel: String,
+    @SerialName("sender_id") val senderId: String,
+    @SerialName("created_at_ms") val createdAtMs: Long? = null,
+    @SerialName("expires_at_ms") val expiresAtMs: Long? = null,
+    @SerialName("expires_in_seconds") val expiresInSeconds: Long? = null,
+)
+
+@Serializable
+data class PairingLastAction(
+    val ok: Boolean,
+    val action: String,
+    val message: String,
+    val code: String? = null,
+    val channel: String? = null,
+    @SerialName("sender_id") val senderId: String? = null,
+)
+
+@Serializable
+data class PairingPayload(
+    val requests: List<PairingRequestInfo> = emptyList(),
+    @SerialName("last_action") val lastAction: PairingLastAction? = null,
+)
+
+@Serializable
+data class ChannelConnectPayload(
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("instance_id") val instanceId: String? = null,
+    val status: String,
+    val message: String? = null,
+    @SerialName("qr_url") val qrUrl: String? = null,
+    val domain: String? = null,
+    @SerialName("interval_ms") val intervalMs: Long? = null,
+    @SerialName("expires_at_ms") val expiresAtMs: Long? = null,
+    @SerialName("app_id") val appId: String? = null,
+    val account: String? = null,
+    @SerialName("nanobot_features") val nanobotFeatures: NanobotFeaturesPayload? = null,
+)
+
+@Serializable
+data class ChannelConfigurePayload(
+    val name: String,
+    val saved: Boolean,
+    @SerialName("saved_keys") val savedKeys: List<String>? = null,
+    @SerialName("nanobot_features") val nanobotFeatures: NanobotFeaturesPayload? = null,
+)
+
+@Serializable
+data class ChannelSetupContractField(
+    val key: String,
+    val field: String,
+    val kind: String,
+    val choices: List<String> = emptyList(),
+    val required: Boolean = false,
+    @SerialName("default_value") val defaultValue: String? = null,
+)
+
+@Serializable
+data class ChannelSetupContract(
+    val fields: List<ChannelSetupContractField> = emptyList(),
+    @SerialName("official_url") val officialUrl: String? = null,
+)
+
+@Serializable
+data class NanobotChannelInstanceInfo(
+    val id: String,
+    val name: String,
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
+    val enabled: Boolean = false,
+    val running: Boolean? = null,
+    @SerialName("runtime_status") val runtimeStatus: String? = null,
+    @SerialName("runtime_error") val runtimeError: String? = null,
+    val configured: Boolean = false,
+    @SerialName("config_values") val configValues: Map<String, String> = emptyMap(),
+    @SerialName("configured_fields") val configuredFields: List<String> = emptyList(),
+)
+
+@Serializable
+data class NanobotFeatureInfo(
+    val name: String,
+    @SerialName("display_name") val displayName: String = name,
+    val capabilities: List<String>? = null,
+    @SerialName("settings_visible") val settingsVisible: Boolean? = null,
+    @SerialName("connect_supported") val connectSupported: Boolean? = null,
+    val webui: String? = null,
+    val type: String = "feature",
+    val enabled: Boolean = false,
+    val running: Boolean? = null,
+    @SerialName("runtime_status") val runtimeStatus: String? = null,
+    @SerialName("runtime_error") val runtimeError: String? = null,
+    val error: String? = null,
+    val configured: Boolean? = null,
+    @SerialName("config_values") val configValues: Map<String, String>? = null,
+    @SerialName("configured_fields") val configuredFields: List<String>? = null,
+    val setup: ChannelSetupContract? = null,
+    val instances: List<NanobotChannelInstanceInfo>? = null,
+    val installed: Boolean = false,
+    val ready: Boolean = false,
+    val status: String = "",
+    @SerialName("install_supported") val installSupported: Boolean = false,
+    @SerialName("requires_restart") val requiresRestart: Boolean = false,
+)
+
+@Serializable
+data class NanobotFeatureAction(val ok: Boolean, val message: String, val enabled: Boolean? = null)
+
+@Serializable
+data class NanobotFeaturesPayload(
+    val features: List<NanobotFeatureInfo> = emptyList(),
+    @SerialName("enabled_count") val enabledCount: Int = 0,
+    @SerialName("requires_restart") val requiresRestart: Boolean? = null,
+    @SerialName("last_action") val lastAction: NanobotFeatureAction? = null,
+)
+
+@Serializable
+data class ProviderModelInfo(
+    val id: String,
+    val label: String? = null,
+    val description: String? = null,
+    @SerialName("owned_by") val ownedBy: String? = null,
+    @SerialName("context_window") val contextWindow: Int? = null,
+)
+
+@Serializable
+data class ProviderModelsPayload(
+    val provider: String,
+    val label: String,
+    val status: String,
+    @SerialName("catalog_kind") val catalogKind: String,
+    val models: List<ProviderModelInfo> = emptyList(),
+    @SerialName("model_count") val modelCount: Int = models.size,
+    val message: String? = null,
+    @SerialName("fetched_at") val fetchedAt: Long? = null,
+)
+
+@Serializable
+data class ModelPresetInfo(
+    val name: String,
+    val label: String,
+    val active: Boolean,
+    @SerialName("is_default") val isDefault: Boolean,
+    val model: String,
+    val provider: String,
+    @SerialName("resolved_provider") val resolvedProvider: String? = null,
+    @SerialName("max_tokens") val maxTokens: Int = 0,
+    @SerialName("context_window_tokens") val contextWindowTokens: Int = 0,
+    val temperature: Double = 0.0,
+    @SerialName("reasoning_effort") val reasoningEffort: String? = null,
+    @SerialName("reasoning_effort_values") val reasoningEffortValues: List<String>? = null,
+)
+
+@Serializable
+data class ProviderSettingsInfo(
+    val name: String,
+    val label: String = name,
+    @SerialName("is_custom") val isCustom: Boolean? = null,
+    val configured: Boolean = false,
+    @SerialName("auth_type") val authType: String? = null,
+    @SerialName("api_key_required") val apiKeyRequired: Boolean? = null,
+    @SerialName("api_key_hint") val apiKeyHint: String? = null,
+    @SerialName("api_base") val apiBase: String? = null,
+    @SerialName("default_api_base") val defaultApiBase: String? = null,
+    @SerialName("model_selectable") val modelSelectable: Boolean? = null,
+    @SerialName("model_catalog") val modelCatalog: String? = null,
+    @SerialName("api_type") val apiType: String? = null,
+    @SerialName("oauth_account") val oauthAccount: String? = null,
+    @SerialName("oauth_expires_at") val oauthExpiresAt: Long? = null,
+    @SerialName("oauth_login_supported") val oauthLoginSupported: Boolean? = null,
+    val proxy: String? = null,
+    @SerialName("advanced_fields") val advancedFields: List<String>? = null,
+    @SerialName("extra_headers") val extraHeaders: Map<String, String>? = null,
+    @SerialName("extra_body") val extraBody: JsonElement? = null,
+    @SerialName("extra_query") val extraQuery: Map<String, String>? = null,
+    @SerialName("thinking_style") val thinkingStyle: String? = null,
+    val region: String? = null,
+    val profile: String? = null,
+)
+
+@Serializable
+data class AgentSettings(
+    val model: String = "",
+    val provider: String = "",
+    @SerialName("resolved_provider") val resolvedProvider: String? = null,
+    @SerialName("has_api_key") val hasApiKey: Boolean = false,
+    @SerialName("model_preset") val modelPreset: String? = null,
+    @SerialName("max_tokens") val maxTokens: Int = 0,
+    @SerialName("context_window_tokens") val contextWindowTokens: Int = 0,
+    val temperature: Double = 0.0,
+    @SerialName("reasoning_effort") val reasoningEffort: String? = null,
+    val timezone: String = "",
+    @SerialName("bot_name") val botName: String = "",
+    @SerialName("bot_icon") val botIcon: String = "",
+    @SerialName("tool_hint_max_length") val toolHintMaxLength: Int = 0,
+)
+
+@Serializable
+data class SettingsApplyState(
+    val status: String = "idle",
+    val sections: List<String> = emptyList(),
+)
+
+@Serializable
+data class UsageDayInfo(
+    val date: String,
+    @SerialName("prompt_tokens") val promptTokens: Long = 0,
+    @SerialName("completion_tokens") val completionTokens: Long = 0,
+    @SerialName("cached_tokens") val cachedTokens: Long = 0,
+    @SerialName("total_tokens") val totalTokens: Long = 0,
+    val requests: Long = 0,
+)
+
+@Serializable
+data class SettingsUsage(
+    val days: List<UsageDayInfo> = emptyList(),
+    @SerialName("total_tokens") val totalTokens: Long = 0,
+    @SerialName("total_tokens_30d") val totalTokens30d: Long = 0,
+    @SerialName("total_tokens_365d") val totalTokens365d: Long = 0,
+    @SerialName("peak_day_tokens") val peakDayTokens: Long = 0,
+    @SerialName("current_streak_days") val currentStreakDays: Int = 0,
+    @SerialName("longest_streak_days") val longestStreakDays: Int = 0,
+    @SerialName("active_days_30d") val activeDays30d: Int = 0,
+    @SerialName("requests_30d") val requests30d: Long = 0,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+@Serializable
+data class RuntimeSettings(
+    @SerialName("config_path") val configPath: String = "",
+    @SerialName("workspace_path") val workspacePath: String = "",
+    @SerialName("gateway_host") val gatewayHost: String = "",
+    @SerialName("gateway_port") val gatewayPort: Int = 0,
+    val heartbeat: JsonElement? = null,
+    val dream: JsonElement? = null,
+    @SerialName("unified_session") val unifiedSession: Boolean = false,
+)
+
+@Serializable
+data class AdvancedSettings(
+    @SerialName("restrict_to_workspace") val restrictToWorkspace: Boolean = false,
+    @SerialName("workspace_sandbox") val workspaceSandbox: WorkspaceSandboxStatus? = null,
+    @SerialName("ssrf_whitelist_count") val ssrfWhitelistCount: Int = 0,
+    @SerialName("webui_allow_local_service_access")
+    val webuiAllowLocalServiceAccess: Boolean = false,
+    @SerialName("allow_local_preview_access") val allowLocalPreviewAccess: Boolean? = null,
+    @SerialName("webui_default_access_mode") val webuiDefaultAccessMode: String = "default",
+    @SerialName("private_service_protection_enabled")
+    val privateServiceProtectionEnabled: Boolean = true,
+    @SerialName("mcp_server_count") val mcpServerCount: Int = 0,
+    @SerialName("exec_enabled") val execEnabled: Boolean = false,
+    @SerialName("exec_sandbox") val execSandbox: String? = null,
+    @SerialName("exec_path_prepend_set") val execPathPrependSet: Boolean = false,
+    @SerialName("exec_path_append_set") val execPathAppendSet: Boolean = false,
+)
+
+@Serializable
+data class SettingsPayload(
+    @SerialName("runtime_surface") val runtimeSurface: RuntimeSurface? = null,
+    @SerialName("runtime_capabilities") val runtimeCapabilities: RuntimeCapabilities? = null,
+    @SerialName("apply_state") val applyState: SettingsApplyState? = null,
+    val agent: AgentSettings = AgentSettings(),
+    @SerialName("model_presets") val modelPresets: List<ModelPresetInfo> = emptyList(),
+    @SerialName("model_call_order") val modelCallOrder: List<String> = emptyList(),
+    @SerialName("model_call_order_editable") val modelCallOrderEditable: Boolean = false,
+    @SerialName("created_model_preset") val createdModelPreset: String? = null,
+    @SerialName("created_provider") val createdProvider: String? = null,
+    val providers: List<ProviderSettingsInfo> = emptyList(),
+    @SerialName("web_search") val webSearch: WebSearchSettings? = null,
+    val web: WebSettings? = null,
+    val api: JsonElement? = null,
+    val observability: JsonElement? = null,
+    @SerialName("image_generation") val imageGeneration: ImageGenerationSettings? = null,
+    val transcription: TranscriptionSettings? = null,
+    val runtime: RuntimeSettings = RuntimeSettings(),
+    val usage: SettingsUsage? = null,
+    val advanced: AdvancedSettings = AdvancedSettings(),
+    @SerialName("requires_restart") val requiresRestart: Boolean = false,
+    @SerialName("restart_required_sections") val restartRequiredSections: List<String>? = null,
+    val version: Map<String, String>? = null,
+    val docs: Map<String, String>? = null,
+)
+
+@Serializable
+data class ApiServicePayload(
+    val installed: Boolean = false,
+    val running: Boolean = false,
+    val managed: Boolean = false,
+    val host: String = "",
+    val port: Int = 0,
+    val timeout: Int = 0,
+    @SerialName("api_key_hint") val apiKeyHint: String? = null,
+    val endpoint: String = "",
+    val command: String = "",
+    @SerialName("log_path") val logPath: String? = null,
+    @SerialName("last_action") val lastAction: String? = null,
+)
+
+@Serializable
+data class VersionUpdateInfo(
+    @SerialName("currentVersion") val currentVersion: String = "",
+    @SerialName("latestVersion") val latestVersion: String = "",
+    @SerialName("pypiUrl") val pypiUrl: String? = null,
+)
+
+@Serializable
+data class VersionCheckResult(
+    @SerialName("updateAvailable") val updateAvailable: VersionUpdateInfo? = null
+)
+
+@Serializable
+data class ProviderOAuthResult(
+    val status: String? = null,
+    val provider: String? = null,
+    @SerialName("flow_id") val flowId: String? = null,
+    @SerialName("authorization_url") val authorizationUrl: String? = null,
+    @SerialName("expires_in") val expiresIn: Long? = null,
+)

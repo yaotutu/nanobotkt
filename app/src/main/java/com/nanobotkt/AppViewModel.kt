@@ -12,16 +12,7 @@ import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportState
 import com.nanobotkt.feature.auth.AuthSessionRepository
 import com.nanobotkt.feature.auth.AuthState
-import com.nanobotkt.feature.apps.AppsRepository
-import com.nanobotkt.feature.automations.AutomationsRepository
-import com.nanobotkt.feature.chat.ChatRepository
-import com.nanobotkt.feature.channels.ChannelsRepository
-import com.nanobotkt.feature.security.SecurityRepository
-import com.nanobotkt.feature.skills.SkillsRepository
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
-import com.nanobotkt.feature.settings.SettingsRepository
-import com.nanobotkt.feature.sidebar.SidebarRepository
-import com.nanobotkt.feature.workspaces.data.WorkspacesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,13 +61,13 @@ internal fun SavedStateHandle.readRootUiState(): RootUiState = RootUiState(
 internal fun scheduleLogoutCleanup(
     scope: CoroutineScope,
     resetRootUiState: () -> Unit,
-    resetRepositories: List<() -> Unit>,
+    resetSessionState: () -> Unit,
     clearAttachments: () -> Unit,
     closeTransport: () -> Unit,
     logout: suspend () -> Unit,
 ) {
     resetRootUiState()
-    resetRepositories.forEach { reset -> reset() }
+    resetSessionState()
     clearAttachments()
     closeTransport()
     scope.launch { logout() }
@@ -94,16 +85,8 @@ class AppViewModel @Inject constructor(
     private val authRepository: AuthSessionRepository,
     private val preferencesRepository: UserPreferencesRepository,
     private val transport: NanobotTransport,
-    private val chatRepository: ChatRepository,
-    private val channelsRepository: ChannelsRepository,
-    private val appsRepository: AppsRepository,
-    private val skillsRepository: SkillsRepository,
-    private val automationsRepository: AutomationsRepository,
-    private val securityRepository: SecurityRepository,
-    private val workspacesRepository: WorkspacesRepository,
-    private val sidebarRepository: SidebarRepository,
-    private val settingsRepository: SettingsRepository,
     private val savedStateHandle: SavedStateHandle,
+    private val sessionCleanup: SessionCleanup,
 ) : ViewModel() {
     val authState: StateFlow<AuthState> = authRepository.state
     val preferences: StateFlow<UserPreferences> = preferencesRepository.preferences.stateIn(
@@ -137,21 +120,9 @@ class AppViewModel @Inject constructor(
         scheduleLogoutCleanup(
             scope = viewModelScope,
             resetRootUiState = ::resetRootUiState,
-            resetRepositories = listOf(
-                // 先清理长生命周期 Repository，再注销认证，避免旧账号的异步响应在
-                // logout 之后重新写回 Chat/Sidebar/Settings 状态。
-                chatRepository::reset,
-                channelsRepository::reset,
-                sidebarRepository::reset,
-                // 这些 Repository 都是 Singleton，必须在 logout 时同步失效当前会话；
-                // 否则旧账号的在途请求可能在退出后重新填充对应页面。
-                appsRepository::reset,
-                skillsRepository::reset,
-                automationsRepository::reset,
-                securityRepository::reset,
-                workspacesRepository::reset,
-                settingsRepository::reset,
-            ),
+            // app 组合根显式清理所有登录态 Repository，避免为一次 logout 引入
+            // 独立契约模块或隐式 multibinding。
+            resetSessionState = sessionCleanup::resetAll,
             // Logout 会改变认证主体；除了关闭连接，还必须清掉旧账号的 chat attach
             // 登记，避免新账号建立 WebSocket 时自动恢复旧账号的会话。
             clearAttachments = transport::clearAttachments,

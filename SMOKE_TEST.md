@@ -1338,3 +1338,151 @@ uv run pytest -q                                      # /Users/yaotutu/Desktop/c
 - `git diff --check` 待最终收尾时再次执行。
 
 本轮没有 stage、commit、push 或 PR；除了 APK 增量安装、真实 Gateway 上上述可恢复写操作和临时自动化/会话创建后删除外，没有其他外部副作用。
+
+## 2026-08-09：本轮收尾设备 Smoke Test
+
+### DEVICE-RECOVERY-012：真实 Android 设备进程恢复
+
+环境与前置条件：
+
+- 设备：真实 Android 设备 `Pixel_XL`，序列号 `HT7390201404`。
+- APK：当前工作区构建的 `com.nanobotkt.debug` Debug APK；设备保留既有应用数据和认证会话。
+- Gateway：沿用已认证的真实 Gateway 会话；本轮没有清除数据、注销账号或读取任何凭据。
+- 当前环境没有可用 AVD，`emulator -list-avds` 无输出，因此本项不是模拟器验证。
+
+操作步骤：
+
+1. 记录进程、前台 Activity 和 ADB reverse 状态。
+2. 返回 HOME。
+3. 执行 `adb shell am kill com.nanobotkt.debug`，模拟系统回收应用进程；不执行 `pm clear`。
+4. 确认旧 PID 消失后重新启动应用。
+5. 等待页面、会话和 Transport 恢复，检查 UI dump、截图和最近 logcat。
+
+实际结果：
+
+- 旧 PID `27497` 在 `am kill` 后消失，新 PID 为 `27682`。
+- 重新启动后的前台 Activity 为 `com.nanobotkt.debug/com.nanobotkt.MainActivity`。
+- 当前会话标题和历史 Markdown 内容恢复，输入框正常显示，Transport 状态显示为“就绪”。
+- 最近 5000 行 logcat 未发现 `FATAL EXCEPTION`、`ANR in com.nanobotkt.debug`、Force Finish 或应用进程死亡标记。
+- ADB reverse 与真实 Gateway 会话保持可用；本轮没有产生新的 Gateway 写操作。
+
+状态：**PASS（真实 Android 设备进程恢复）**。
+
+证据文件：
+
+- `/tmp/nanobotkt-process-recovery-20260809-224912/pid-before.txt`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/pid-after-kill.txt`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/pid-after-relaunch.txt`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/activities-after.txt`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/ui.xml`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/screenshot.png`
+- `/tmp/nanobotkt-process-recovery-20260809-224912/logcat.txt`
+
+### 本轮设备验证边界
+
+- 已完成真实设备上的认证会话恢复、真实 Gateway Chat 加载、WebSocket 建连/收发/断链恢复和进程恢复；相关历史证据见 `REAL-RESTORE-008`、`REAL-009`、`REAL-010`、`REAL-011`。
+- 本轮没有可用 Android Emulator/AVD，不能将真实设备结果描述为模拟器结果。
+- 本轮没有再次执行真实 Gateway 写操作、真实登录注销、Provider 调用、频道消息收发或 Feishu 扫码流程。
+
+### FINAL-013：最终目标地址 APK 与 Gateway 只读可达性复核
+
+- 使用当前工作区代码执行 `:app:assembleDebug -PNANOBOT_SERVER_URL=http://192.168.55.147:8765`，构建成功。
+- `BuildConfig.NANOBOT_SERVER_URL` 确认为 `http://192.168.55.147:8765`。
+- `app-universal-debug.apk` 增量安装到 `HT7390201404` 成功；重新启动后 PID 为 `27945`，前台 Activity 为 `com.nanobotkt.debug/com.nanobotkt.MainActivity`。
+- 最终 UI 仍恢复到既有会话，输入框和 Transport“就绪”可见；最近 5000 行 logcat 未发现应用崩溃、ANR 或 Force Finish。
+- 主机对真实 Gateway 执行只读探测：`/health` 和 `/` 返回 HTTP 200；未携带认证信息访问 `/webui/bootstrap` 返回 HTTP 401，符合认证边界预期；没有输出响应体中的潜在敏感内容。
+
+状态：**PASS（最终产物/真实 Gateway 只读可达性）**。
+
+证据文件：
+
+- `/tmp/nanobotkt-final-ui-20260809.xml`
+- `/tmp/nanobotkt-final-20260809.png`
+- `/tmp/nanobotkt-final-launch.txt`（若存在，仅包含启动命令输出）
+
+## 2026-08-10：架构精简重构后的真机专项 Smoke
+
+### ARCH-001：构建目标与测试环境
+
+- 目标设备：Google Pixel XL，设备序列号 `HT7390201404`，Android 10 / API 29。
+- 当前没有可用的 `emulator-5554`；本轮没有伪造模拟器结果，而是在已连接真机上执行等价专项验证。
+- 安装产物：`app/build/outputs/apk/debug/app-universal-debug.apk`。
+- Debug BuildConfig 指向 `http://localhost:8765`；测试期间临时配置 `adb reverse tcp:8765 tcp:8765`，本机 Gateway 根路径返回 HTTP 200。
+- 使用 `adb install -r` 保留现有应用数据，安装成功；冷启动结果为 `LaunchState: COLD`，`MainActivity` 启动成功。
+- Smoke 完成后已移除本轮创建的 `tcp:8765` reverse。
+
+状态：**PASS**。
+
+### ARCH-002：Chat 与 Composer 拆分回归
+
+只读验证以下路径：
+
+1. 已有会话消息列表正常渲染，Composer 显示“就绪”。
+2. Composer “更多选项” BottomSheet 正常打开，图片、文件、模型和工作区入口均可见。
+3. “选择模型”子页正常打开并可返回；未切换模型。
+4. “工作区访问权限”子页正常显示默认访问与完全访问选项；未改变现有权限。
+5. 页面返回后 Chat 输入框、会话列表入口和更多选项仍可见。
+
+本轮未发送消息、未新建会话、未切换模型、未修改工作区范围，因此没有真实 Gateway 写副作用。
+
+状态：**PASS**。
+
+### ARCH-003：Skills 状态边界回归
+
+只读验证以下路径：
+
+1. Skills 列表从真实 Gateway 成功加载。
+2. 打开 `cli-app-minimax` 详情，详情内容、来源与关闭入口正常显示。
+3. 关闭详情后列表仍保持可用。
+
+详情快速切换、关闭后迟到响应和 logout/reset 代次保护由 `SkillsViewModelTest` 与 `SkillsRepositoryTest` 覆盖；本轮真机 Smoke 未人为注入网络延迟。
+
+状态：**PASS**。
+
+### ARCH-004：Settings 文件拆分回归
+
+逐页只读进入并截图以下分区：
+
+- Overview
+- Appearance
+- Models
+- Image
+- Voice
+- Web
+- System
+- Security
+
+所有页面均正常渲染并可通过顶部选择器切换，最终可返回 Chat。测试期间未切换主题或语言，未保存 Provider、模型、能力或 Security 设置，也未执行 Channels 写操作。
+
+状态：**PASS**。
+
+### ARCH-005：进程与崩溃检查
+
+- 完成全部页面切换后应用 PID `7139` 仍存活。
+- 最终 UI dump 确认 Chat 的导航、输入框、会话列表入口、更多选项和“就绪”状态均存在。
+- 本轮清空 logcat 后执行专项路径；结束时未匹配到应用 `FATAL EXCEPTION`、ANR、Force Finish 或 `Process: com.nanobotkt` 崩溃标记。
+
+状态：**PASS**。
+
+证据目录：
+
+- `/tmp/nanobotkt-architecture-smoke-20260810-230924/`
+
+该目录包含启动结果、PID、前台 Activity、各页面截图、UI dump 和崩溃检查结果。证据保留在 `/tmp`，不纳入 Git。该专项 Smoke 只覆盖本轮重构涉及的 Chat、Composer、Skills 和 Settings 只读路径，不代表登录、真实消息发送、外部设备、Provider 成功链路或所有应用功能均已重新完整验证。
+
+### ARCH-006：最终 APK 真实 Gateway 直连复核
+
+- 使用当前工作区代码执行 `:app:assembleDebug -PNANOBOT_SERVER_URL=http://192.168.55.147:8765`，构建结果为 `BUILD SUCCESSFUL`；生成的 `BuildConfig.NANOBOT_SERVER_URL` 与目标地址一致，主机对 Gateway 根路径只读探测返回 HTTP 200。
+- 在 Google Pixel XL（`HT7390201404`，Android 10 / API 29）上先清除全部 ADB reverse 映射，再通过 `adb install -r` 安装最终 APK；安装前后 `adb reverse --list` 均为空，因此本轮连接不依赖本机端口转发。
+- 保留既有应用数据后执行强制停止与冷启动，结果为 `LaunchState: COLD`；既有认证会话仍有效，无需重新登录，应用 PID `9121` 在专项结束时仍存活。
+- Sidebar 显示 `Connected`；已有 Chat 页面和消息内容可读，Skills 列表可加载并成功打开/关闭 `cli-app-minimax` 详情，Settings Overview 可正常渲染。
+- 本轮只执行页面导航和读取，没有发送消息、新建会话、修改模型/工作区权限/Settings、注销登录、调用 Provider 或触发外部设备交互，因此没有新增真实 Gateway 写副作用。
+- 清空 logcat 后执行上述路径，结束时未匹配到应用 `FATAL EXCEPTION`、ANR、Force Finish 或进程死亡标记。
+
+状态：**PASS（最终 APK / Pixel XL / 真实 Gateway 无 reverse 直连专项）**。
+
+证据目录：
+
+- `/tmp/nanobotkt-architecture-direct-smoke-20260810/`
+
+该目录包含 Chat、Sidebar、Skills 列表与详情、Settings Overview 的截图和 UI dump，以及崩溃扫描结果。证据仅保留在 `/tmp`，不纳入 Git。本项是针对最终 APK 网络目标和本轮重构涉及页面的只读专项复核，不代表重新完成了登录、消息发送、Provider、频道或外部设备的全量端到端测试。

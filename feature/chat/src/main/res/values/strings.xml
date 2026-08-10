@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="open_navigation">Open navigation</string>
+    <string name="toggle_theme">Toggle theme</string>
+    <string name="more_actions">More actions</string>
+    <string name="jump_to_latest_messages">New messages</string>
     <string name="open_conversation_list">Open conversations</string>
     <string name="conversation_list_title">Conversations</string>
     <string name="conversation_search_hint">Search conversations</string>
@@ -35,6 +38,8 @@
     <string name="send">Send message</string>
     <string name="attach_image">Attach images</string>
     <string name="attach_file">Attach files</string>
+    <string name="composer_more">More options</string>
+    <string name="voice_to_text">Hold to add speech-to-text</string>
     <string name="ask_about_this">Ask about this</string>
     <string name="fork">Fork</string>
     <string name="retry_message">Retry</string>
@@ -98,6 +103,11 @@
     <string name="file_preview_truncated">Preview truncated by the server.</string>
     <string name="file_preview_load_failed">Could not load this file preview.</string>
     <string name="close">Close</string>
+    <string name="attachments">Attachments</string>
+    <string name="remove_attachment">Remove attachment</string>
+    <string name="transcribing">Transcribing…</string>
+    <string name="recording">Recording…</string>
+    <string name="composer_ready_label">Ready</string>
 
     <string name="prompt_navigator_open">Open prompt navigator</string>
     <string name="prompt_navigator_title">Prompts</string>

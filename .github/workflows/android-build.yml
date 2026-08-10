@@ -9,6 +9,10 @@ name: Android Debug Build
 on:
   push:
     branches: [ main ]
+  # PR 必须在合并前执行同一套测试、Lint 和 Debug 构建，避免只依赖本地验收。
+  # Release workflow 仍只响应 main push，防止 PR 意外使用签名凭据或发布产物。
+  pull_request:
+    branches: [ main ]
   # 也允许在 GitHub Actions 页面手动触发（workflow_dispatch）
   workflow_dispatch:
 
@@ -40,7 +44,11 @@ jobs:
       - name: Run JVM unit tests
         run: sh gradlew test --console=plain
 
-      # 5. 构建 Debug APK（app 模块 assembleDebug）
+      # 5. Lint 是架构迁移的硬门禁，确保资源 API 兼容性和 Android 配置问题不会被构建掩盖。
+      - name: Run Android lint
+        run: sh gradlew :app:lintDebug --console=plain
+
+      # 6. 构建 Debug APK（app 模块 assembleDebug）
       - name: Build debug APK
         run: sh gradlew :app:assembleDebug --console=plain
 

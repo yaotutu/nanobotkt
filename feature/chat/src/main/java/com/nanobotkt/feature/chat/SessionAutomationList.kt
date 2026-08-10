@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
@@ -40,11 +39,11 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.SessionAutomationJob
 import java.text.DateFormat
 import java.util.Locale
@@ -52,7 +51,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val SessionStatusSuccess = Color(0xFF22A06B)
 
 /**
  * Session automation list, mirroring the RN `SessionAutomationList` component:
@@ -138,7 +136,7 @@ internal fun SessionAutomationList(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(16.dp),
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(NanobotThemeDefaults.spacing.xs))
                 Text(
                     text = stringResource(SessionAutomationRes.AUTOMATIONS),
                     style = MaterialTheme.typography.titleSmall,
@@ -147,7 +145,7 @@ internal fun SessionAutomationList(
             }
             Spacer(Modifier.weight(1f))
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
                 Text(
@@ -159,7 +157,7 @@ internal fun SessionAutomationList(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(NanobotThemeDefaults.spacing.sm))
 
         when {
             state.loading -> StatusCard(tone = StatusCardTone.DEFAULT) {
@@ -210,7 +208,7 @@ internal fun SessionAutomationList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 64.dp, max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(NanobotThemeDefaults.spacing.xs),
             ) {
                 items(state.jobs, key = { it.id }) { job ->
                     AutomationRow(job = job, renderer = renderer)
@@ -233,7 +231,7 @@ private fun StatusCard(
         StatusCardTone.ERROR -> MaterialTheme.colorScheme.errorContainer
     }
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.large,
         color = background,
         modifier = Modifier
             .fillMaxWidth()
@@ -260,11 +258,12 @@ private fun AutomationRow(
     } else if (job.state.lastStatus == "error") {
         MaterialTheme.colorScheme.error
     } else {
-        SessionStatusSuccess
+        // 主题没有额外的 success token；启用状态使用 primary 保持 Light/Dark 对比一致。
+        MaterialTheme.colorScheme.primary
     }
 
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -292,7 +291,7 @@ private fun AutomationRow(
                     if (!job.enabled) {
                         Spacer(Modifier.width(7.dp))
                         Surface(
-                            shape = RoundedCornerShape(9.dp),
+                            shape = MaterialTheme.shapes.small,
                             color = MaterialTheme.colorScheme.surfaceVariant,
                         ) {
                             Text(

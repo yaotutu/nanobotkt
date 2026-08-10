@@ -1,28 +1,14 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
+    id("nanobot.android.library")
+    id("nanobot.kotlin.serialization")
+    id("nanobot.android.hilt")
 }
 
 android {
     namespace = "com.nanobotkt.core.transport"
-    compileSdk { version = release(37) }
 
-    defaultConfig {
-        minSdk = 24
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        consumerProguardFiles("consumer-rules.pro")
-    }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
 
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
 }
 
 dependencies {

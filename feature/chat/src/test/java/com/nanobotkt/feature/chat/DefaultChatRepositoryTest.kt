@@ -612,21 +612,21 @@ class DefaultChatRepositoryTest {
 
     private fun newRepository(): DefaultChatRepository {
         currentRepository = DefaultChatRepository(
-        api = GatewayApiClient(
-            client = httpClient,
-            json = json,
-            authContext = object : AuthContext {
-                override val baseUrl: String = server.url("/").toString()
-                override val apiToken: String? = null
+            api = GatewayApiClient(
+                client = httpClient,
+                json = json,
+                authContext = object : AuthContext {
+                    override val baseUrl: String = server.url("/").toString()
+                    override val apiToken: String? = null
+                },
+            ),
+            transport = transport,
+            limitsProvider = object : IngressLimitsProvider {
+                override fun currentIngressLimits() = null
             },
-        ),
-        transport = transport,
-        limitsProvider = object : IngressLimitsProvider {
-            override fun currentIngressLimits() = null
-        },
-        bootstrapProvider = object : BootstrapSnapshotProvider {
-            override fun currentBootstrap(): BootstrapResponse? = null
-        },
+            bootstrapProvider = object : BootstrapSnapshotProvider {
+                override fun currentBootstrap(): BootstrapResponse? = null
+            },
             workspaceAccessProvider = object : WorkspaceAccessProvider {
                 override val workspaces = MutableStateFlow<WorkspacesPayload?>(null)
                 override suspend fun refresh() = Unit
@@ -636,7 +636,10 @@ class DefaultChatRepositoryTest {
     }
 
     private suspend fun awaitState(predicate: (ChatUiState) -> Boolean): ChatUiState =
-        withTimeout(3_000) { currentRepository.state.first(predicate) }
+        // Repository 固定在 Dispatchers.IO 上运行，并会并发启动目录刷新、Transport 监听和 thread 请求。
+        // 全模块测试同时编译/执行时，宿主机线程调度偶尔会超过原来的 3 秒；这里放宽的是测试夹具上限，
+        // 断言仍然等待同一个精确状态，不通过 delay 或重试掩盖生产状态机错误。
+        withTimeout(ASYNC_STATE_TIMEOUT_MS) { currentRepository.state.first(predicate) }
 
     private fun threadDispatcher(response: (RecordedRequest) -> MockResponse): Dispatcher =
         object : Dispatcher() {
@@ -691,5 +694,9 @@ class DefaultChatRepositoryTest {
         override fun currentWebSocketUrl(): String = url
         override suspend fun reauthenticateWebSocketUrl(): String = url
         override fun maxFrameBytes(): Int? = null
+    }
+
+    private companion object {
+        const val ASYNC_STATE_TIMEOUT_MS = 10_000L
     }
 }
