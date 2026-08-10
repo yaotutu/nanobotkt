@@ -29,7 +29,7 @@ dependencies {
     implementation(libs.kotlinx.collections.immutable)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-    testImplementation(project(":core:testing"))
+    testImplementation(libs.bundles.unit.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

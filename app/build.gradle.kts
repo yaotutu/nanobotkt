@@ -114,7 +114,6 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    implementation(project(":core:session-contract"))
     implementation(project(":core:network"))
     implementation(project(":core:transport"))
     implementation(project(":core:persistence"))
@@ -149,7 +148,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     ksp(libs.hilt.compiler)
 
-    testImplementation(project(":core:testing"))
+    testImplementation(libs.bundles.unit.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)

@@ -6,7 +6,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nanobotkt.core.persistence.ThemePreference
-import com.nanobotkt.core.session.SessionStateOwner
 import com.nanobotkt.core.persistence.UserPreferences
 import com.nanobotkt.core.persistence.UserPreferencesRepository
 import com.nanobotkt.core.transport.NanobotTransport
@@ -26,7 +25,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.jvm.JvmSuppressWildcards
 
 internal enum class AppDestination { CHAT, CONVERSATIONS, WORKSPACES, APPS, SKILLS, AUTOMATIONS, CHANNELS, SECURITY, SETTINGS }
 
@@ -63,13 +61,13 @@ internal fun SavedStateHandle.readRootUiState(): RootUiState = RootUiState(
 internal fun scheduleLogoutCleanup(
     scope: CoroutineScope,
     resetRootUiState: () -> Unit,
-    resetRepositories: List<() -> Unit>,
+    resetSessionState: () -> Unit,
     clearAttachments: () -> Unit,
     closeTransport: () -> Unit,
     logout: suspend () -> Unit,
 ) {
     resetRootUiState()
-    resetRepositories.forEach { reset -> reset() }
+    resetSessionState()
     clearAttachments()
     closeTransport()
     scope.launch { logout() }
@@ -88,7 +86,7 @@ class AppViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val transport: NanobotTransport,
     private val savedStateHandle: SavedStateHandle,
-    private val sessionStateOwners: List<@JvmSuppressWildcards SessionStateOwner>,
+    private val sessionCleanup: SessionCleanup,
 ) : ViewModel() {
     val authState: StateFlow<AuthState> = authRepository.state
     val preferences: StateFlow<UserPreferences> = preferencesRepository.preferences.stateIn(
@@ -122,9 +120,9 @@ class AppViewModel @Inject constructor(
         scheduleLogoutCleanup(
             scope = viewModelScope,
             resetRootUiState = ::resetRootUiState,
-            // 清理职责通过 core:session-contract 注入，Root 只负责统一编排，不再直接
-            // 依赖各 feature Repository 的具体类型。
-            resetRepositories = sessionStateOwners.map { owner -> owner::resetSessionState },
+            // app 组合根显式清理所有登录态 Repository，避免为一次 logout 引入
+            // 独立契约模块或隐式 multibinding。
+            resetSessionState = sessionCleanup::resetAll,
             // Logout 会改变认证主体；除了关闭连接，还必须清掉旧账号的 chat attach
             // 登记，避免新账号建立 WebSocket 时自动恢复旧账号的会话。
             clearAttachments = transport::clearAttachments,

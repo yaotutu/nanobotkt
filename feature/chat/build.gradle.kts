@@ -35,8 +35,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
-    testImplementation(project(":core:testing"))
-    testImplementation(libs.junit4)
+    testImplementation(libs.bundles.unit.test)
     // Repository 契约测试需要直接构造 Json，以验证服务端分页响应中的未知字段兼容性。
     testImplementation(libs.kotlinx.serialization.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
