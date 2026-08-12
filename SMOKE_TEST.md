@@ -1486,3 +1486,49 @@ uv run pytest -q                                      # /Users/yaotutu/Desktop/c
 - `/tmp/nanobotkt-architecture-direct-smoke-20260810/`
 
 该目录包含 Chat、Sidebar、Skills 列表与详情、Settings Overview 的截图和 UI dump，以及崩溃扫描结果。证据仅保留在 `/tmp`，不纳入 Git。本项是针对最终 APK 网络目标和本轮重构涉及页面的只读专项复核，不代表重新完成了登录、消息发送、Provider、频道或外部设备的全量端到端测试。
+
+## 2026-08-12：模拟器真实 Gateway 连通性专项 Smoke
+
+### EMULATOR-CONNECTIVITY-013：Android 36 模拟器直连验证
+
+环境与前置条件：
+
+- 模拟器：`emulator-5554`，Pixel 7 规格，Android 16 / API 36，Google APIs x86_64。
+- APK：当前 `main` 构建的 `com.nanobotkt.debug` Debug APK。
+- 构建命令：`bash ./gradlew :app:assembleDebug -PNANOBOT_SERVER_URL=http://192.168.55.147:8765 --console=plain`。
+- 应用在测试开始时已有有效认证状态；本记录不保存、不输出 bootstrap secret、Token 或其他凭据。
+
+只读验证步骤：
+
+1. 在宿主机对 Gateway `8765` 端口执行 TCP 探测，并对根路径执行 HTTP 探测。
+2. 在 `emulator-5554` 内对同一 Gateway 端口执行 TCP 探测；对 `/webui/bootstrap` 发起无凭据请求，确认服务端按预期返回未授权，而不是静态页或错误代理响应。
+3. 冷启动 `com.nanobotkt.debug/com.nanobotkt.MainActivity`，等待认证状态恢复和 Chat 数据加载。
+4. 检查 UI dump 中的 `Ready`、`Open conversations` 和 `Type your message…` 标记。
+5. 只读打开会话抽屉，确认真实会话列表可加载后返回 Chat；未选择、创建、删除、归档或修改会话。
+6. 检查模拟器 TCP 表、前台 Activity、应用 PID 和 logcat。
+
+实际结果：
+
+- 宿主机 TCP 探测成功，Gateway 根路径返回 HTTP `200`。
+- 模拟器 TCP 探测成功；无凭据访问 `/webui/bootstrap` 返回 HTTP `401`，认证边界符合预期。
+- APK 构建结果为 `BUILD SUCCESSFUL`，安装成功；`MainActivity` 冷启动成功并保持前台。
+- Chat 页面显示 `Ready`，输入框和会话入口可用；真实会话列表可正常加载。
+- 模拟器内存在一条到目标 Gateway `8765` 端口的 `ESTABLISHED` TCP 连接，确认应用业务连接仍然存活。
+- 应用 PID 在测试结束时仍存活；logcat 未匹配到应用 `FATAL EXCEPTION`、ANR、Force Finish 或进程死亡标记。
+
+状态：**PASS（模拟器到真实 Gateway 的网络、认证恢复、会话加载和连接状态）**。
+
+证据文件：
+
+- `/tmp/nanobotkt-emulator-20260812.xml`
+- `/tmp/nanobotkt-connected.xml`
+- `/tmp/nanobotkt-conversations.xml`
+- `/tmp/nanobotkt-final-connectivity.xml`
+- `/tmp/nanobotkt-emulator-connected-status.png`
+
+证据保留在 `/tmp`，不纳入 Git。完整页面截图和 UI dump 可能包含真实会话内容，禁止提交或对外传播；最终状态截图仅保留输入区和 `Ready` 标记。
+
+### 本项验证边界
+
+- 本项没有发送消息，没有新建或修改会话，也没有修改 Settings、Provider、Channels、Apps、Automations、Pairing 或其他 Gateway 数据。
+- 本项证明当前模拟器、当前 APK 和当前 Gateway 下的直连、认证恢复及只读加载正常，不代表重新完成所有功能、所有外部 Provider、长时间断网、横竖屏、多设备或低内存场景的全量验收。

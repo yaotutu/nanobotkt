@@ -1821,3 +1821,18 @@ adb install -r app/build/outputs/apk/debug/app-universal-debug.apk
 ### 工作区与副作用
 
 本轮未修改生产代码；只追加了本交接/Smoke 文档。工作区保留其他 Agent/历史既有修改，不执行 reset、checkout、clean、stage、commit、push 或 PR。真实 Gateway 的 Settings、Provider、Apps、临时 Automation 和临时 chat 变更均有恢复/删除记录；Feishu 配置是用户要求的真实配置，当前仍保持已保存状态。
+
+## 2026-08-12：模拟器真实 Gateway 连通性复核
+
+已在本机补充 Android 36 Google APIs x86_64 System Image，并创建 Pixel 7 规格的 `nanobotkt_api36` AVD；运行实例为 `emulator-5554`。该环境变更只发生在本机 Android SDK 与 `~/.android/avd`，没有进入项目仓库。
+
+使用当前 `main` 执行：
+
+```text
+bash ./gradlew :app:assembleDebug -PNANOBOT_SERVER_URL=http://192.168.55.147:8765 --console=plain
+adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-universal-debug.apk
+```
+
+结果：构建与安装成功，`MainActivity` 冷启动后保持前台。宿主机和模拟器到 Gateway `8765` 的 TCP 探测均成功；根路径返回 HTTP `200`，无凭据访问 `/webui/bootstrap` 返回 HTTP `401`。应用已有认证状态正常恢复，Chat 显示 `Ready`，真实会话列表可只读加载，模拟器 TCP 表存在到目标 Gateway 的 `ESTABLISHED` 连接，logcat 未发现应用 Fatal、ANR、Force Finish 或进程死亡标记。
+
+本轮没有发送消息或执行 Gateway 写操作；没有将凭据、完整真实会话截图、UI dump、日志或模拟器产物加入 Git。详细步骤与边界见 `SMOKE_TEST.md` 的 `EMULATOR-CONNECTIVITY-013`。
