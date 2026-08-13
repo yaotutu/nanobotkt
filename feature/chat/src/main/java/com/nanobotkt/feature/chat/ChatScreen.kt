@@ -8,35 +8,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Toc
-import androidx.compose.material.icons.rounded.ChatBubbleOutline
-import androidx.compose.material.icons.rounded.Checklist
-import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.Menu
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,14 +32,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nanobotkt.core.designsystem.NanobotThemeDefaults
+import com.nanobotkt.core.transport.TransportStatus
 import kotlinx.coroutines.launch
 
 /** Chat 页面组合入口与顶部状态区域。复杂消息和输入组件按职责放在同包文件中。 */
@@ -66,7 +48,7 @@ fun ChatScreen(
     title: String,
     onOpenDrawer: () -> Unit,
     onOpenModelSettings: () -> Unit,
-    onToggleTheme: () -> Unit = {},
+    transportStatus: TransportStatus,
     onOpenConversationList: () -> Unit = {},
     onSessionCreated: (String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -80,6 +62,10 @@ fun ChatScreen(
     var quoteDraft by remember { mutableStateOf<String?>(null) }
     var promptNavigatorOpen by remember { mutableStateOf(false) }
     var sessionInfoOpen by remember { mutableStateOf(false) }
+    var modelDialogOpen by remember { mutableStateOf(false) }
+    var accessDialogOpen by remember { mutableStateOf(false) }
+    var queueOpen by remember { mutableStateOf(false) }
+    var configMenuOpen by remember { mutableStateOf(false) }
     val imagePicker =
         rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(8)) {
             viewModel.addAttachments(it)
@@ -96,8 +82,14 @@ fun ChatScreen(
     }
 
     LaunchedEffect(state.sessionKey) {
+        // Queue 和会话配置弹层都绑定当前会话；切换时统一关闭，避免旧会话状态覆盖到
+        // 新会话之上，也避免用户误把旧配置操作应用到新会话。附件菜单不携带会话数据。
         promptNavigatorOpen = false
         sessionInfoOpen = false
+        modelDialogOpen = false
+        accessDialogOpen = false
+        queueOpen = false
+        configMenuOpen = false
     }
 
     val hasUserPrompts = remember(state.messages) { state.messages.any { it.role == "user" } }
@@ -174,14 +166,7 @@ fun ChatScreen(
             skills = state.skills,
             cliApps = state.cliApps,
             mcpPresets = state.mcpPresets,
-            workspaceScope = state.workspaceScope,
-            workspaces = state.workspaces,
-            workspaceError = state.error?.takeIf { it == "workspace_scope_rejected" },
-            model = state.model,
             isHero = hero,
-            onWorkspaceChange = viewModel::setWorkspaceScope,
-            onModelChange = viewModel::changeModelPreset,
-            onOpenModelSettings = onOpenModelSettings,
             onTextChange = viewModel::updateText,
             onSelectSlashCommand = viewModel::selectSlashCommand,
             onSelectSkillMention = viewModel::selectSkillMention,
@@ -189,7 +174,6 @@ fun ChatScreen(
             onSend = viewModel::send,
             onStop = viewModel::stop,
             onRemoveAttachment = viewModel::removeAttachment,
-            onRemoveQueuedPrompt = viewModel::removeQueuedPrompt,
             onClearQuote = viewModel::clearQuotedContext,
             onPickImages = {
                 imagePicker.launch(
@@ -201,32 +185,35 @@ fun ChatScreen(
         )
     }
 
+    val headerStatus =
+        resolveChatHeaderStatus(
+            transportStatus = transportStatus,
+            hasError = state.error != null || state.model.error != null || composer.error != null,
+            active = state.activeTurnId != null,
+        )
+    val activeWorkspaceScope = state.workspaceScope ?: state.workspaces?.defaultScope
+
     // 页面骨架固定为“顶部状态栏 + 中间消息区 + 底部 Composer”。
     // Composer 不再覆盖消息列表，因此消息区只需要负责自己的滚动和跳转。
     Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (hero) {
-            HeroTopBar(
-                title = title,
-                active = state.activeTurnId != null,
-                queuedCount = composer.queuedPrompts.size,
-                onOpenDrawer = onOpenDrawer,
-                onOpenConversationList = onOpenConversationList,
-                onToggleTheme = onToggleTheme,
-            )
-        } else {
-            ConversationTopBar(
-                title = title,
-                active = state.activeTurnId != null,
-                queuedCount = composer.queuedPrompts.size,
-                hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
-                hasSessionInfo = state.sessionKey != null,
-                onOpenDrawer = onOpenDrawer,
-                onOpenConversationList = onOpenConversationList,
-                onOpenPromptNavigator = { promptNavigatorOpen = true },
-                onOpenSessionInfo = { sessionInfoOpen = true },
-                onToggleTheme = onToggleTheme,
-            )
-        }
+        ChatTopStatusBar(
+            title = title,
+            status = headerStatus,
+            queuedPrompts = composer.queuedPrompts,
+            queueOpen = queueOpen,
+            configMenuOpen = configMenuOpen,
+            hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
+            hasSessionInfo = state.sessionKey != null,
+            hasAccessSettings = activeWorkspaceScope != null,
+            onOpenDrawer = onOpenDrawer,
+            onQueueOpenChange = { queueOpen = it },
+            onConfigMenuOpenChange = { configMenuOpen = it },
+            onRemoveQueuedPrompt = viewModel::removeQueuedPrompt,
+            onOpenPromptNavigator = { promptNavigatorOpen = true },
+            onOpenSessionInfo = { sessionInfoOpen = true },
+            onOpenModel = { modelDialogOpen = true },
+            onOpenAccess = { accessDialogOpen = true },
+        )
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             if (state.loading) {
@@ -294,188 +281,24 @@ fun ChatScreen(
         visible = sessionInfoOpen,
         onClose = { sessionInfoOpen = false },
     )
-}
 
-@Composable
-internal fun HeroTopBar(
-    title: String,
-    active: Boolean,
-    queuedCount: Int,
-    onOpenDrawer: () -> Unit,
-    onOpenConversationList: () -> Unit,
-    onToggleTheme: () -> Unit,
-) {
-    TopStatusBar(
-        title = title,
-        active = active,
-        queuedCount = queuedCount,
-        onOpenDrawer = onOpenDrawer,
-        overflowItems =
-            listOf(
-                TopBarAction(
-                    label = stringResource(R.string.open_conversation_list),
-                    icon = Icons.Rounded.ChatBubbleOutline,
-                    onClick = onOpenConversationList,
-                ),
-                TopBarAction(
-                    label = stringResource(R.string.toggle_theme),
-                    icon = Icons.Rounded.DarkMode,
-                    onClick = onToggleTheme,
-                ),
-            ),
-    )
-}
-
-@Composable
-internal fun ConversationTopBar(
-    title: String,
-    active: Boolean,
-    queuedCount: Int,
-    hasPromptNavigator: Boolean,
-    hasSessionInfo: Boolean,
-    onOpenDrawer: () -> Unit,
-    onOpenConversationList: () -> Unit,
-    onOpenPromptNavigator: () -> Unit,
-    onOpenSessionInfo: () -> Unit,
-    onToggleTheme: () -> Unit,
-) {
-    val actions =
-        listOfNotNull(
-            hasPromptNavigator
-                .takeIf { it }
-                ?.let {
-                    TopBarAction(
-                        label = stringResource(R.string.prompt_navigator_open),
-                        icon = Icons.Rounded.Checklist,
-                        onClick = onOpenPromptNavigator,
-                    )
-                },
-            hasSessionInfo
-                .takeIf { it }
-                ?.let {
-                    TopBarAction(
-                        label = stringResource(R.string.session_info_title),
-                        icon = Icons.AutoMirrored.Rounded.Toc,
-                        onClick = onOpenSessionInfo,
-                    )
-                },
-            TopBarAction(
-                label = stringResource(R.string.open_conversation_list),
-                icon = Icons.Rounded.ChatBubbleOutline,
-                onClick = onOpenConversationList,
-            ),
-            TopBarAction(
-                label = stringResource(R.string.toggle_theme),
-                icon = Icons.Rounded.DarkMode,
-                onClick = onToggleTheme,
-            ),
+    if (modelDialogOpen) {
+        ModelPresetDialog(
+            model = state.model,
+            disabled = state.activeTurnId != null || composer.sending,
+            onChange = viewModel::changeModelPreset,
+            onOpenSettings = onOpenModelSettings,
+            onDismiss = { modelDialogOpen = false },
         )
-    TopStatusBar(
-        title = title,
-        active = active,
-        queuedCount = queuedCount,
-        onOpenDrawer = onOpenDrawer,
-        overflowItems = actions,
-    )
-}
-
-internal data class TopBarAction(
-    val label: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val onClick: () -> Unit,
-)
-
-@Composable
-internal fun TopStatusBar(
-    title: String,
-    active: Boolean,
-    queuedCount: Int,
-    onOpenDrawer: () -> Unit,
-    overflowItems: List<TopBarAction>,
-) {
-    val surface = MaterialTheme.colorScheme.surface
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    var menuOpen by remember { mutableStateOf(false) }
-
-    Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .background(surface)
-                .statusBarsPadding()
-                .height(64.dp)
-                .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onOpenDrawer, modifier = Modifier.size(48.dp)) {
-            Icon(
-                Icons.Rounded.Menu,
-                stringResource(R.string.open_navigation),
-                modifier = Modifier.size(20.dp),
-                tint = muted,
-            )
-        }
-        Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
-            Text(
-                text = title.ifBlank { stringResource(R.string.conversation_list_title) },
-                style = MaterialTheme.typography.titleMedium,
-                color = onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (active) {
-                    StatusLabel(
-                        text = stringResource(R.string.thinking),
-                        color = MaterialTheme.colorScheme.primary,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    )
-                }
-                if (queuedCount > 0) {
-                    StatusLabel(
-                        text = "${stringResource(R.string.queued_prompts_label)} $queuedCount",
-                        color = muted,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    )
-                }
-            }
-        }
-        Box {
-            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    Icons.Rounded.MoreVert,
-                    contentDescription = stringResource(R.string.more_actions),
-                    modifier = Modifier.size(22.dp),
-                    tint = muted,
-                )
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                overflowItems.forEach { action ->
-                    DropdownMenuItem(
-                        text = { Text(action.label) },
-                        leadingIcon = { Icon(action.icon, contentDescription = null) },
-                        onClick = {
-                            menuOpen = false
-                            action.onClick()
-                        },
-                    )
-                }
-            }
-        }
     }
-}
 
-@Composable
-internal fun StatusLabel(text: String, color: Color, containerColor: Color) {
-    Surface(shape = MaterialTheme.shapes.small, color = containerColor, contentColor = color) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 1,
+    if (accessDialogOpen && activeWorkspaceScope != null) {
+        WorkspaceAccessDialog(
+            scope = activeWorkspaceScope,
+            controls = state.workspaces?.controls,
+            disabled = state.activeTurnId != null || composer.sending,
+            onChange = viewModel::setWorkspaceScope,
+            onDismiss = { accessDialogOpen = false },
         )
     }
 }

@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="open_navigation">打开导航</string>
+    <string name="current_session_settings">当前会话配置</string>
+    <string name="chat_status_idle">空闲</string>
+    <string name="chat_status_running">运行中</string>
+    <string name="chat_status_reconnecting">正在重连</string>
+    <string name="chat_status_failed">失败</string>
     <string name="open_conversation_list">打开会话列表</string>
     <string name="conversation_list_title">会话</string>
     <string name="conversation_search_hint">搜索会话</string>
@@ -36,6 +41,7 @@
     <string name="attach_image">选择图片</string>
     <string name="attach_file">选择文件</string>
     <string name="composer_more">更多选项</string>
+    <string name="add_attachment">添加附件</string>
     <string name="voice_to_text">按住说话并转成文字</string>
     <string name="ask_about_this">基于此内容提问</string>
     <string name="fork">创建分支</string>
@@ -64,6 +70,8 @@
     </plurals>
     <string name="composer_placeholder_streaming">添加消息到队列…</string>
     <string name="queued_prompts_label">已排队</string>
+    <string name="queued_count">已排队 %1$d</string>
+    <string name="queued_prompts_title">排队消息</string>
     <string name="remove_queued_prompt">移除排队消息</string>
     <string name="queued_attachment_count">%1$d 个附件</string>
     <string name="queued_prompt_fallback">排队消息</string>

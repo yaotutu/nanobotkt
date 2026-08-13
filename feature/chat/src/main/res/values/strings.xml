@@ -3,6 +3,11 @@
     <string name="open_navigation">Open navigation</string>
     <string name="toggle_theme">Toggle theme</string>
     <string name="more_actions">More actions</string>
+    <string name="current_session_settings">Current session settings</string>
+    <string name="chat_status_idle">Idle</string>
+    <string name="chat_status_running">Running</string>
+    <string name="chat_status_reconnecting">Reconnecting</string>
+    <string name="chat_status_failed">Failed</string>
     <string name="jump_to_latest_messages">New messages</string>
     <string name="open_conversation_list">Open conversations</string>
     <string name="conversation_list_title">Conversations</string>
@@ -39,6 +44,7 @@
     <string name="attach_image">Attach images</string>
     <string name="attach_file">Attach files</string>
     <string name="composer_more">More options</string>
+    <string name="add_attachment">Add attachment</string>
     <string name="voice_to_text">Hold to add speech-to-text</string>
     <string name="ask_about_this">Ask about this</string>
     <string name="fork">Fork</string>
@@ -67,6 +73,8 @@
     </plurals>
     <string name="composer_placeholder_streaming">Add a message to the queue…</string>
     <string name="queued_prompts_label">Queued</string>
+    <string name="queued_count">%1$d queued</string>
+    <string name="queued_prompts_title">Queued prompts</string>
     <string name="remove_queued_prompt">Remove queued message</string>
     <string name="queued_attachment_count">%1$d attachment(s)</string>
     <string name="queued_prompt_fallback">Queued message</string>

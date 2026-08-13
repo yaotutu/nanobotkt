@@ -260,10 +260,12 @@ private fun ReadyRoot(
                 title = selected?.displayTitle(sidebar) ?: stringResource(R.string.new_topic),
                 onOpenDrawer = { scope.launch { drawerState.open() } },
                 onOpenConversationList = { appViewModel.navigate(AppDestination.CONVERSATIONS) },
-                onToggleTheme = appViewModel::toggleTheme,
                 onOpenModelSettings = {
                     appViewModel.openSettings(SETTINGS_SECTION_MODELS)
                 },
+                // Chat feature 只接收 TransportStatus 这一最小只读边界，用于顶部状态展示；
+                // WebSocket 重连与生命周期仍由 AppViewModel/Transport 管理，避免 UI 产生第二状态源。
+                transportStatus = transport.status,
                 onSessionCreated = { key ->
                     if (selectedKey != key) {
                         // Keep the draft guard active until the refreshed sidebar actually contains

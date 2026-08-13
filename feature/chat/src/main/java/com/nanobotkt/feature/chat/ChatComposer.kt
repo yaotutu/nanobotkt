@@ -25,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FormatQuote
@@ -59,10 +58,8 @@ import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.McpPresetInfo
 import com.nanobotkt.core.model.SkillSummary
 import com.nanobotkt.core.model.SlashCommand
-import com.nanobotkt.core.model.WorkspaceScope
-import com.nanobotkt.core.model.WorkspacesPayload
 
-/** Composer 主布局、模型选择和发送状态；副作用仍由 ViewModel/Repository 承担。 */
+/** Composer 只编排输入、附件、引用和发送状态；副作用仍由 ViewModel/Repository 承担。 */
 @Composable
 internal fun HeroComposer(
     state: ComposerUiState,
@@ -71,13 +68,6 @@ internal fun HeroComposer(
     skills: List<SkillSummary>,
     cliApps: List<CliAppInfo>,
     mcpPresets: List<McpPresetInfo>,
-    workspaceScope: WorkspaceScope?,
-    workspaces: WorkspacesPayload?,
-    workspaceError: String?,
-    model: ChatModelSelection,
-    onWorkspaceChange: (WorkspaceScope) -> Unit,
-    onModelChange: (String) -> Unit,
-    onOpenModelSettings: () -> Unit,
     onTextChange: (String, Int) -> Unit,
     onSelectSlashCommand: (SlashCommand) -> Unit,
     onSelectSkillMention: (SkillMentionCandidate) -> Unit,
@@ -96,14 +86,7 @@ internal fun HeroComposer(
         skills = skills,
         cliApps = cliApps,
         mcpPresets = mcpPresets,
-        workspaceScope = workspaceScope,
-        workspaces = workspaces,
-        workspaceError = workspaceError,
-        model = model,
         placeholder = stringResource(R.string.composer_placeholder),
-        onWorkspaceChange = onWorkspaceChange,
-        onModelChange = onModelChange,
-        onOpenModelSettings = onOpenModelSettings,
         onTextChange = onTextChange,
         onSelectSlashCommand = onSelectSlashCommand,
         onSelectSkillMention = onSelectSkillMention,
@@ -125,13 +108,6 @@ internal fun ConversationComposer(
     skills: List<SkillSummary>,
     cliApps: List<CliAppInfo>,
     mcpPresets: List<McpPresetInfo>,
-    workspaceScope: WorkspaceScope?,
-    workspaces: WorkspacesPayload?,
-    workspaceError: String?,
-    model: ChatModelSelection,
-    onWorkspaceChange: (WorkspaceScope) -> Unit,
-    onModelChange: (String) -> Unit,
-    onOpenModelSettings: () -> Unit,
     onTextChange: (String, Int) -> Unit,
     onSelectSlashCommand: (SlashCommand) -> Unit,
     onSelectSkillMention: (SkillMentionCandidate) -> Unit,
@@ -139,7 +115,6 @@ internal fun ConversationComposer(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
-    onRemoveQueuedPrompt: (String) -> Unit,
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
@@ -152,14 +127,7 @@ internal fun ConversationComposer(
         skills = skills,
         cliApps = cliApps,
         mcpPresets = mcpPresets,
-        workspaceScope = workspaceScope,
-        workspaces = workspaces,
-        workspaceError = workspaceError,
-        model = model,
         placeholder = stringResource(R.string.composer_placeholder),
-        onWorkspaceChange = onWorkspaceChange,
-        onModelChange = onModelChange,
-        onOpenModelSettings = onOpenModelSettings,
         onTextChange = onTextChange,
         onSelectSlashCommand = onSelectSlashCommand,
         onSelectSkillMention = onSelectSkillMention,
@@ -167,7 +135,6 @@ internal fun ConversationComposer(
         onSend = onSend,
         onStop = onStop,
         onRemoveAttachment = onRemoveAttachment,
-        onRemoveQueuedPrompt = onRemoveQueuedPrompt,
         onClearQuote = onClearQuote,
         onPickImages = onPickImages,
         onPickFiles = onPickFiles,
@@ -178,8 +145,8 @@ internal fun ConversationComposer(
 /**
  * Chat 输入区的唯一视觉骨架。
  *
- * 这里把“状态附件/引用/排队提示”和“可编辑输入框”分成两个层级： 上层只承载上下文，下层才负责输入与主操作。这样状态变化不会把输入框的
- * 左右按钮推来推去，也不会让消息列表看起来像被浮动卡片遮挡。
+ * 这里把“附件/引用等临时上下文”和“可编辑输入框”分成两个层级：上层只承载当前草稿上下文，
+ * 下层负责输入与主操作。Queue 已上移到顶部状态栏，Composer 不再保留常驻队列区域。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -190,14 +157,7 @@ internal fun ComposerLayout(
     skills: List<SkillSummary>,
     cliApps: List<CliAppInfo>,
     mcpPresets: List<McpPresetInfo>,
-    workspaceScope: WorkspaceScope?,
-    workspaces: WorkspacesPayload?,
-    workspaceError: String?,
-    model: ChatModelSelection,
     placeholder: String,
-    onWorkspaceChange: (WorkspaceScope) -> Unit,
-    onModelChange: (String) -> Unit,
-    onOpenModelSettings: () -> Unit,
     onTextChange: (String, Int) -> Unit,
     onSelectSlashCommand: (SlashCommand) -> Unit,
     onSelectSkillMention: (SkillMentionCandidate) -> Unit,
@@ -205,7 +165,6 @@ internal fun ComposerLayout(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
-    onRemoveQueuedPrompt: (String) -> Unit = {},
     onClearQuote: () -> Unit = {},
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
@@ -276,34 +235,6 @@ internal fun ComposerLayout(
                     CapabilityMentionSuggestions(capabilitySuggestions, onSelectCapabilityMention)
             }
 
-            if (state.queuedPrompts.isNotEmpty()) {
-                ComposerContextStrip(
-                    icon = Icons.Rounded.Checklist,
-                    label = stringResource(R.string.queued_prompts_label),
-                ) {
-                    state.queuedPrompts.take(2).forEach { prompt ->
-                        AssistChip(
-                            onClick = { onRemoveQueuedPrompt(prompt.id) },
-                            label = {
-                                Text(
-                                    queuedPromptPreview(prompt),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            trailingIcon = {
-                                Icon(
-                                    Icons.Rounded.Close,
-                                    contentDescription =
-                                        stringResource(R.string.remove_queued_prompt),
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            },
-                        )
-                    }
-                }
-            }
-
             state.quotedContext?.takeIf(String::isNotBlank)?.let { quote ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -372,79 +303,70 @@ internal fun ComposerLayout(
                 }
             }
 
-            Surface(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = inputContainerColor,
-                tonalElevation = 1.dp,
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                // 会话入口独立于输入框，所有会话切换与生命周期管理继续交给现有二级页面。
+                Surface(
+                    onClick = onOpenConversationList,
+                    modifier = Modifier.size(48.dp),
+                    shape = CircleShape,
+                    color = actionContainerColor,
                 ) {
-                    ComposerTextField(
-                        state = state,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = placeholder,
-                        textColor = MaterialTheme.colorScheme.onSurface,
-                        mutedColor = mutedColor,
-                        onTextChange = onTextChange,
-                        onSend = onSend,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // 该入口继续打开会话列表；麦克风功能已移除，不在输入区保留误导性的录音图标。
-                        IconButton(
-                            onClick = onOpenConversationList,
-                            modifier = Modifier.size(48.dp),
-                        ) {
-                            Icon(
-                                Icons.Rounded.ChatBubbleOutline,
-                                contentDescription =
-                                    stringResource(R.string.open_conversation_list),
-                                tint = mutedColor,
-                            )
-                        }
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text =
-                                when {
-                                    state.voice.isTranscribing ->
-                                        stringResource(R.string.transcribing)
-                                    state.voice.isRecording -> stringResource(R.string.recording)
-                                    active && !hasDraft ->
-                                        stringResource(R.string.composer_placeholder_streaming)
-                                    else -> stringResource(R.string.composer_ready_label)
-                                },
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = mutedColor,
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.ChatBubbleOutline,
+                            contentDescription = stringResource(R.string.open_conversation_list),
+                            tint = mutedColor,
                         )
-                        ComposerActionButton(
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = inputContainerColor,
+                    tonalElevation = 1.dp,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        AttachmentMenuButton(
+                            enabled =
+                                !state.sending &&
+                                    !state.voice.isRecording &&
+                                    !state.voice.isTranscribing,
+                            controlColor = actionContainerColor,
+                            onPickImages = onPickImages,
+                            onPickFiles = onPickFiles,
+                        )
+                        ComposerTextField(
+                            state = state,
+                            modifier = Modifier.weight(1f).padding(vertical = 2.dp),
+                            placeholder =
+                                if (active && !hasDraft) {
+                                    stringResource(R.string.composer_placeholder_streaming)
+                                } else {
+                                    placeholder
+                                },
+                            textColor = MaterialTheme.colorScheme.onSurface,
+                            mutedColor = mutedColor,
+                            onTextChange = onTextChange,
+                            onSend = onSend,
+                        )
+                        ComposerPrimaryActionButton(
                             showSendAction = hasDraft,
                             stopButton = stopButton,
                             sendEnabled = sendEnabled,
                             sending = state.sending,
-                            voiceRecording = state.voice.isRecording,
-                            voiceTranscribing = state.voice.isTranscribing,
                             controlColor = actionContainerColor,
                             sendColor = actionColor,
                             sendContentColor = actionContentColor,
                             onSend = onSend,
                             onStop = onStop,
-                            workspaceScope = workspaceScope,
-                            workspaces = workspaces,
-                            model = model,
-                            active = active,
-                            onWorkspaceChange = onWorkspaceChange,
-                            onModelChange = onModelChange,
-                            onOpenModelSettings = onOpenModelSettings,
-                            onPickImages = onPickImages,
-                            onPickFiles = onPickFiles,
                         )
                     }
                 }
@@ -496,14 +418,7 @@ internal fun Composer(
     skills: List<SkillSummary>,
     cliApps: List<CliAppInfo>,
     mcpPresets: List<McpPresetInfo>,
-    workspaceScope: WorkspaceScope?,
-    workspaces: WorkspacesPayload?,
-    workspaceError: String?,
-    model: ChatModelSelection,
     isHero: Boolean,
-    onWorkspaceChange: (WorkspaceScope) -> Unit,
-    onModelChange: (String) -> Unit,
-    onOpenModelSettings: () -> Unit,
     onTextChange: (String, Int) -> Unit,
     onSelectSlashCommand: (SlashCommand) -> Unit,
     onSelectSkillMention: (SkillMentionCandidate) -> Unit,
@@ -511,7 +426,6 @@ internal fun Composer(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
-    onRemoveQueuedPrompt: (String) -> Unit,
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
@@ -525,13 +439,6 @@ internal fun Composer(
             skills = skills,
             cliApps = cliApps,
             mcpPresets = mcpPresets,
-            workspaceScope = workspaceScope,
-            workspaces = workspaces,
-            workspaceError = workspaceError,
-            model = model,
-            onWorkspaceChange = onWorkspaceChange,
-            onModelChange = onModelChange,
-            onOpenModelSettings = onOpenModelSettings,
             onTextChange = onTextChange,
             onSelectSlashCommand = onSelectSlashCommand,
             onSelectSkillMention = onSelectSkillMention,
@@ -551,13 +458,6 @@ internal fun Composer(
             skills = skills,
             cliApps = cliApps,
             mcpPresets = mcpPresets,
-            workspaceScope = workspaceScope,
-            workspaces = workspaces,
-            workspaceError = workspaceError,
-            model = model,
-            onWorkspaceChange = onWorkspaceChange,
-            onModelChange = onModelChange,
-            onOpenModelSettings = onOpenModelSettings,
             onTextChange = onTextChange,
             onSelectSlashCommand = onSelectSlashCommand,
             onSelectSkillMention = onSelectSkillMention,
@@ -565,7 +465,6 @@ internal fun Composer(
             onSend = onSend,
             onStop = onStop,
             onRemoveAttachment = onRemoveAttachment,
-            onRemoveQueuedPrompt = onRemoveQueuedPrompt,
             onClearQuote = onClearQuote,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
