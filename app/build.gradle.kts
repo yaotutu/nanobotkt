@@ -1,7 +1,8 @@
 plugins {
-    id("nanobot.android.application")
-    id("nanobot.android.compose")
-    id("nanobot.android.hilt")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
 }
 
 fun String.asBuildConfigString(): String = "\"${replace("\"", "\\\"")}\""

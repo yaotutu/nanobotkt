@@ -1,6 +1,4 @@
 pluginManagement {
-    // 将构建约定作为 included build 管理，避免把 Gradle DSL 逻辑散落到每个模块。
-    includeBuild("build-logic")
     repositories {
         google {
             content {

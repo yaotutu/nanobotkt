@@ -1,7 +1,8 @@
 plugins {
-    id("nanobot.android.library")
-    id("nanobot.kotlin.serialization")
-    id("nanobot.android.hilt")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
 }
 
 android {

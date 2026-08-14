@@ -1,5 +1,5 @@
 plugins {
-    id("nanobot.android.library")
+    alias(libs.plugins.android.library)
 }
 
 android {

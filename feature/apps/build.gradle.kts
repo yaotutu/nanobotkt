@@ -1,7 +1,8 @@
-﻿plugins {
-    id("nanobot.android.library")
-    id("nanobot.android.compose")
-    id("nanobot.android.hilt")
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
 }
 
 android {
