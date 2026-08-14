@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +32,9 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -63,14 +67,15 @@ data class ConversationListItem(
     val title: String,
     val preview: String,
     val pinned: Boolean,
+    /** 归档态由客户端已有 Sidebar 快照推导，不会改变服务端数据结构。 */
+    val archived: Boolean = false,
 )
 
 /**
- * 聊天页的二级会话页面。
+ * 兼容旧导航 destination 的独立会话页。
  *
- * 这里刻意不使用底部导航或 Bottom Sheet：聊天页仍然是唯一主页面，会话管理只是从顶部
- * 进入的独立任务流。列表页只负责呈现交互和转发事件，实际的会话修改仍由 app 组合根
- * 连接到 SidebarViewModel，避免在 UI 层复制一份后端状态。
+ * 第一阶段保留这个入口，避免影响深链或恢复中的 destination；主聊天流程使用下面的
+ * ConversationListSheet。两者共享同一套列表内容与操作回调，不复制任何业务状态。
  */
 @Composable
 fun ConversationListScreen(
@@ -85,15 +90,142 @@ fun ConversationListScreen(
     onDelete: (ConversationListItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    ConversationListContent(
+        items = items,
+        selectedKey = selectedKey,
+        onBack = onBack,
+        onSelect = onSelect,
+        onNewTopic = onNewTopic,
+        onTogglePinned = onTogglePinned,
+        onRename = onRename,
+        onArchive = onArchive,
+        onDelete = onDelete,
+        modifier = modifier,
+        showHeader = true,
+    )
+}
+
+/**
+ * 聊天页内的会话 Bottom Sheet。
+ *
+ * 这里只改变 UI 容器和临时展示模式；会话选择、置顶、重命名、归档、删除仍通过父级
+ * 传入的回调进入原有 ViewModel，因此不触碰 Gateway API、WebSocket 或服务端协议。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ConversationListSheet(
+    items: List<ConversationListItem>,
+    archivedItems: List<ConversationListItem>,
+    selectedKey: String?,
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (ConversationListItem) -> Unit,
+    onNewTopic: () -> Unit,
+    onTogglePinned: (String) -> Unit,
+    onRename: (ConversationListItem, String) -> Unit,
+    onArchive: (String) -> Unit,
+    onDelete: (ConversationListItem) -> Unit,
+) {
+    if (!visible) return
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var archivedMode by rememberSaveable { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.48f),
+        tonalElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 680.dp)
+                .navigationBarsPadding(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (archivedMode) {
+                    IconButton(onClick = { archivedMode = false }) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.conversation_back),
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(
+                        if (archivedMode) R.string.conversation_archived_title else R.string.conversation_list_title,
+                    ),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (!archivedMode) {
+                    IconButton(onClick = onNewTopic) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            contentDescription = stringResource(R.string.conversation_new_topic),
+                        )
+                    }
+                }
+            }
+
+            ConversationListContent(
+                items = if (archivedMode) archivedItems else items,
+                selectedKey = selectedKey,
+                onBack = onDismiss,
+                onSelect = { item ->
+                    // 选择回调内部由父级统一关闭 Sheet；这里不重复触发 dismiss，避免
+                    // 新建/切换动作与 ModalBottomSheet 的动画状态发生竞争。
+                    onSelect(item)
+                },
+                onNewTopic = onNewTopic,
+                onTogglePinned = onTogglePinned,
+                onRename = onRename,
+                onArchive = onArchive,
+                onDelete = onDelete,
+                showHeader = false,
+                showArchivedEntry = !archivedMode && archivedItems.isNotEmpty(),
+                archivedCount = archivedItems.size,
+                onShowArchived = { archivedMode = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationListContent(
+    items: List<ConversationListItem>,
+    selectedKey: String?,
+    onBack: () -> Unit,
+    onSelect: (ConversationListItem) -> Unit,
+    onNewTopic: () -> Unit,
+    onTogglePinned: (String) -> Unit,
+    onRename: (ConversationListItem, String) -> Unit,
+    onArchive: (String) -> Unit,
+    onDelete: (ConversationListItem) -> Unit,
+    modifier: Modifier = Modifier,
+    showHeader: Boolean,
+    showArchivedEntry: Boolean = false,
+    archivedCount: Int = 0,
+    onShowArchived: () -> Unit = {},
+) {
     var query by rememberSaveable { mutableStateOf("") }
-    // 对话框状态只保留当前操作的会话，不把临时输入写回业务状态；确认后才提交到
-    // SidebarViewModel，这样取消或返回时不会产生半成品标题。
+    // 输入仅属于当前 UI 实例；关闭 Sheet 后不会写入业务状态，也不会改变会话选择。
     var renameTarget by remember { mutableStateOf<ConversationListItem?>(null) }
     var deleteTarget by remember { mutableStateOf<ConversationListItem?>(null) }
 
     val normalizedQuery = query.trim()
-    // 搜索只作用于当前已经由组合根筛选好的会话；这样归档、权限和会话选择规则仍由
-    // 原 Sidebar 状态链路负责，不在这个页面复制一套业务状态。
     val filtered = items.filter { item ->
         normalizedQuery.isBlank() ||
             item.title.contains(normalizedQuery, ignoreCase = true) ||
@@ -104,36 +236,34 @@ fun ConversationListScreen(
     val recent = filtered.filterNot(ConversationListItem::pinned)
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding(),
+        modifier = modifier.background(MaterialTheme.colorScheme.background),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = stringResource(R.string.conversation_back),
+        if (showHeader) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = stringResource(R.string.conversation_back),
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.conversation_list_title),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
                 )
-            }
-            Text(
-                text = stringResource(R.string.conversation_list_title),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            IconButton(onClick = onNewTopic) {
-                Icon(
-                    Icons.Rounded.Add,
-                    contentDescription = stringResource(R.string.conversation_new_topic),
-                )
+                IconButton(onClick = onNewTopic) {
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.conversation_new_topic),
+                    )
+                }
             }
         }
 
@@ -145,12 +275,7 @@ fun ConversationListScreen(
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             singleLine = true,
             placeholder = { Text(stringResource(R.string.conversation_search_hint)) },
-            leadingIcon = {
-                Icon(
-                    Icons.Rounded.Search,
-                    contentDescription = null,
-                )
-            },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { query = "" }) {
@@ -164,7 +289,7 @@ fun ConversationListScreen(
         )
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
             contentPadding = PaddingValues(bottom = 16.dp),
         ) {
             if (filtered.isEmpty()) {
@@ -178,9 +303,7 @@ fun ConversationListScreen(
                 }
             } else {
                 if (pinned.isNotEmpty()) {
-                    item {
-                        ConversationSectionHeader(stringResource(R.string.conversation_pinned_section))
-                    }
+                    item { ConversationSectionHeader(stringResource(R.string.conversation_pinned_section)) }
                     items(pinned, key = ConversationListItem::key) { item ->
                         ConversationRow(
                             item = item,
@@ -213,6 +336,9 @@ fun ConversationListScreen(
                     }
                 }
             }
+            if (showArchivedEntry) {
+                item { ArchivedConversationsEntry(archivedCount, onShowArchived) }
+            }
         }
     }
 
@@ -235,6 +361,26 @@ fun ConversationListScreen(
                 onDelete(item)
             },
         )
+    }
+}
+
+@Composable
+private fun ArchivedConversationsEntry(
+    count: Int,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Archive, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.padding(start = 12.dp)) {
+            Text(stringResource(R.string.conversation_archived_title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(count.toString(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -380,7 +526,13 @@ private fun ConversationActionsMenu(
                 },
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.archive)) },
+                text = {
+                    Text(
+                        stringResource(
+                            if (item.archived) R.string.conversation_unarchive else R.string.archive,
+                        ),
+                    )
+                },
                 leadingIcon = { Icon(Icons.Rounded.Archive, contentDescription = null) },
                 onClick = {
                     onDismiss()

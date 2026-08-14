@@ -183,17 +183,33 @@ private fun ReadyRoot(
         }
     }
     val selected = visibleSessions.firstOrNull { it.key == selectedKey }
-    // 会话页只接收已经过 Sidebar 归档过滤和标题覆盖处理后的 UI 数据，避免在二级页面
-    // 再次读取或修改会话仓库，从而继续复用现有的选择、刷新和竞态保护。
-    val conversationItems = remember(visibleSessions, sidebar.sidebar) {
-        visibleSessions.map { session ->
-            ConversationListItem(
-                key = session.key,
-                title = session.displayTitle(sidebar),
-                preview = session.preview,
-                pinned = session.key in sidebar.sidebar.pinnedKeys,
-            )
-        }
+    // Sheet 需要同时拿到 active/archived 两种前端展示集合。两者都来自同一份 Sidebar
+    // 快照，归档只是客户端过滤，不改变服务端返回的数据或会话选择算法。
+    val conversationItems = remember(sidebar.sessions, sidebar.sidebar) {
+        sidebar.sessions
+            .filter { it.key !in sidebar.sidebar.archivedKeys }
+            .map { session ->
+                ConversationListItem(
+                    key = session.key,
+                    title = session.displayTitle(sidebar),
+                    preview = session.preview,
+                    pinned = session.key in sidebar.sidebar.pinnedKeys,
+                    archived = false,
+                )
+            }
+    }
+    val archivedConversationItems = remember(sidebar.sessions, sidebar.sidebar) {
+        sidebar.sessions
+            .filter { it.key in sidebar.sidebar.archivedKeys }
+            .map { session ->
+                ConversationListItem(
+                    key = session.key,
+                    title = session.displayTitle(sidebar),
+                    preview = session.preview,
+                    pinned = session.key in sidebar.sidebar.pinnedKeys,
+                    archived = true,
+                )
+            }
     }
     LaunchedEffect(
         selected?.key,
@@ -259,7 +275,24 @@ private fun ReadyRoot(
                 viewModel = chatViewModel,
                 title = selected?.displayTitle(sidebar) ?: stringResource(R.string.new_topic),
                 onOpenDrawer = { scope.launch { drawerState.open() } },
-                onOpenConversationList = { appViewModel.navigate(AppDestination.CONVERSATIONS) },
+                // 会话入口只打开 ChatScreen 内的 Sheet；保留参数是为了兼容旧页面调用方，
+                // 但此处不再切换 AppDestination，避免聊天消息树被销毁重建。
+                onOpenConversationList = {},
+                conversationItems = conversationItems,
+                archivedConversationItems = archivedConversationItems,
+                selectedConversationKey = selectedKey,
+                onSelectConversation = { item ->
+                    appViewModel.selectSession(item.key)
+                },
+                onNewConversation = {
+                    appViewModel.beginNewTopic()
+                    chatViewModel.startNewTopic()
+                },
+                onToggleConversationPinned = sidebarViewModel::togglePinned,
+                onRenameConversation = { item, title -> sidebarViewModel.rename(item.key, title) },
+                onArchiveConversation = sidebarViewModel::toggleArchived,
+                onDeleteConversation = { item -> sidebarViewModel.delete(item.key) },
+                onToggleTheme = appViewModel::toggleTheme,
                 onOpenModelSettings = {
                     appViewModel.openSettings(SETTINGS_SECTION_MODELS)
                 },
