@@ -1,31 +1,31 @@
 # NanobotKT 自动构建与发布说明
 
-项目现在区分两个**非 Debug 构建**：
+这套方案只做必要的 CI/CD：不需要品牌配置、不需要购买证书，也不发布 Debug 版本。
 
-| 构建 | 触发分支 | Gradle 任务 | 包名 | GitHub 发布形式 |
+| 构建 | 触发方式 | Gradle 任务 | 包名 | GitHub 发布形式 |
 |---|---|---|---|---|
-| dev 测试版 | `dev` | `:app:assembleDev` | `com.nanobotkt.dev` | 滚动预发布 `dev-latest` |
-| 正式版 | `main` | `:app:assembleRelease` | `com.nanobotkt` | 版本化 Release，例如 `v0.1.1` |
+| dev 测试版 | 向 `dev` push | `:app:assembleDev` | `com.nanobotkt` | 滚动预发布 `dev-latest` |
+| 正式版 | 向 `main` push | `:app:assembleRelease` | `com.nanobotkt` | 版本化 Release，例如 `v0.1.1` |
 
 ## 覆盖安装规则（重要）
 
-Android 覆盖安装要求两个条件同时满足：
+Dev 和正式版故意使用**同一个包名**和**同一份稳定签名**：
 
-1. 包名相同；
-2. 签名证书相同。
+- 包名都是 `com.nanobotkt`；
+- dev 和正式版都从同一份 GitHub Secrets 读取 keystore；
+- 每次构建都会递增 `versionCode`；
+- 因此新 dev 可以覆盖旧 dev，新正式版可以覆盖旧正式版；
+- 只要新构建的 `versionCode` 更高，dev 与正式版也可以互相覆盖安装。
 
-因此，`dev` 测试版和正式版都不能每次使用临时生成的签名。当前方案是：
+Dev 只在版本名称上增加 `-dev` 后缀，例如 `0.1.1-dev`，用户可以一眼识别测试版，但这不会改变包名。
 
-- 所有 `dev` 分支 push 的 `dev-latest` 都使用同一份稳定 keystore；
-- 所有 `main` 分支正式 Release 也使用这份稳定 keystore；
-- `dev` 使用独立包名 `com.nanobotkt.dev`，所以 dev 会覆盖安装之前的 dev，正式版会覆盖安装之前的正式版，但两条渠道互不覆盖；
-- Pull Request 构建不读取发布签名 Secrets，可以使用临时 debug 签名，仅用于 CI 构建验证，不能当作给用户升级的发布包。
+**注意：**如果设备上已经安装过早期使用另一份签名的 APK，第一次切换到这份稳定签名时可能需要卸载一次。完成切换后，后续 dev 和正式版都可以直接覆盖安装。
 
-也就是说，用户从 `dev-latest` 下载的测试版，下一次继续安装新的 `dev-latest` 时可以直接覆盖安装，不需要先卸载。正式版同理。
+Pull Request 只做 `assembleDev` 构建和检查，不发布 GitHub Release，也不使用正式签名；它不是给用户安装升级的版本。
 
 ## 第一次配置签名（只需做一次）
 
-你不需要品牌配置，也不需要购买证书。Android 应用使用本地生成的一份 `.jks` 文件即可。
+你不需要品牌配置，也不需要购买证书。Android 应用使用本地生成的一份 `.keystore` 文件即可。
 
 在自己的电脑上执行：
 
@@ -33,9 +33,9 @@ Android 覆盖安装要求两个条件同时满足：
 ./scripts/create-release-keystore.sh
 ```
 
-脚本会在当前项目目录生成 `nanobotkt-release.keystore`，并提示你妥善备份。**不要把这个文件提交到 Git，也不要把密码写进代码。**
+脚本会在项目根目录生成 `nanobotkt-release.keystore`，并提示你妥善备份。**不要把这个文件提交到 Git，也不要把密码写进代码。**
 
-然后把同一份 keystore 配置到 GitHub 仓库的 `Settings → Secrets and variables → Actions`，新建以下 4 个 Repository secrets：
+然后在 GitHub 仓库的 `Settings → Secrets and variables → Actions` 中创建以下 4 个 Repository secrets：
 
 | Secret | 填写内容 |
 |---|---|
@@ -52,24 +52,26 @@ base64 < nanobotkt-release.keystore | tr -d '\\n'
 
 这 4 个 Secrets 同时供 dev 和正式版 workflow 使用。私钥只保存在你的备份和 GitHub Secrets 中，不会进入仓库。
 
-## dev 测试版
+## 自动发布流程
+
+### dev 测试版
 
 向 `dev` 分支 push 后自动：
 
-1. 执行全工程 JVM 测试；
-2. 执行 `lintDev`；
-3. 使用稳定 keystore 构建 `assembleDev`，不会构建 Debug APK；
-4. 上传 Actions artifact；
-5. 更新 GitHub 上的 `dev-latest` prerelease。
+1. 将 `0.1.x` 的补丁号加 1，例如 `0.1.0` → `0.1.1`；
+2. 同步将 Android `versionCode` 加 1；
+3. 根据 Git 提交记录生成 `docs/CHANGELOG.md`；
+4. 执行全工程 JVM 测试和 `lintDev`；
+5. 使用稳定 keystore 构建 `assembleDev`，不会构建 Debug APK；
+6. 将版本文件提交回 `dev`；
+7. 更新 GitHub 上唯一的 `dev-latest` prerelease。
 
-Pull Request 只做构建验证，不会修改 GitHub Release，也不要求配置签名 Secrets。
-
-## 正式版
+### 正式版
 
 向 `main` 分支 push 后自动：
 
-1. 递增 `0.1.x` 的补丁号，例如 `0.1.0` → `0.1.1`；
-2. 同步递增 Android `versionCode`；
+1. 将 `0.1.x` 的补丁号加 1；
+2. 同步将 Android `versionCode` 加 1；
 3. 根据 Git 提交记录生成 `docs/CHANGELOG.md`；
 4. 执行全工程 JVM 测试和 `lintRelease`；
 5. 使用同一份稳定 keystore 构建 `assembleRelease`；
@@ -87,6 +89,8 @@ VERSION_CODE=1
 ```
 
 发布 workflow 会自动修改，不需要每次手动改版本。更新日志由 `scripts/release.sh` 根据 Git 提交记录自动生成，并作为 GitHub Release 的说明。
+
+为保证 dev 和正式版始终保持同一条可升级链，正常流程应当是：先在 `dev` 验证，之后把 `dev` 合并到 `main` 再发布正式版。这样 `version.properties` 会沿用已经递增的版本号。
 
 ## 本地构建
 

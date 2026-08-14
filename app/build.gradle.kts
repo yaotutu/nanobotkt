@@ -88,13 +88,12 @@ android {
             buildConfigField("String", "NANOBOT_SERVER_URL", configuredServerUrl.getOrElse(defaultServerUrl).asBuildConfigString())
         }
         create("dev") {
-            // dev 是独立的 Release 构建类型，不带 debug 后缀，也不会使用 assembleDebug。
-            // dev 发布包和上一版 dev 包要覆盖安装，必须同时保持 applicationId（com.nanobotkt.dev）
-            // 与签名证书不变。因此 dev 分支的发布 workflow 会强制注入和正式版相同的稳定 keystore。
+            // dev 与正式版故意使用同一个 applicationId（com.nanobotkt）和同一份稳定签名。
+            // 这样测试版和正式版都能在 versionCode 递增时直接覆盖旧 APK，不再维护两套安装渠道。
+            // dev 仍保留 -dev 版本名后缀，方便用户识别当前安装的是测试构建。
             // 没有 Secrets 的本地构建/PR 仍允许回退到 debug keystore，但这类 APK 只能做验证，
-            // 不能替代 dev-latest 发布包，否则用户会遇到“签名不一致，无法覆盖安装”。
+            // 不能替代真正发布包，否则用户会遇到“签名不一致，无法覆盖安装”。
             initWith(getByName("release"))
-            applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             isMinifyEnabled = false
             isShrinkResources = false

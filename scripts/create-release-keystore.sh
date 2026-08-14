@@ -41,6 +41,7 @@ keytool -genkeypair \
 
 chmod 600 "$KEYSTORE_FILE"
 
+# 中文标点紧跟变量名时，使用 ${KEY_ALIAS} 明确变量边界；否则 Bash 可能把标点误识别为变量名的一部分。
 cat <<INFO
 
 已创建：$KEYSTORE_FILE
@@ -50,6 +51,6 @@ cat <<INFO
 
    base64 < "$KEYSTORE_FILE" | tr -d '\\n'
 
-3. 配置 KEYSTORE_PASSWORD、KEY_ALIAS=$KEY_ALIAS、KEY_PASSWORD 三个 Secret；
+3. 配置 KEYSTORE_PASSWORD、KEY_ALIAS=${KEY_ALIAS}、KEY_PASSWORD 三个 Secret；
 4. 确认该文件不会被 git add 或上传到公开位置。
 INFO
