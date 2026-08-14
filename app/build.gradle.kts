@@ -1,3 +1,6 @@
+import java.util.Properties
+import org.gradle.api.provider.Provider
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -6,6 +9,19 @@ plugins {
 }
 
 fun String.asBuildConfigString(): String = "\"${replace("\"", "\\\"")}\""
+
+// 版本号集中放在仓库根目录，避免把发布版本散落在 Gradle 配置和 workflow 中。
+// 发布 workflow 会先更新该文件，再执行 assembleRelease；本地构建则使用文件中的当前版本。
+val versionPropertiesFile = rootProject.file("version.properties")
+val versionProperties = Properties().apply {
+    if (versionPropertiesFile.isFile) {
+        versionPropertiesFile.inputStream().use(::load)
+    }
+}
+val appVersionName: Provider<String> = providers.gradleProperty("APP_VERSION_NAME")
+    .orElse(versionProperties.getProperty("VERSION_NAME", "0.1.0"))
+val appVersionCode: Provider<String> = providers.gradleProperty("APP_VERSION_CODE")
+    .orElse(versionProperties.getProperty("VERSION_CODE", "1"))
 
 // 本地调试与正式构建都默认直连局域网 Gateway，避免 Android 模拟器把 localhost 解析到自身，
 // 也避免依赖重启模拟器后会丢失的 adb reverse 映射。需要连接其他环境时仍可通过 Gradle 属性或环境变量覆盖。
@@ -19,8 +35,9 @@ android {
     defaultConfig {
         applicationId = "com.nanobotkt"
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        // versionCode 必须是单调递增整数；脚本会和 0.1.x 的补丁版本一起递增。
+        versionCode = appVersionCode.get().toInt()
+        versionName = appVersionName.get()
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -36,10 +53,11 @@ android {
     val keyPasswordEnv = System.getenv("KEY_PASSWORD")
     val releaseKeystoreFile = keystoreFileEnv?.let { rootProject.file(it) }
         ?: rootProject.file("keystore.jks")
+    // 环境变量存在但为空时仍视为未配置，避免本地 shell 或 CI 把空密码误判成可用签名。
     val hasReleaseKeystore = releaseKeystoreFile.isFile &&
-        keystorePasswordEnv != null &&
-        keyAliasEnv != null &&
-        keyPasswordEnv != null
+        !keystorePasswordEnv.isNullOrBlank() &&
+        !keyAliasEnv.isNullOrBlank() &&
+        !keyPasswordEnv.isNullOrBlank()
 
     signingConfigs {
         if (hasReleaseKeystore) {
@@ -59,6 +77,8 @@ android {
             buildConfigField("String", "NANOBOT_SERVER_URL", configuredServerUrl.getOrElse(defaultServerUrl).asBuildConfigString())
         }
         release {
+            // 正式版必须使用稳定的 release keystore；没有配置时仍允许本地生成未签名 APK，
+            // 但正式发布 workflow 会在构建前主动检查 Secrets，避免误发布不可更新的 APK。
             if (hasReleaseKeystore) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -67,11 +87,29 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             buildConfigField("String", "NANOBOT_SERVER_URL", configuredServerUrl.getOrElse(defaultServerUrl).asBuildConfigString())
         }
+        create("dev") {
+            // dev 是独立的 Release 构建类型，不带 debug 后缀，也不会使用 assembleDebug。
+            // dev 发布包和上一版 dev 包要覆盖安装，必须同时保持 applicationId（com.nanobotkt.dev）
+            // 与签名证书不变。因此 dev 分支的发布 workflow 会强制注入和正式版相同的稳定 keystore。
+            // 没有 Secrets 的本地构建/PR 仍允许回退到 debug keystore，但这类 APK 只能做验证，
+            // 不能替代 dev-latest 发布包，否则用户会遇到“签名不一致，无法覆盖安装”。
+            initWith(getByName("release"))
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            matchingFallbacks += listOf("release")
+        }
     }
 
     // ============================================================
     // 按 CPU 架构拆分 APK，并额外产出 universal 通用包
-    // assembleDebug / assembleRelease 会分别生成：
+    // assembleDev / assembleRelease 会分别生成：
     //   app-{armeabi-v7a|arm64-v8a|x86|x86_64}-{variant}.apk
     //   app-universal-{variant}.apk
     // ============================================================

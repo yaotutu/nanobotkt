@@ -1,61 +1,99 @@
 # ============================================================
-# NanobotKT 自动发布 workflow（开发期「无脑发布」版）
-# 作用：开发阶段不打版本标签，任何 push 到 main 的提交都会：
-#       1. 跑全工程 JVM 单元测试
-#       2. 构建已签名的 Release APK（按架构拆分 + universal 通用包）
-#       3. 发布/更新到一个固定的「latest」GitHub Release
-# 这样仓库里永远只有一个 latest Release，始终指向最新构建产物。
-# 注意：本文件只负责 CI 构建与发布，不修改任何应用源码。
+# NanobotKT 正式 Release workflow
+# 作用：main 分支每次 push 后自动递增版本、生成更新日志、构建正式 Release APK，
+#       然后创建对应版本的 GitHub Release。
 # ============================================================
 name: Android Release
 
 on:
   push:
     branches: [ main ]
-  # 也允许在 GitHub Actions 页面手动触发
   workflow_dispatch:
 
-# 发布 Release 需要写权限（contents: write），由 GITHUB_TOKEN 提供
 permissions:
   contents: write
 
+# 避免多个 main push 同时递增同一个版本号。
+concurrency:
+  group: android-release-main
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: '17'
+
 jobs:
   release:
-    name: Build and Publish Release
+    name: Build and publish formal Release
+    # 手动运行也只允许 main：否则从其他分支 dispatch 后把 HEAD 推到 main，可能发布错误源码。
+    # Actions 版本提交默认不会再次触发发布；提交前缀保护用于未来改用 PAT 后避免循环。
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+      !startsWith(github.event.head_commit.message, 'chore(release): prepare '))
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出仓库代码（当前提交）
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-      # 2. 安装 JDK 17
+      - name: Configure Git identity
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Bump version and generate changelog
+        id: version
+        run: |
+          result="$(./scripts/release.sh bump)"
+          echo "$result"
+          version_name="$(echo "$result" | awk -F= '$1 == "VERSION_NAME" { print $2 }')"
+          version_code="$(echo "$result" | awk -F= '$1 == "VERSION_CODE" { print $2 }')"
+          test -n "$version_name"
+          test -n "$version_code"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          ./scripts/release.sh changelog "$version_name"
+
+      - name: Commit version and changelog locally
+        run: |
+          git add version.properties docs/CHANGELOG.md
+          git commit -m "chore(release): prepare v${{ steps.version.outputs.version_name }}"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: ${{ env.JAVA_VERSION }}
 
-      # 3. 配置 Gradle（自动使用仓库 wrapper，并缓存依赖）
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 4. 先执行全工程 JVM 单元测试，避免仅编译成功却漏掉通信和业务回归。
       - name: Run JVM unit tests
         run: sh gradlew test --console=plain
 
-      # 5. Lint 必须在签名和发布前通过，避免把已知 Android 配置错误带入 Release。
       - name: Run Android lint
-        run: sh gradlew :app:lintDebug --console=plain
+        run: sh gradlew :app:lintRelease --console=plain
 
-      # 6. 从 GitHub Secret 解出签名 keystore（base64 -> keystore.jks）
-      - name: Decode signing keystore
+      - name: Check formal signing configuration
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+          test -n "$KEYSTORE_BASE64" || { echo 'Missing KEYSTORE_BASE64' >&2; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo 'Missing KEYSTORE_PASSWORD' >&2; exit 1; }
+          test -n "$KEY_ALIAS" || { echo 'Missing KEY_ALIAS' >&2; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo 'Missing KEY_PASSWORD' >&2; exit 1; }
 
-      # 6. 构建已签名的 Release APK（按架构拆分 + universal 通用包）
-      - name: Build signed release APKs
+      - name: Decode formal signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > keystore.jks
+
+      - name: Build formal Release APKs
         env:
           KEYSTORE_FILE: keystore.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -63,14 +101,23 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: sh gradlew :app:assembleRelease --console=plain
 
-      # 7. 无脑发布：删除旧的 latest Release，再创建新的 latest Release，
-      #    上传全部 APK（arm64-v8a / armeabi-v7a / x86 / x86_64 / universal）。
-      #    下载链接固定：https://github.com/yaotutu/nanobotkt/releases/tag/latest
-      - name: Publish to rolling latest Release
+      - name: Push version and changelog commit
+        run: git push origin HEAD:main
+
+      - name: Upload formal APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanobotkt-v${{ steps.version.outputs.version_name }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest --yes >/dev/null 2>&1 || true
-          gh release create latest app/build/outputs/apk/release/*.apk \
-            --title "Latest dev build" \
-            --notes "自动化开发构建：commit \`${{ github.sha }}\`"
+          gh release create "v${{ steps.version.outputs.version_name }}" \
+            app/build/outputs/apk/release/*.apk \
+            --target main \
+            --title "NanobotKT v${{ steps.version.outputs.version_name }}" \
+            --notes-file docs/CHANGELOG.md

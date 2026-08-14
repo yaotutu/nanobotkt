@@ -20,3 +20,7 @@ local.properties
 /.kotlin/
 
 /.idea/*
+
+# Android 发布签名文件：私钥永远只保存在本地安全备份和 GitHub Secrets 中。
+*.jks
+*.keystore
