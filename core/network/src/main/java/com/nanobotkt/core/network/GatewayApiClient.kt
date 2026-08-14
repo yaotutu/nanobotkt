@@ -104,6 +104,28 @@ class GatewayApiClient @Inject constructor(
     fun <B> encode(value: B, serializer: SerializationStrategy<B>): String =
         json.encodeToString(serializer, value)
 
+    /**
+     * 把 Gateway 返回的相对媒体路径补齐为 Android 图片/系统 Intent 可消费的绝对 URL。
+     *
+     * 这里只拼接公开的 base URL，不附加或暴露 API Token。`data:`、`content:` 与 `file:` URI
+     * 已经是完整资源标识，必须原样保留；HTTP(S) 地址也不能被当前 Gateway origin 覆盖。
+     */
+    fun resolveUrl(value: String): String {
+        val trimmed = value.trim()
+        if (trimmed.isBlank()) return trimmed
+        if (
+            trimmed.startsWith("http://", ignoreCase = true) ||
+                trimmed.startsWith("https://", ignoreCase = true) ||
+                trimmed.startsWith("data:", ignoreCase = true) ||
+                trimmed.startsWith("content:", ignoreCase = true) ||
+                trimmed.startsWith("file:", ignoreCase = true)
+        ) {
+            return trimmed
+        }
+        val base = authContext.baseUrl.trimEnd('/')
+        return if (trimmed.startsWith('/')) "$base$trimmed" else "$base/$trimmed"
+    }
+
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private val EMPTY_BODY = ByteArray(0).toRequestBody(null)

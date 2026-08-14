@@ -155,4 +155,26 @@
     <string name="transcribing">转写中…</string>
     <string name="recording">录音中…</string>
     <string name="composer_ready_label">就绪</string>
+
+    <!-- 消息时间轴与 Agent 活动组文案。 -->
+    <string name="activity_expand">展开 Agent 活动</string>
+    <string name="activity_collapse">收起 Agent 活动</string>
+    <string name="activity_tool">工具</string>
+    <string name="activity_cli">CLI 应用</string>
+    <string name="activity_mcp">MCP</string>
+    <string name="activity_step">活动</string>
+    <string name="activity_completed">已完成</string>
+    <string name="activity_in_progress">正在准备 Agent 活动…</string>
+    <plurals name="activity_running_count"><item quantity="other">正在执行 · %1$d 项活动</item></plurals>
+    <plurals name="activity_completed_count"><item quantity="other">已完成 · %1$d 项活动</item></plurals>
+    <plurals name="activity_failed_count"><item quantity="other">执行失败 · %1$d 项活动</item></plurals>
+    <string name="file_diff_show_more">显示更多</string>
+    <string name="file_diff_show_less">收起</string>
+    <string name="file_diff_truncated">Diff 已被服务器截断。</string>
+    <string name="media_image">图片</string>
+    <string name="media_image_load_failed">无法加载图片</string>
+    <string name="media_video">视频</string>
+    <string name="media_audio">音频</string>
+    <string name="media_file">文件</string>
+    <string name="automation_source">自动化 · %1$s</string>
 </resources>

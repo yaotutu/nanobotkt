@@ -160,4 +160,35 @@
         <item quantity="one">%1$d second</item>
         <item quantity="other">%1$d seconds</item>
     </plurals>
+
+    <!-- Message timeline and Agent Activity labels. -->
+    <string name="activity_expand">Expand agent activity</string>
+    <string name="activity_collapse">Collapse agent activity</string>
+    <string name="activity_tool">Tool</string>
+    <string name="activity_cli">CLI app</string>
+    <string name="activity_mcp">MCP</string>
+    <string name="activity_step">Activity</string>
+    <string name="activity_completed">Completed</string>
+    <string name="activity_in_progress">Preparing agent activity…</string>
+    <plurals name="activity_running_count">
+        <item quantity="one">Working · %1$d activity</item>
+        <item quantity="other">Working · %1$d activities</item>
+    </plurals>
+    <plurals name="activity_completed_count">
+        <item quantity="one">Completed · %1$d activity</item>
+        <item quantity="other">Completed · %1$d activities</item>
+    </plurals>
+    <plurals name="activity_failed_count">
+        <item quantity="one">Failed · %1$d activity</item>
+        <item quantity="other">Failed · %1$d activities</item>
+    </plurals>
+    <string name="file_diff_show_more">Show more</string>
+    <string name="file_diff_show_less">Show less</string>
+    <string name="file_diff_truncated">Diff truncated by the server.</string>
+    <string name="media_image">Image</string>
+    <string name="media_image_load_failed">Could not load image</string>
+    <string name="media_video">Video</string>
+    <string name="media_audio">Audio</string>
+    <string name="media_file">File</string>
+    <string name="automation_source">Automation · %1$s</string>
 </resources>

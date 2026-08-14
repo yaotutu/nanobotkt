@@ -9,7 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -46,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
@@ -125,15 +125,40 @@ fun ChatScreen(
     val hasUserPrompts = remember(state.messages) { state.messages.any { it.role == "user" } }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val timelineItems =
+        remember(state.messages, state.activeTurnId) {
+            buildChatTimelineItems(state.messages, activeTurnId = state.activeTurnId)
+        }
+    val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
     var jumpTargetId by remember { mutableStateOf<String?>(null) }
     var autoFollow by remember { mutableStateOf(true) }
 
-    LaunchedEffect(jumpTargetId) {
+    LaunchedEffect(state.sessionKey) {
+        // 新会话从底部开始；旧会话的手动浏览状态不能泄漏到新会话。
+        autoFollow = true
+    }
+    LaunchedEffect(listState, state.sessionKey, isUserDragging) {
+        snapshotFlow { isUserDragging to listState.canScrollForward }
+            .collect { (dragging, canScrollForward) ->
+                if (dragging) {
+                    // isScrollInProgress 同时包含程序化滚动；若用它判断，首次自动定位和点击“新消息”
+                    // 也会错误关闭 auto-follow。interactionSource 只表示用户手指拖动，因此只有用户
+                    // 真正离开尾部时才暂停跟随；用户在底部轻微拖动但没有离开时仍保持跟随。
+                    autoFollow = !canScrollForward
+                }
+            }
+    }
+
+    LaunchedEffect(jumpTargetId, timelineItems, state.hasMoreBefore) {
         jumpTargetId?.let { targetId ->
             autoFollow = false
-            val index = state.messages.indexOfFirst { it.role == "user" && it.id == targetId }
-            if (index >= 0) {
-                listState.animateScrollToItem(index)
+            val timelineIndex =
+                timelineItems.indexOfFirst {
+                    it is ChatTimelineItem.UserMessage && it.message.id == targetId
+                }
+            if (timelineIndex >= 0) {
+                val headerOffset = if (state.hasMoreBefore) 1 else 0
+                listState.animateScrollToItem(headerOffset + timelineIndex)
             }
             jumpTargetId = null
         }
@@ -265,12 +290,14 @@ fun ChatScreen(
                 MessageList(
                     listState = listState,
                     state = state,
+                    timelineItems = timelineItems,
                     loadOlder = viewModel::loadOlder,
                     onQuote = { quoteDraft = normalizeQuotedContext(it) },
                     onPreview = viewModel::previewFile,
                     onFork = { messageId, beforeUserIndex ->
                         viewModel.fork(messageId, beforeUserIndex, forkTitle, onSessionCreated)
                     },
+                    resolveMediaUrl = viewModel::resolveMediaUrl,
                     modifier = Modifier.fillMaxSize(),
                     autoFollow = autoFollow,
                 )
@@ -302,9 +329,15 @@ fun ChatScreen(
                     onClick = {
                         // 从 Prompt Navigator 跳转历史消息时会暂停自动跟随；用户主动回到最新消息
                         // 后必须恢复该状态，后续新增或流式消息才能继续自然跟随列表尾部。
-                        autoFollow = true
-                        coroutineScope.launch {
-                            listState.animateScrollToBottom(state.messages.lastIndex)
+                        val headerOffset = if (state.hasMoreBefore) 1 else 0
+                        val lastIndex = headerOffset + timelineItems.lastIndex
+                        if (lastIndex >= 0) {
+                            autoFollow = true
+                            coroutineScope.launch {
+                                // 主工作区已将原始消息映射为时间轴单元；这里必须使用相同索引体系，
+                                // 并复用可处理超长正文的底部定位函数，避免跳到错误消息或只到单元顶部。
+                                listState.scrollToTimelineBottom(lastIndex)
+                            }
                         }
                     },
                 )
@@ -408,23 +441,6 @@ private fun JumpToLatestMessagesButton(
             style = MaterialTheme.typography.labelLarge,
         )
     }
-}
-
-/**
- * 将列表真正滚到内容底部，而不只是把最后一条消息的顶部滚入视口。
- *
- * `animateScrollToItem(lastIndex)` 对超长的最后一条消息只会先定位到该消息顶部，因此仍可能留下
- * 可继续向下滚动的正文。定位完成后再按“最后一项高度 + 一个视口高度”补滚，LazyColumn 会在真实
- * 边界自动截断距离，从而兼容普通消息、超长消息和列表底部 content padding。
- */
-private suspend fun LazyListState.animateScrollToBottom(lastIndex: Int) {
-    if (lastIndex < 0) return
-
-    animateScrollToItem(lastIndex)
-    if (!canScrollForward) return
-
-    val lastItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == lastIndex } ?: return
-    animateScrollBy(lastItem.size.toFloat() + layoutInfo.viewportSize.height)
 }
 
 @Composable

@@ -31,6 +31,9 @@ dependencies {
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.collections.immutable)
+    // ToolProgressEvent 的公开字段直接暴露 JsonElement；聊天 UI 会读取 result/error 来渲染状态，
+    // 因而本模块必须显式声明 JSON 运行时，不能依赖 core:model 的非传递 implementation 细节。
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.coil.compose)
