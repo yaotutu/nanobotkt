@@ -340,7 +340,7 @@ C:\Users\Administrator\AndroidStudioProjects\nanobotkt\feature\settings\src\test
 
 ### 7.1 建议下一阶段：建立 Smoke Test 清单
 
-目前已创建 `SMOKE_TEST.md`，并完成第一批真实服务端 Smoke Test：
+目前已创建 `docs/SMOKE_TEST.md`，并完成第一批真实服务端 Smoke Test：
 
 - 网关 bootstrap：HTTP 200，Debug APK 已使用 `http://192.168.55.147:8765` 构建并安装。
 - Chat 会话切换：`新闻频道` 加载成功。
@@ -348,11 +348,11 @@ C:\Users\Administrator\AndroidStudioProjects\nanobotkt\feature\settings\src\test
 - 归档/显示已归档/取消归档：`新闻频道` 已完成归档链路验证并恢复。
 - 未发送新消息、未删除会话、未保存 Settings 或修改其他远程配置。
 
-详细步骤、实际结果和临时证据路径见仓库根目录 `SMOKE_TEST.md`。
+详细步骤、实际结果和临时证据路径见仓库根目录 `docs/SMOKE_TEST.md`。
 
 后续仍需按小阶段继续覆盖，不要把本轮结果描述为全量回归。
 
-后续维护 `SMOKE_TEST.md` 时，至少继续记录：
+后续维护 `docs/SMOKE_TEST.md` 时，至少继续记录：
 
 - 模块/页面
 - 测试入口
@@ -558,7 +558,7 @@ Save changes, then restart when ready.
 - 通过 App、Chat、Settings、Sidebar 的编译/单测，以及 App Debug 构建。
 - 使用远程服务地址重新构建并通过 `adb install -r` 安装到 `HT7390201404`。
 - 强制停止并重新启动 `com.nanobotkt.debug`，成功进入聊天页；最近启动日志未发现 Fatal Exception 或 ANR。
-- 详细命令与证据路径已记录到 `SMOKE_TEST.md`。
+- 详细命令与证据路径已记录到 `docs/SMOKE_TEST.md`。
 
 当前仍不能宣称整个应用已经全量测试完成。Apps 安装/调用、Skills 写操作、Automations、Channels、Security、Workspace、Provider 真实调用、Voice/Image 端到端、网络异常和多设备适配仍未完整验证。
 
@@ -569,7 +569,7 @@ Save changes, then restart when ready.
 - 通过已登录浏览器只读检查 Apps、Skills、Automations、Settings → Channels、Settings → Security 和 Settings → Overview 页面入口及展示状态。
 - 重新执行 App、各 feature 编译/单测和 Debug APK 构建，结果为 `BUILD SUCCESSFUL`。
 - 重新执行 `git diff --check`，结果为通过。
-- 将上述证据和未覆盖边界补充到 `SMOKE_TEST.md`。
+- 将上述证据和未覆盖边界补充到 `docs/SMOKE_TEST.md`。
 
 以下是当时的未完成状态记录；该状态已由第 15 节的补充验证更新，不应作为当前结论。原因是：
 
@@ -1797,7 +1797,7 @@ adb install -r app/build/outputs/apk/debug/app-universal-debug.apk
 5. **真实 Gateway WebSocket 频道**：完成 ready、new_chat、attached、真实消息发送、流式回复和结束事件；临时 chat 已删除。
 6. **Android 完整 WebSocket 自动重连**：设备真实断链约 90 秒后恢复 reverse，应用 PID/UI 保持；恢复后 Android 真实发送消息并收到助手回复，无 Fatal/ANR/Force Finish。
 
-主要证据见 `/Users/yaotutu/Desktop/code/nanobotkt/SMOKE_TEST.md` 的 REAL-009 至 REAL-011，以及：
+主要证据见 `/Users/yaotutu/Desktop/code/nanobotkt/docs/SMOKE_TEST.md` 的 REAL-009 至 REAL-011，以及：
 
 - `/tmp/nanobotkt-real-ws-smoke.log`
 - `/tmp/nanobotkt-reconnect-long-before.png`
@@ -1835,4 +1835,4 @@ adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-universal-debug.
 
 结果：构建与安装成功，`MainActivity` 冷启动后保持前台。宿主机和模拟器到 Gateway `8765` 的 TCP 探测均成功；根路径返回 HTTP `200`，无凭据访问 `/webui/bootstrap` 返回 HTTP `401`。应用已有认证状态正常恢复，Chat 显示 `Ready`，真实会话列表可只读加载，模拟器 TCP 表存在到目标 Gateway 的 `ESTABLISHED` 连接，logcat 未发现应用 Fatal、ANR、Force Finish 或进程死亡标记。
 
-本轮没有发送消息或执行 Gateway 写操作；没有将凭据、完整真实会话截图、UI dump、日志或模拟器产物加入 Git。详细步骤与边界见 `SMOKE_TEST.md` 的 `EMULATOR-CONNECTIVITY-013`。
+本轮没有发送消息或执行 Gateway 写操作；没有将凭据、完整真实会话截图、UI dump、日志或模拟器产物加入 Git。详细步骤与边界见 `docs/SMOKE_TEST.md` 的 `EMULATOR-CONNECTIVITY-013`。
