@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Toc
 import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
@@ -55,6 +57,8 @@ internal fun ChatTopStatusBar(
     onRemoveQueuedPrompt: (String) -> Unit,
     onOpenPromptNavigator: () -> Unit,
     onOpenSessionInfo: () -> Unit,
+    onOpenConversationList: () -> Unit,
+    onToggleTheme: () -> Unit,
     onOpenModel: () -> Unit,
     onOpenAccess: () -> Unit,
 ) {
@@ -133,6 +137,17 @@ internal fun ChatTopStatusBar(
                         },
                     )
                 }
+                // 会话列表和主题切换属于首页级快捷操作，不能因为“当前会话配置”重构
+                // 就被遗漏；会话列表仍由 ChatScreen 打开同一个 Bottom Sheet，主题切换
+                // 则回到 AppViewModel 持久化用户偏好，不在 feature 层复制状态。
+                SessionConfigMenuItem(
+                    label = stringResource(R.string.open_conversation_list),
+                    icon = Icons.Rounded.ChatBubbleOutline,
+                    onClick = {
+                        onConfigMenuOpenChange(false)
+                        onOpenConversationList()
+                    },
+                )
                 SessionConfigMenuItem(
                     label = stringResource(R.string.model_select_title),
                     icon = Icons.Rounded.SmartToy,
@@ -151,6 +166,14 @@ internal fun ChatTopStatusBar(
                         },
                     )
                 }
+                SessionConfigMenuItem(
+                    label = stringResource(R.string.toggle_theme),
+                    icon = Icons.Rounded.DarkMode,
+                    onClick = {
+                        onConfigMenuOpenChange(false)
+                        onToggleTheme()
+                    },
+                )
             }
         }
     }

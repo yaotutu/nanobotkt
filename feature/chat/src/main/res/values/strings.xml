@@ -11,6 +11,8 @@
     <string name="jump_to_latest_messages">New messages</string>
     <string name="open_conversation_list">Open conversations</string>
     <string name="conversation_list_title">Conversations</string>
+    <string name="conversation_archived_title">Archived</string>
+    <string name="conversation_unarchive">Unarchive</string>
     <string name="conversation_search_hint">Search conversations</string>
     <string name="clear_search">Clear search</string>
     <string name="conversation_pinned_section">Pinned</string>

@@ -3,6 +3,8 @@
     <string name="open_navigation">打开导航</string>
     <string name="open_conversation_list">打开会话列表</string>
     <string name="conversation_list_title">会话</string>
+    <string name="conversation_archived_title">已归档</string>
+    <string name="conversation_unarchive">取消归档</string>
     <string name="conversation_search_hint">搜索会话</string>
     <string name="clear_search">清除搜索</string>
     <string name="conversation_pinned_section">置顶会话</string>
