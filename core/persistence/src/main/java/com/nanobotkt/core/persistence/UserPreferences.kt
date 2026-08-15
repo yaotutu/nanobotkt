@@ -4,14 +4,15 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 internal val Context.nanobotDataStore by preferencesDataStore(name = "nanobot_preferences")
 
@@ -43,6 +44,19 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
     suspend fun setFileEditDisplay(value: FileEditDisplay) = update(Keys.fileEditDisplay, value.name)
     suspend fun setServerUrl(value: String?) { context.nanobotDataStore.edit { if (value.isNullOrBlank()) it.remove(Keys.serverUrl) else it[Keys.serverUrl] = value.trim().trimEnd('/') } }
 
+    /**
+     * 读取最近一次 App 更新检查时间。
+     *
+     * 该值只用于“每天最多自动检查一次”的节流，不参与版本判断；版本信息始终来自
+     * BuildConfig 与 GitHub Release，避免本地持久化形成第二套版本来源。
+     */
+    suspend fun readLastAppUpdateCheckAtMillis(): Long? =
+        context.nanobotDataStore.data.map { it[Keys.lastAppUpdateCheckAtMillis] }.firstValue()
+
+    /** 在检查开始时立即记录时间，使失败的自动请求也不会在同一天反复打扰用户。 */
+    suspend fun writeLastAppUpdateCheckAtMillis(value: Long) =
+        update(Keys.lastAppUpdateCheckAtMillis, value)
+
     internal suspend fun readEncryptedSecret(): String? = context.nanobotDataStore.data.map { it[Keys.bootstrapSecret] }.firstValue()
     internal suspend fun writeEncryptedSecret(value: String?) { context.nanobotDataStore.edit { if (value == null) it.remove(Keys.bootstrapSecret) else it[Keys.bootstrapSecret] = value } }
 
@@ -69,6 +83,7 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
         val fileEditDisplay = stringPreferencesKey("file_edit_display")
         val serverUrl = stringPreferencesKey("server_url")
         val bootstrapSecret = stringPreferencesKey("bootstrap_secret_ciphertext")
+        val lastAppUpdateCheckAtMillis = longPreferencesKey("last_app_update_check_at_millis")
     }
 }
 

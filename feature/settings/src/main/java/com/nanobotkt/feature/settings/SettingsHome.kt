@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.SettingsSuggest
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +62,8 @@ internal fun SettingsHomePage(
     onOpenWorkspaces: () -> Unit,
     onOpenSecurityAndPairing: () -> Unit,
     onCheckVersion: () -> Unit,
+    appUpdateState: AppUpdateUiState,
+    onOpenAppUpdate: () -> Unit,
     onLogout: () -> Unit,
 ) {
     GatewaySummaryCard(
@@ -178,11 +181,21 @@ internal fun SettingsHomePage(
         SettingsRow(
             icon = Icons.Outlined.Info,
             title = "About",
-            subtitle = "Version information and update check",
+            subtitle = "Version information and Gateway update check",
             value = state.payload?.version?.let { versions ->
                 versions["current"] ?: versions.values.firstOrNull()
             },
             onClick = onCheckVersion,
+        )
+        CardDivider()
+        // App 更新是客户端自身能力，必须与既有 Gateway 版本检查分开，避免新增入口时
+        // 意外移除服务端版本信息和更新检查功能。
+        SettingsRow(
+            icon = Icons.Outlined.SystemUpdate,
+            title = "检查 App 更新",
+            subtitle = "当前版本 ${appUpdateState.current.versionName}（${appUpdateState.current.channel.displayName}）",
+            value = appUpdateStatusLabel(appUpdateState.status),
+            onClick = onOpenAppUpdate,
         )
     }
 
@@ -204,6 +217,20 @@ internal fun SettingsHomePage(
             }
         }
     }
+}
+
+/** Settings 首页只展示简短更新摘要，完整版本和日志统一放在更新对话框中。 */
+internal fun appUpdateStatusLabel(status: AppUpdateStatus): String? = when (status) {
+    AppUpdateStatus.Idle -> null
+    AppUpdateStatus.Checking -> "检查中"
+    AppUpdateStatus.UpToDate -> "已是最新"
+    is AppUpdateStatus.UpdateAvailable -> "发现 ${status.update.versionName}"
+    is AppUpdateStatus.Downloading -> status.progress.fraction?.let { fraction ->
+        "下载 ${(fraction * 100).toInt()}%"
+    } ?: "下载中"
+    is AppUpdateStatus.Downloaded -> "等待安装"
+    is AppUpdateStatus.Installing -> "安装中"
+    is AppUpdateStatus.Error -> "可重试"
 }
 
 /**
