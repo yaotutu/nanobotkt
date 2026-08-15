@@ -1,9 +1,11 @@
-# NanobotKT 0.1.6
+# NanobotKT 0.1.7
 
-> 自动构建发布，提交：`7845979`。
+> 自动构建发布，提交：`bf8cfe5`。
 
 ## 变更
 
+- chore(release): simplify local release workflow (`bf8cfe5`)
+- chore(dev): prepare v0.1.6 (`0c41496`)
 - merge: integrate chat preview race fix into dev (`7845979`)
 - fix(chat): make file preview generation thread-safe (`47ed364`)
 - merge: integrate app update into dev (`770e6ec`)
