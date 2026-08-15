@@ -10,12 +10,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
@@ -31,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.transport.TransportStatus
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Chat 页面组合入口与顶部状态区域。复杂消息和输入组件按职责放在同包文件中。 */
@@ -119,21 +122,36 @@ fun ChatScreen(
         configMenuOpen = false
     }
 
-    val hasUserPrompts = remember(state.messages) { state.messages.any { it.role == "user" } }
+    val hasUserPrompts =
+        remember(state.messages) {
+            // 顶部菜单只在 Prompt 导航实际存在可定位条目时启用；失败和仍在 Queue 的消息
+            // 不属于已执行 Prompt，不能仅凭 role=user 就错误显示入口。
+            extractPromptAnchors(state.messages).isNotEmpty()
+        }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val timelineItems =
-        remember(state.messages, state.activeTurnId) {
-            buildChatTimelineItems(state.messages, activeTurnId = state.activeTurnId)
+        remember(state.messages, state.activeTurnId, state.failedMessageIds) {
+            buildChatTimelineItems(
+                messages = state.messages,
+                activeTurnId = state.activeTurnId,
+                failedMessageIds = state.failedMessageIds,
+            )
         }
     val visibleTimelineItems =
-        remember(timelineItems) {
-            // LazyColumn、Prompt 跳转和“回到底部”必须共享同一份可见时间轴。若这里只保留
-            // 原始列表，隐藏的纯 reasoning Activity 仍会占用索引，最终让程序化滚动越过真实 item。
-            visibleChatTimelineItems(timelineItems)
+        remember(timelineItems, composer.queuedPrompts) {
+            // LazyColumn、Prompt 跳转、Queue 定位和“回到底部”必须共享同一份可见时间轴。
+            // 先剔除成功后应隐藏的纯 reasoning Activity，再把 Composer 本地 Queue 追加为
+            // 带 QUEUED 状态的用户消息；Queue 不写回 Repository，也不改变服务端历史。
+            appendQueuedPromptsToTimeline(
+                timelineItems = visibleChatTimelineItems(timelineItems),
+                queuedPrompts = composer.queuedPrompts,
+            )
         }
     val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
-    var jumpTargetId by remember { mutableStateOf<String?>(null) }
+    var jumpTargetKey by remember { mutableStateOf<String?>(null) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var menuDismissSignal by remember { mutableStateOf(0) }
     var autoFollow by remember { mutableStateOf(true) }
     val incomingTurnKeys =
         remember(state.messages) {
@@ -174,22 +192,33 @@ fun ChatScreen(
                     // 也会错误关闭 auto-follow。interactionSource 只表示用户手指拖动，因此只有用户
                     // 真正离开尾部时才暂停跟随；用户在底部轻微拖动但没有离开时仍保持跟随。
                     autoFollow = !canScrollForward
+                    // 长按菜单锚定在消息附近。用户开始拖动后立即关闭，防止 Popup 悬浮在已经
+                    // 移走的消息位置上；递增信号避免让列表直接持有每条消息的展开状态。
+                    menuDismissSignal += 1
                 }
             }
     }
 
-    LaunchedEffect(jumpTargetId, visibleTimelineItems, state.hasMoreBefore) {
-        jumpTargetId?.let { targetId ->
+    LaunchedEffect(jumpTargetKey, visibleTimelineItems, state.hasMoreBefore) {
+        jumpTargetKey?.let { targetKey ->
             autoFollow = false
-            val timelineIndex =
-                visibleTimelineItems.indexOfFirst {
-                    it is ChatTimelineItem.UserMessage && it.message.id == targetId
-                }
+            val timelineIndex = visibleTimelineItems.indexOfFirst { item -> item.key == targetKey }
             if (timelineIndex >= 0) {
                 val headerOffset = if (state.hasMoreBefore) 1 else 0
                 listState.animateScrollToItem(headerOffset + timelineIndex)
+                // Prompt/Queue 定位完成后仅短暂强调目标用户消息，帮助用户建立导航反馈；
+                // Agent Activity 定位没有消息气泡，因此不设置高亮。
+                val targetMessageId =
+                    (visibleTimelineItems[timelineIndex] as? ChatTimelineItem.UserMessage)
+                        ?.message
+                        ?.id
+                highlightedMessageId = targetMessageId
+                if (targetMessageId != null) {
+                    delay(1_800L)
+                    if (highlightedMessageId == targetMessageId) highlightedMessageId = null
+                }
             }
-            jumpTargetId = null
+            jumpTargetKey = null
         }
     }
 
@@ -242,6 +271,8 @@ fun ChatScreen(
     }
 
     val hero = state.chatId == null
+    val fullLoadFailed =
+        !state.loading && state.chatId != null && state.messages.isEmpty() && state.error != null
     val composerContent: @Composable () -> Unit = {
         Composer(
             state = composer,
@@ -273,10 +304,17 @@ fun ChatScreen(
         )
     }
 
+    val waitingForUser =
+        remember(state.messages, state.activeTurnId) {
+            hasWaitingForUserActivity(
+                messages = state.messages,
+                activeTurnId = state.activeTurnId,
+            )
+        }
     val headerStatus =
         resolveChatHeaderStatus(
             transportStatus = transportStatus,
-            hasError = state.error != null || state.model.error != null || composer.error != null,
+            waitingForUser = waitingForUser,
             active = state.activeTurnId != null,
         )
     val activeWorkspaceScope = state.workspaceScope ?: state.workspaces?.defaultScope
@@ -293,26 +331,36 @@ fun ChatScreen(
             hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
             hasSessionInfo = state.sessionKey != null,
             hasAccessSettings = activeWorkspaceScope != null,
-            onOpenSettings = onOpenSettings,
-            onNewConversation = onNewConversation,
+            onStatusClick = {
+                // 运行/等待状态指向当前时间轴中最后一段可见 Activity；连接状态没有对应
+                // 消息记录，因此点击时保持原位，避免伪造跳转目标。
+                if (headerStatus == ChatHeaderStatus.RUNNING ||
+                    headerStatus == ChatHeaderStatus.WAITING_FOR_USER
+                ) {
+                    visibleTimelineItems
+                        .lastOrNull { item -> item is ChatTimelineItem.AgentActivity }
+                        ?.let { item -> jumpTargetKey = item.key }
+                }
+            },
             onQueueOpenChange = { queueOpen = it },
             onConfigMenuOpenChange = { configMenuOpen = it },
-            onRemoveQueuedPrompt = viewModel::removeQueuedPrompt,
+            onQueuedPromptClick = { prompt ->
+                queueOpen = false
+                jumpTargetKey = "user:${prompt.id}"
+            },
             onOpenPromptNavigator = { promptNavigatorOpen = true },
             onOpenSessionInfo = { sessionInfoOpen = true },
-            // 顶部菜单中的会话入口必须和 Composer 左侧入口共用同一个本地 Sheet 状态，
-            // 否则用户从右上角进入时会落回旧 destination，表现为按钮无响应或功能缺失。
-            onOpenConversationList = { conversationSheetOpen = true },
-            onToggleTheme = onToggleTheme,
             onOpenModel = { modelDialogOpen = true },
             onOpenAccess = { accessDialogOpen = true },
         )
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             if (state.loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.primary,
+                ChatTimelineLoadingSkeleton(Modifier.fillMaxSize())
+            } else if (fullLoadFailed) {
+                ChatLoadFailure(
+                    onRetry = viewModel::refresh,
+                    modifier = Modifier.fillMaxSize(),
                 )
             } else if (hero) {
                 EmptyChat(Modifier.fillMaxSize())
@@ -327,7 +375,10 @@ fun ChatScreen(
                     onFork = { messageId, beforeUserIndex ->
                         viewModel.fork(messageId, beforeUserIndex, forkTitle, onSessionCreated)
                     },
+                    onRetry = viewModel::retry,
                     resolveMediaUrl = viewModel::resolveMediaUrl,
+                    highlightedMessageId = highlightedMessageId,
+                    menuDismissSignal = menuDismissSignal,
                     modifier = Modifier.fillMaxSize(),
                     autoFollow = autoFollow,
                 )
@@ -370,12 +421,12 @@ fun ChatScreen(
         }
     }
 
-    // Sheets
+    // 与当前会话绑定的二级弹层。
     PromptNavigatorSheet(
         messages = state.messages,
         visible = promptNavigatorOpen,
         onClose = { promptNavigatorOpen = false },
-        onJumpToPrompt = { messageId -> jumpTargetId = messageId },
+        onJumpToPrompt = { messageId -> jumpTargetKey = "user:$messageId" },
     )
 
     SessionInfoSheet(
@@ -404,6 +455,12 @@ fun ChatScreen(
         onRename = onRenameConversation,
         onArchive = onArchiveConversation,
         onDelete = onDeleteConversation,
+        onOpenSettings = {
+            // 全局设置属于低频入口，不回到聊天页顶部常驻占位；先关闭会话 Sheet，
+            // 再交给 app 组合根导航到 Settings Home，返回时仍恢复当前聊天会话。
+            conversationSheetOpen = false
+            onOpenSettings()
+        },
     )
 
     if (modelDialogOpen) {
@@ -534,15 +591,80 @@ internal fun unreadIncomingTurnCount(
 internal fun unreadBadgeLabel(unreadCount: Int): String =
     if (unreadCount > 9) "9+" else unreadCount.coerceAtLeast(0).toString()
 
+/**
+ * 首次加载使用时间轴骨架而不是孤立转圈，保持页面三段式结构稳定，也让用户明确知道正在加载
+ * “消息内容”而不是整个应用。骨架不使用无限动画，避免低端设备和测试环境产生额外重组负担。
+ */
+@Composable
+private fun ChatTimelineLoadingSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Surface(
+            modifier = Modifier.align(Alignment.End).fillMaxWidth(0.68f).height(74.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+            shape = MaterialTheme.shapes.extraLarge,
+        ) {}
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.42f).height(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            shape = MaterialTheme.shapes.small,
+        ) {}
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            shape = MaterialTheme.shapes.small,
+        ) {}
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.88f).height(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            shape = MaterialTheme.shapes.small,
+        ) {}
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.72f).height(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            shape = MaterialTheme.shapes.small,
+        ) {}
+    }
+}
+
+/** 只有“会话主体完全加载失败且没有任何可展示消息”时才占用时间轴中心。 */
+@Composable
+private fun ChatLoadFailure(
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.chat_load_failed_title),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.chat_load_failed_body),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onRetry) { Text(stringResource(R.string.refresh)) }
+    }
+}
+
 @Composable
 internal fun EmptyChat(modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier = modifier) {
+    // 空会话只是时间轴尚无内容，不应抢过输入框成为视觉主角；居中使用 titleMedium 即可，
+    // 同时保留足够留白，引导用户自然把注意力移向底部输入区。
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Text(
             text = stringResource(R.string.empty_title),
-            modifier = Modifier.offset(x = 16.dp, y = maxHeight * 0.394f),
-            color = MaterialTheme.colorScheme.onBackground,
-            style = MaterialTheme.typography.displaySmall,
-            maxLines = 1,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleMedium,
         )
     }
 }

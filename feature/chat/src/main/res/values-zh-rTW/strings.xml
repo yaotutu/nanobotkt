@@ -148,4 +148,5 @@
     <string name="transcribing">轉寫中…</string>
     <string name="recording">錄音中…</string>
     <string name="composer_ready_label">準備就緒</string>
+    <string name="timeline_error_title">工具結果無法使用</string>
 </resources>

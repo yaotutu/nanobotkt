@@ -1,24 +1,21 @@
 package com.nanobotkt.feature.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Toc
 import androidx.compose.material.icons.rounded.Checklist
-import androidx.compose.material.icons.rounded.ChatBubbleOutline
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.DropdownMenu
@@ -32,15 +29,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
- * 聊天首页唯一的顶部常驻区域。
+ * 聊天页唯一的顶部常驻区域。
  *
- * 左侧设置按钮直接进入统一控制中心；中间只展示会话身份、真实运行状态和本地 Queue；右侧
- * “新话题”和更多菜单分别承载会话创建与当前会话配置，避免再次引入隐藏的全局抽屉。
+ * 顶部只承载“会话标题、运行/连接状态、队列状态、当前会话菜单”。全局导航和会话切换已经在底部输入区
+ * 提供入口，不能再在这里重复占用左侧空间。空闲时不渲染任何状态文案，标题因此可以自然居中在
+ * 64dp 的最小高度内；出现运行、等待、连接或队列状态时才增加第二行。
  */
 @Composable
 internal fun ChatTopStatusBar(
@@ -52,38 +51,31 @@ internal fun ChatTopStatusBar(
     hasPromptNavigator: Boolean,
     hasSessionInfo: Boolean,
     hasAccessSettings: Boolean,
-    onOpenSettings: () -> Unit,
-    onNewConversation: () -> Unit,
+    onStatusClick: () -> Unit,
     onQueueOpenChange: (Boolean) -> Unit,
     onConfigMenuOpenChange: (Boolean) -> Unit,
-    onRemoveQueuedPrompt: (String) -> Unit,
+    onQueuedPromptClick: (QueuedPrompt) -> Unit,
     onOpenPromptNavigator: () -> Unit,
     onOpenSessionInfo: () -> Unit,
-    onOpenConversationList: () -> Unit,
-    onToggleTheme: () -> Unit,
     onOpenModel: () -> Unit,
     onOpenAccess: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val hasSecondaryRow = status != ChatHeaderStatus.IDLE || queuedPrompts.isNotEmpty()
 
     Row(
         modifier =
             Modifier.fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
                 .statusBarsPadding()
-                .height(64.dp)
-                .padding(horizontal = 4.dp),
+                .heightIn(min = 64.dp)
+                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
-            Icon(
-                Icons.Rounded.Settings,
-                contentDescription = stringResource(R.string.open_settings),
-                modifier = Modifier.size(20.dp),
-                tint = muted,
-            )
-        }
-        Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+        ) {
             Text(
                 text = title.ifBlank { stringResource(R.string.conversation_list_title) },
                 style = MaterialTheme.typography.titleMedium,
@@ -91,31 +83,30 @@ internal fun ChatTopStatusBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                HeaderStatusLabel(status)
-                if (queuedPrompts.isNotEmpty()) {
-                    QueueStatusMenu(
-                        prompts = queuedPrompts,
-                        expanded = queueOpen,
-                        onExpandedChange = onQueueOpenChange,
-                        onRemove = onRemoveQueuedPrompt,
-                    )
+            if (hasSecondaryRow) {
+                Row(
+                    modifier = Modifier.padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Queue 是用户主动提交、并且仍等待处理的独立状态，不能被 Running/Waiting
+                    // 覆盖。两者并列后，用户在长回复期间仍能立即确认排队数量，并点击查看摘要；
+                    // 每个状态仍保持独立点击区域，避免把“定位运行记录”和“打开队列”混成一个入口。
+                    if (status != ChatHeaderStatus.IDLE) {
+                        HeaderStatusLabel(status = status, onClick = onStatusClick)
+                    }
+                    if (queuedPrompts.isNotEmpty()) {
+                        QueueStatusMenu(
+                            prompts = queuedPrompts,
+                            expanded = queueOpen,
+                            onExpandedChange = onQueueOpenChange,
+                            onPromptClick = onQueuedPromptClick,
+                        )
+                    }
                 }
             }
         }
-        // 新建会话提升为顶栏一级操作；它与会话列表 Sheet 中的入口复用同一回调，
-        // 因而不会绕过 Root 的 drafting-new-topic 竞态保护。
-        IconButton(onClick = onNewConversation, modifier = Modifier.size(48.dp)) {
-            Icon(
-                Icons.Rounded.Add,
-                contentDescription = stringResource(R.string.new_topic),
-                modifier = Modifier.size(22.dp),
-                tint = muted,
-            )
-        }
+
         Box {
             IconButton(onClick = { onConfigMenuOpenChange(true) }, modifier = Modifier.size(48.dp)) {
                 Icon(
@@ -132,7 +123,7 @@ internal fun ChatTopStatusBar(
                 if (hasSessionInfo) {
                     SessionConfigMenuItem(
                         label = stringResource(R.string.session_info_title),
-                        icon = Icons.AutoMirrored.Rounded.Toc,
+                        icon = Icons.Rounded.Info,
                         onClick = {
                             onConfigMenuOpenChange(false)
                             onOpenSessionInfo()
@@ -149,17 +140,6 @@ internal fun ChatTopStatusBar(
                         },
                     )
                 }
-                // 会话列表和主题切换属于首页级快捷操作，不能因为“当前会话配置”重构
-                // 就被遗漏；会话列表仍由 ChatScreen 打开同一个 Bottom Sheet，主题切换
-                // 则回到 AppViewModel 持久化用户偏好，不在 feature 层复制状态。
-                SessionConfigMenuItem(
-                    label = stringResource(R.string.open_conversation_list),
-                    icon = Icons.Rounded.ChatBubbleOutline,
-                    onClick = {
-                        onConfigMenuOpenChange(false)
-                        onOpenConversationList()
-                    },
-                )
                 SessionConfigMenuItem(
                     label = stringResource(R.string.model_select_title),
                     icon = Icons.Rounded.SmartToy,
@@ -178,67 +158,78 @@ internal fun ChatTopStatusBar(
                         },
                     )
                 }
-                SessionConfigMenuItem(
-                    label = stringResource(R.string.toggle_theme),
-                    icon = Icons.Rounded.DarkMode,
-                    onClick = {
-                        onConfigMenuOpenChange(false)
-                        onToggleTheme()
-                    },
-                )
+                // Automation 仍由“会话信息”页面展示，避免把同一会话元数据拆成两个边界模糊的入口。
+                if (hasSessionInfo) {
+                    SessionConfigMenuItem(
+                        label = stringResource(R.string.session_info_automations),
+                        icon = Icons.AutoMirrored.Rounded.Toc,
+                        onClick = {
+                            onConfigMenuOpenChange(false)
+                            onOpenSessionInfo()
+                        },
+                    )
+                }
             }
         }
     }
 }
 
+/** 顶部状态使用轻量文字而不是胶囊 Badge；点击后由页面定位到对应 Activity。 */
 @Composable
-private fun HeaderStatusLabel(status: ChatHeaderStatus) {
+private fun HeaderStatusLabel(
+    status: ChatHeaderStatus,
+    onClick: () -> Unit,
+) {
     val text =
         when (status) {
-            ChatHeaderStatus.IDLE -> stringResource(R.string.chat_status_idle)
+            ChatHeaderStatus.IDLE -> ""
+            ChatHeaderStatus.WAITING_FOR_USER -> stringResource(R.string.chat_status_waiting)
             ChatHeaderStatus.RUNNING -> stringResource(R.string.chat_status_running)
             ChatHeaderStatus.RECONNECTING -> stringResource(R.string.chat_status_reconnecting)
-            ChatHeaderStatus.FAILED -> stringResource(R.string.chat_status_failed)
+            ChatHeaderStatus.DISCONNECTED -> stringResource(R.string.chat_status_disconnected)
         }
     val color =
         when (status) {
             ChatHeaderStatus.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant
+            ChatHeaderStatus.WAITING_FOR_USER -> MaterialTheme.colorScheme.tertiary
             ChatHeaderStatus.RUNNING -> MaterialTheme.colorScheme.primary
             ChatHeaderStatus.RECONNECTING -> MaterialTheme.colorScheme.tertiary
-            ChatHeaderStatus.FAILED -> MaterialTheme.colorScheme.error
+            ChatHeaderStatus.DISCONNECTED -> MaterialTheme.colorScheme.error
         }
-    val containerColor =
-        when (status) {
-            ChatHeaderStatus.IDLE -> MaterialTheme.colorScheme.surfaceContainerHighest
-            ChatHeaderStatus.RUNNING -> MaterialTheme.colorScheme.primaryContainer
-            ChatHeaderStatus.RECONNECTING -> MaterialTheme.colorScheme.tertiaryContainer
-            ChatHeaderStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
-        }
-    StatusLabel(text = text, color = color, containerColor = containerColor)
+    Row(
+        modifier = Modifier.clickable(enabled = status != ChatHeaderStatus.IDLE, onClick = onClick),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = "●", color = color, style = MaterialTheme.typography.labelSmall)
+        Text(
+            text = text,
+            color = color,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
+    }
 }
 
-/** Queue 是本地 Composer 状态，只提供查看与删除，不伪造后端队列操作。 */
+/**
+ * Queue 弹层是只读的轻量摘要。这里明确不提供删除、编辑或移除按钮，避免顶部状态承担会话管理职责。
+ * 点击某一项后交由上层定位时间轴中的排队用户消息，并立即关闭弹层。
+ */
 @Composable
 private fun QueueStatusMenu(
     prompts: List<QueuedPrompt>,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    onRemove: (String) -> Unit,
+    onPromptClick: (QueuedPrompt) -> Unit,
 ) {
     Box {
-        Surface(
-            onClick = { onExpandedChange(true) },
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ) {
-            Text(
-                text = stringResource(R.string.queued_count, prompts.size),
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-            )
-        }
+        Text(
+            text = stringResource(R.string.queued_count, prompts.size),
+            modifier = Modifier.clickable { onExpandedChange(true) },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
@@ -249,26 +240,25 @@ private fun QueueStatusMenu(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            prompts.forEach { prompt ->
+            prompts.forEachIndexed { index, prompt ->
                 DropdownMenuItem(
                     text = {
-                        Text(
-                            queuedPromptPreview(prompt),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    trailingIcon = {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.remove_queued_prompt),
-                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "${index + 1}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            Text(
+                                text = queuedPromptPreview(prompt),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     },
                     onClick = {
-                        // 删除后保持弹层打开，方便用户连续处理多条；删除最后一条时必须同步
-                        // 清除展开状态，否则后续同一会话再次产生 Queue 时会意外自动弹出。
-                        if (prompts.size == 1) onExpandedChange(false)
-                        onRemove(prompt.id)
+                        onExpandedChange(false)
+                        onPromptClick(prompt)
                     },
                 )
             }
@@ -279,7 +269,7 @@ private fun QueueStatusMenu(
 @Composable
 private fun SessionConfigMenuItem(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     onClick: () -> Unit,
 ) {
     DropdownMenuItem(
@@ -289,6 +279,7 @@ private fun SessionConfigMenuItem(
     )
 }
 
+/** 保留给输入区等现有组件使用的通用轻量标签。 */
 @Composable
 internal fun StatusLabel(text: String, color: Color, containerColor: Color) {
     Surface(shape = MaterialTheme.shapes.small, color = containerColor, contentColor = color) {

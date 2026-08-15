@@ -51,25 +51,31 @@ class AttachmentEncoder @Inject constructor(
         val sniffedImageMime = sniffImageMime(signature)
         val isImage = declaredMime?.startsWith("image/") == true || sniffedImageMime != null
 
-        val encoded = if (isImage) {
-            encodeImage(
-                uri = uri,
-                declaredMime = declaredMime,
-                sniffedMime = sniffedImageMime,
-                knownBytes = metadata?.size,
-                maxFileBytes = maxFileBytes,
-            )
-        } else {
-            val mime = canonicalDocumentMime(name, declaredMime) ?: error("unsupported_type")
-            metadata?.size?.let { size ->
-                require(size > 0) { "empty_file" }
-                require(size <= maxFileBytes) { "too_large" }
+        val encoded =
+            if (isImage) {
+                encodeImage(
+                    uri = uri,
+                    declaredMime = declaredMime,
+                    sniffedMime = sniffedImageMime,
+                    knownBytes = metadata?.size,
+                    maxFileBytes = maxFileBytes,
+                )
+            } else {
+                // 视频和文档都保持原始字节。MP4 不能进入 Bitmap 解码/压缩分支，否则不仅会
+                // 解码失败，还可能把一个有效视频错误映射为 unsupported_type。
+                val mime =
+                    canonicalVideoMime(name, declaredMime)
+                        ?: canonicalDocumentMime(name, declaredMime)
+                        ?: error("unsupported_type")
+                metadata?.size?.let { size ->
+                    require(size > 0) { "empty_file" }
+                    require(size <= maxFileBytes) { "too_large" }
+                }
+                val bytes = resolver.openInputStream(uri)?.use { it.readBytesLimited(maxFileBytes) }
+                    ?: error("io")
+                require(bytes.isNotEmpty()) { "empty_file" }
+                EncodedBytes(mime, bytes)
             }
-            val bytes = resolver.openInputStream(uri)?.use { it.readBytesLimited(maxFileBytes) }
-                ?: error("io")
-            require(bytes.isNotEmpty()) { "empty_file" }
-            EncodedBytes(mime, bytes)
-        }
 
         require(encoded.bytes.isNotEmpty()) { "empty_file" }
         require(encoded.bytes.size.toLong() <= maxFileBytes) { "too_large" }
@@ -179,4 +185,3 @@ data class ComposerAttachment(
     val bytes: Long,
     val outbound: OutboundMedia,
 )
-

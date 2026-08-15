@@ -35,7 +35,7 @@
     <string name="save">Save</string>
     <string name="conversation_back">Back to chat</string>
     <string name="refresh">Refresh</string>
-    <string name="empty_title">Where should we start?</string>
+    <string name="empty_title">Start a new conversation</string>
     <string name="empty_body">Start a new topic to chat with your nanobot workspace.</string>
     <string name="new_topic">New topic</string>
     <string name="load_older">Load older messages</string>
@@ -198,5 +198,26 @@
     <string name="media_video">Video</string>
     <string name="media_audio">Audio</string>
     <string name="media_file">File</string>
+    <string name="media_play">Play</string>
+    <string name="media_pause">Pause</string>
+    <string name="media_play_video">Play video</string>
     <string name="automation_source">Automation · %1$s</string>
+
+    <!-- 聊天页重构：顶部状态、导航与消息操作文案。 -->
+    <string name="chat_status_waiting">Waiting for your confirmation</string>
+    <string name="chat_status_disconnected">Disconnected</string>
+    <string name="prompt_navigator_empty">No prompts in this conversation yet.</string>
+    <string name="quote_action">Quote</string>
+    <string name="view_message">View</string>
+    <string name="message_queued">Queued</string>
+    <string name="message_failed">Failed to send</string>
+    <string name="user_message_detail">Message</string>
+    <string name="assistant_message_detail">Response</string>
+    <string name="markdown_code">Code</string>
+    <string name="markdown_streaming_code">Streaming…</string>
+    <string name="expand">Show more</string>
+    <string name="collapse">Show less</string>
+    <string name="chat_load_failed_title">Could not load this conversation</string>
+    <string name="chat_load_failed_body">Check the connection and try again.</string>
+    <string name="timeline_error_title">Tool result unavailable</string>
 </resources>

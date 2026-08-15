@@ -14,6 +14,13 @@ class AttachmentPolicyTest {
     }
 
     @Test
+    fun `normalizes only supported MP4 video attachments`() {
+        assertEquals("video/mp4", canonicalVideoMime("clip.MP4", "application/octet-stream"))
+        assertEquals("video/mp4", canonicalVideoMime("clip.bin", "video/mp4; charset=binary"))
+        assertNull(canonicalVideoMime("voice.m4a", "audio/mp4"))
+    }
+
+    @Test
     fun `sniffs supported image signatures`() {
         assertEquals("image/jpeg", sniffImageMime(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte())))
         assertEquals("image/gif", sniffImageMime(byteArrayOf(0x47, 0x49, 0x46, 0x38, 0x39, 0x61)))

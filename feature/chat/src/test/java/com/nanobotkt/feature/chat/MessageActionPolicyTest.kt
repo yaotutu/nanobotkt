@@ -29,6 +29,34 @@ class MessageActionPolicyTest {
         assertFalse(canRetryFromMessage(listOf(message("a", "assistant", streaming = true)), 0))
     }
 
+    @Test
+    fun `message actions shrink by delivery and streaming state`() {
+        assertEquals(
+            listOf(MessageAction.COPY, MessageAction.QUOTE, MessageAction.FORK, MessageAction.VIEW),
+            availableMessageActions(role = "assistant", canFork = true),
+        )
+        assertEquals(
+            listOf(MessageAction.COPY, MessageAction.QUOTE, MessageAction.VIEW),
+            availableMessageActions(role = "assistant", streaming = true, canFork = true),
+        )
+        assertEquals(
+            listOf(MessageAction.COPY, MessageAction.VIEW),
+            availableMessageActions(
+                role = "user",
+                deliveryState = UserMessageDeliveryState.FAILED,
+                canFork = true,
+            ),
+        )
+        assertEquals(
+            listOf(MessageAction.COPY, MessageAction.QUOTE, MessageAction.VIEW),
+            availableMessageActions(
+                role = "user",
+                deliveryState = UserMessageDeliveryState.QUEUED,
+                canFork = true,
+            ),
+        )
+    }
+
     private fun message(
         id: String,
         role: String,
