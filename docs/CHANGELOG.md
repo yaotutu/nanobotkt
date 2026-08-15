@@ -1,9 +1,10 @@
-# NanobotKT 0.1.1
+# NanobotKT 0.1.2
 
-> 自动构建发布，提交：`6a5b7c2`。
+> 自动构建发布，提交：`34416ec`。
 
 ## 变更
 
+- chore(dev): prepare v0.1.1 (`34416ec`)
 - ci: automate dev and release publishing (`6a5b7c2`)
 - fix(build): generate release keystore as JKS (`7f71f49`)
 - docs: move project notes under docs (`c22e6b1`)
