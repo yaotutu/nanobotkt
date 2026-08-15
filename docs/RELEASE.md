@@ -4,7 +4,7 @@
 
 ## 1. 先记住这 5 条规则
 
-1. **版本号在本地递增。** 只执行 `scripts/release.sh prepare dev` 或 `scripts/release.sh prepare release`，不要在 GitHub Actions 里手动改版本。
+1. **版本号在本地递增。** 在 `dev` 分支执行 `scripts/release.sh dev`，在 `main` 分支执行 `scripts/release.sh release`；不要在 GitHub Actions 里手动改版本。
 2. **更新日志在本地生成。** 脚本会生成 `docs/CHANGELOG.md`，并把它和 `version.properties` 一起提交。
 3. **云端只负责测试、构建、签名和发布。** GitHub Actions 不会回写版本文件，也不会自动创建版本提交。
 4. **Dev 和正式版共用包名、签名和升级链。** 两者都是 `com.nanobotkt`，新 APK 的 `versionCode` 更高时可以直接覆盖旧 APK。
@@ -24,7 +24,8 @@
 版本递增的真实入口是本地脚本，不是云端：
 
 ```text
-scripts/release.sh prepare
+scripts/release.sh dev|release
+        ├── 校验参数与当前分支匹配
         ├── 修改 version.properties
         ├── 生成 docs/CHANGELOG.md
         └── 创建 chore(dev/release): prepare v0.1.x 提交
@@ -135,7 +136,7 @@ git add <本轮业务文件>
 git commit -m "feat: ..."
 
 # 工作区必须干净；脚本会自动把 0.1.x 和 VERSION_CODE 各加 1。
-scripts/release.sh prepare dev
+scripts/release.sh dev             # 显式准备 Dev 版本并提交
 
 # 确认脚本创建的提交和版本后再 push。
 git log -2 --oneline
@@ -143,7 +144,7 @@ git show --stat --oneline HEAD
 git push origin dev
 ```
 
-`prepare dev` 会：
+`scripts/release.sh dev` 会：
 
 1. 确认当前分支是 `dev`；
 2. 确认工作区没有未提交或未跟踪文件；
@@ -175,11 +176,11 @@ Dev APK 可覆盖旧 Dev，也可覆盖当前正式版，只要设备上的旧 A
 正式版必须来自已经测试通过的 Dev 代码。推荐的分支关系是：
 
 ```text
-dev 开发 → prepare dev → push dev → 测试 dev-latest
+dev 开发 → release.sh dev → push dev → 测试 dev-latest
                                       ↓ 测试通过
                                   合并到 main
                                       ↓
-                             prepare release → push main
+                             release.sh release → push main
 ```
 
 ### 6.1 合并并发布
@@ -193,14 +194,14 @@ git pull --ff-only origin main
 git merge --no-ff dev
 
 # 合并成功并确认测试结果后，准备正式版本。
-scripts/release.sh prepare release
+scripts/release.sh release         # 显式准备正式版本并提交
 
 git log -2 --oneline
 git show --stat --oneline HEAD
 git push origin main
 ```
 
-`prepare release` 必须在 `main` 分支执行，并创建类似下面的提交：
+`scripts/release.sh release` 必须在 `main` 分支执行，并创建类似下面的提交：
 
 ```text
 chore(release): prepare v0.1.6
@@ -236,7 +237,7 @@ gh release download v0.1.6 --repo yaotutu/nanobotkt --pattern '*.apk' --clobber
   VERSION_NAME=0.1.4
   VERSION_CODE=5
 
-执行 scripts/release.sh prepare dev
+执行 scripts/release.sh dev             # 显式准备 Dev 版本并提交
 
 结果：version.properties
   VERSION_NAME=0.1.5
@@ -246,9 +247,9 @@ gh release download v0.1.6 --repo yaotutu/nanobotkt --pattern '*.apk' --clobber
 同时创建：chore(dev): prepare v0.1.5
 ```
 
-正式版同理，只是命令改为 `prepare release`。云端不会执行 `bump`、不会修改 `version.properties`、不会提交代码；这样本地和 CI 使用的是同一个 Git 提交，不会出现“云端已经是新版本、本地还是旧版本”的分叉。
+正式版同理，只需要切换到 `main` 分支后执行 `scripts/release.sh release`。云端不会修改 `version.properties`、不会提交代码；这样本地和 CI 使用的是同一个 Git 提交，不会出现“云端已经是新版本、本地还是旧版本”的分叉。
 
-`scripts/release.sh bump` 只是底层辅助命令，只改版本文件、不生成版本提交；日常发布不要用它，统一使用 `prepare dev` 或 `prepare release`。
+脚本不再提供 `bump`、`changelog`、`prepare` 等额外子命令；发布类型通过唯一参数 `dev` 或 `release` 显式指定，并且必须与当前分支匹配。
 
 ## 8. 发布失败怎么处理
 
@@ -324,7 +325,7 @@ git diff
 git switch dev
 git pull --ff-only origin dev
 # 必要时先：git merge origin/main
-scripts/release.sh prepare dev
+scripts/release.sh dev             # 显式准备 Dev 版本并提交
 git push origin dev
 ```
 
@@ -334,7 +335,7 @@ git push origin dev
 git switch main
 git pull --ff-only origin main
 git merge --no-ff dev
-scripts/release.sh prepare release
+scripts/release.sh release         # 显式准备正式版本并提交
 git push origin main
 ```
 

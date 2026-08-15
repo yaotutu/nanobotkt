@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# NanobotKT 本地发布辅助脚本。
+# NanobotKT 本地发布脚本。
+#
+# 发布类型由唯一参数显式指定，同时必须与当前 Git 分支匹配：
+# - scripts/release.sh dev     只能在 dev 分支准备 Dev 版本；
+# - scripts/release.sh release 只能在 main 分支准备正式版本。
+#
+# 显式参数避免调用者仅凭当前目录猜测发布类型；分支校验则防止版本号递增到错误分支。
 #
 # 版本号和更新日志必须在本地进入 Git 提交，GitHub Actions 只读取该提交并负责测试、
-# 构建和发布。这样远端构建不会再回写 version.properties，开发者本地仓库始终可以
-# 通过普通 git push 与云端保持一致。
+# 构建和发布。脚本只创建本地提交，不会自动 push，避免未经确认修改远程分支。
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -13,20 +18,16 @@ CHANGELOG_FILE="$ROOT_DIR/docs/CHANGELOG.md"
 usage() {
   cat <<'USAGE'
 用法：
-  scripts/release.sh bump [--version VERSION] [--version-code CODE]
-  scripts/release.sh changelog VERSION [OUTPUT_FILE]
-  scripts/release.sh prepare dev
-  scripts/release.sh prepare release
+  scripts/release.sh dev
+  scripts/release.sh release
+  scripts/release.sh --help
 
 说明：
-  bump       在本地递增 0.1.x 的 x，并同步递增 versionCode。
-  changelog  根据上一个 tag 到 HEAD 的 git log 生成 Markdown 更新日志。
-  prepare    在本地完成版本递增、更新日志生成和版本提交；不会自动 push。
+  dev      只能在 dev 分支执行，递增版本并创建 Dev 版本提交。
+  release  只能在 main 分支执行，递增版本并创建正式版本提交。
 
-推荐流程：
-  git commit -m "feat: ..."             # 先提交代码
-  scripts/release.sh prepare dev        # 本地准备 Dev 版本并提交
-  git push origin dev                   # 云端只负责构建和发布
+脚本会在本地完成版本递增、更新日志生成和 Git 提交，但不会自动 push。
+提交完成后执行：git push origin <当前分支>
 USAGE
 }
 
@@ -67,15 +68,13 @@ build_changelog() {
   {
     printf '# NanobotKT %s\n\n' "$version"
     printf '> 自动构建发布，提交：`%s`。\n\n' "$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
+    printf '## 变更\n\n'
     if [[ -n "$previous_tag" ]]; then
-      printf '## 变更\n\n'
       git -C "$ROOT_DIR" log --pretty=format:'- %s (`%h`)' "$previous_tag..HEAD"
-      printf '\n'
     else
-      printf '## 变更\n\n'
       git -C "$ROOT_DIR" log --pretty=format:'- %s (`%h`)' -20
-      printf '\n'
     fi
+    printf '\n'
   } > "$output"
 }
 
@@ -84,7 +83,7 @@ calculate_next_version() {
   if [[ "$current_version" =~ ^0\.1\.([0-9]+)$ ]]; then
     printf '0.1.%s\n' "$((BASH_REMATCH[1] + 1))"
   else
-    echo "当前版本 $current_version 不是 0.1.x，无法自动递增" >&2
+    echo "当前版本 ${current_version} 不是 0.1.x，无法自动递增" >&2
     return 1
   fi
 }
@@ -93,53 +92,47 @@ validate_version() {
   local version=$1
   local version_code=$2
   [[ "$version" =~ ^0\.1\.[0-9]+$ ]] || {
-    echo "版本号必须符合 0.1.x：$version" >&2
+    echo "版本号必须符合 0.1.x：${version}" >&2
     return 1
   }
   [[ "$version_code" =~ ^[1-9][0-9]*$ ]] || {
-    echo "versionCode 必须是正整数：$version_code" >&2
+    echo "versionCode 必须是正整数：${version_code}" >&2
     return 1
   }
 }
 
-bump_version() {
-  local current_version current_code next_version next_code
-  current_version=$(read_property VERSION_NAME)
-  current_code=$(read_property VERSION_CODE)
-  next_version=$(calculate_next_version "$current_version")
-  next_code=$((current_code + 1))
-  validate_version "$next_version" "$next_code"
-  write_version "$next_version" "$next_code"
-  printf 'VERSION_NAME=%s\nVERSION_CODE=%s\n' "$next_version" "$next_code"
-}
-
 prepare_release() {
-  local release_kind=$1
-  local branch expected_branch commit_prefix current_version current_code next_version next_code
+  local requested_kind=$1
+  local branch expected_branch release_kind commit_prefix
+  local current_version current_code next_version next_code
 
-  case "$release_kind" in
+  # 参数先决定发布语义，再用当前分支做第二层保护。两者不一致时立即退出，
+  # 不修改版本文件，也不生成半成品更新日志。
+  case "$requested_kind" in
     dev)
       expected_branch=dev
+      release_kind='Dev 版本'
       commit_prefix='chore(dev): prepare v'
       ;;
     release)
       expected_branch=main
+      release_kind='正式版本'
       commit_prefix='chore(release): prepare v'
       ;;
     *)
-      echo "发布类型必须是 dev 或 release：$release_kind" >&2
+      echo "发布类型必须是 dev 或 release：${requested_kind}" >&2
       return 2
       ;;
   esac
 
   branch=$(git -C "$ROOT_DIR" branch --show-current)
-  [[ "$branch" == "$expected_branch" ]] || {
-    echo "当前分支是 $branch，$release_kind 发布必须在 $expected_branch 分支执行" >&2
+  if [[ "$branch" != "$expected_branch" ]]; then
+    echo "当前分支是 ${branch}，${requested_kind} 发布必须在 ${expected_branch} 分支执行。" >&2
     return 1
-  }
+  fi
 
-  # 先提交业务代码，再运行 prepare；这样版本提交只包含版本文件和更新日志，
-  # 避免把未完成的本地修改一起带入可发布版本，也避免脚本覆盖用户改动。
+  # 版本提交只包含版本文件和更新日志；业务代码必须在运行脚本前已经提交。
+  # 这样可以避免脚本把未完成的本地修改一起带入可发布版本，也避免覆盖用户改动。
   if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]]; then
     echo '工作区不是干净状态，请先提交或处理现有修改后再准备发布。' >&2
     return 1
@@ -156,55 +149,30 @@ prepare_release() {
   git -C "$ROOT_DIR" add version.properties docs/CHANGELOG.md
   git -C "$ROOT_DIR" commit -m "$commit_prefix$next_version"
 
-  printf '已准备 %s 版本：%s\n' "$release_kind" "$next_version"
+  printf '已准备%s：%s\n' "$release_kind" "$next_version"
   printf 'VERSION_NAME=%s\nVERSION_CODE=%s\n' "$next_version" "$next_code"
   printf '下一步：git push origin %s\n' "$expected_branch"
 }
 
-command=${1:-}
-case "$command" in
-  bump)
-    shift
-    # bump 保留为底层能力，便于本地检查或其他脚本复用；它只改文件，不自动提交。
-    next_version=
-    next_code=
-    current_version=$(read_property VERSION_NAME)
-    current_code=$(read_property VERSION_CODE)
-    next_code=$((current_code + 1))
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        --version)
-          next_version=${2:?--version requires a value}
-          shift 2
-          ;;
-        --version-code)
-          next_code=${2:?--version-code requires a value}
-          shift 2
-          ;;
-        *)
-          usage >&2
-          exit 2
-          ;;
-      esac
-    done
-
-    if [[ -z "$next_version" ]]; then
-      next_version=$(calculate_next_version "$current_version")
-    fi
-    validate_version "$next_version" "$next_code"
-    write_version "$next_version" "$next_code"
-    printf 'VERSION_NAME=%s\nVERSION_CODE=%s\n' "$next_version" "$next_code"
+case "${1:-}" in
+  dev|release)
+    [[ $# -eq 1 ]] || {
+      echo '发布脚本只接受一个发布类型参数。' >&2
+      usage >&2
+      exit 2
+    }
+    prepare_release "$1"
     ;;
-  changelog)
-    version=${2:?changelog requires VERSION}
-    output=${3:-"$CHANGELOG_FILE"}
-    build_changelog "$version" "$output"
-    printf 'generated %s\n' "$output"
+  --help|-h)
+    usage
     ;;
-  prepare)
-    prepare_release "${2:?prepare requires dev or release}"
+  "")
+    echo '缺少发布类型参数：dev 或 release。' >&2
+    usage >&2
+    exit 2
     ;;
   *)
+    echo "未知发布类型：${1}" >&2
     usage >&2
     exit 2
     ;;

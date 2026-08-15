@@ -11,7 +11,7 @@ plugins {
 fun String.asBuildConfigString(): String = "\"${replace("\"", "\\\"")}\""
 
 // 版本号集中放在仓库根目录，避免把发布版本散落在 Gradle 配置和 workflow 中。
-// 本地 scripts/release.sh prepare 会先更新并提交该文件；CI 只读取提交中的版本构建。
+// 本地在 dev/main 分支执行 scripts/release.sh dev/release 会先更新并提交该文件；CI 只读取提交中的版本构建。
 val versionPropertiesFile = rootProject.file("version.properties")
 val versionProperties = Properties().apply {
     if (versionPropertiesFile.isFile) {

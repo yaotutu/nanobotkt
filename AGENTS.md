@@ -17,7 +17,10 @@
 1. 所有新增或修改的代码都必须添加详细的中文注释。注释应重点说明状态转换、竞态保护、接口边界、错误处理和不直观的业务规则；不要只为显而易见的语句添加无意义注释。
 2. `/Users/yaotutu/Desktop/code/nanobot` 是服务端源码固定路径。除非用户明确要求，禁止修改、格式化、重置、清理或删除该目录中的内容。
 3. NanobotKT 是 Android 手机客户端，唯一允许连接的服务端入口是 `http://192.168.55.147:8765/`。HTTP、Bootstrap 与 WebSocket 都必须使用该主机和 `8765` 端口；WebSocket 只能在此入口上使用服务端下发的路径与令牌。除非用户明确指定新的服务端地址，禁止使用或替换为 `127.0.0.1`、`localhost`、`10.0.2.2`、`18790` 或任何其他主机/端口，禁止通过 `adb reverse` 端口映射绕过此约束，也禁止把服务端内部监听地址当成客户端连接地址。
-4. 禁止过度设计
+4. 禁止过度设计。这里的“禁止过度设计”是指禁止没有真实问题支撑的预测式抽象、套层和框架化，不等于禁止重构。
+5. 当前项目处于早期阶段，虽然主要产品功能已完成约 90%，但架构尚未冻结。发现明确的职责混乱、并发风险、生命周期漏洞、错误依赖方向或明显维护成本时，应积极重构，不要因为功能已经可用而保留已确认的结构问题。
+6. 必要重构可以调整文件结构、模块内部职责、公开接口和跨模块组装方式；但必须有具体问题、清晰收益和匹配的验证，避免只为了形式统一、行数、设计模式或未来假设进行改造。
+
 ---
 
 ## 2. 开始任务前：先确认背景与实时状态
@@ -26,6 +29,7 @@
 
 ```bash
 git status --short
+git branch --show-current
 git log -1 --oneline --decorate
 git rev-parse HEAD
 git rev-parse origin/main
@@ -34,6 +38,7 @@ git rev-parse origin/main
 执行原则：
 
 - 先识别工作区已有修改、未跟踪文件和它们可能的来源，再开始编辑。
+- 同时确认当前分支及其用途：`dev` 用于 Dev 预发布，`main` 用于正式 Release；不要把 `origin/main` 误当成当前分支的上游状态。
 - 不覆盖、回退、删除或格式化用户、其他 Agent 或上一阶段留下的未知修改。
 - 明确本轮任务边界。用户要求完成当前阶段后停止时，不要未经确认扩展到下一阶段。
 - 如果已有修改与本任务相关，基于当前文件继续；如果归属不明确，保留原样，并在最终汇总中说明。
@@ -67,6 +72,7 @@ git rev-parse origin/main
 - Sidebar 会话切换、置顶、取消置顶、归档、显示已归档、恢复和删除。
 - Root `SavedStateHandle` 的状态恢复与 logout 清理。
 - WebSocket 连接、断开、重连、流式消息和结束事件。
+- 应用更新的版本比较、渠道映射、Release 资源选择、APK 下载状态和安装 Intent。
 
 修改这些路径时，应遵循：先稳定复现或写清行为契约，再用单元测试锁定状态转换，最后修改实现并重新运行相关模块测试。编译成功不能替代 UI 或状态行为验证。
 
@@ -83,9 +89,17 @@ core/network/           Gateway HTTP/API 客户端
 core/transport/         Gateway WebSocket/实时传输
 core/persistence/       本地持久化
 core/designsystem/      共享 Compose 设计系统
-core/testing/           测试辅助能力
-core/*-contract/        跨 feature 的最小能力契约
-feature/*/              独立业务功能及其 UI、状态、数据访问和 DI
+core/workspace-contract/ 跨 feature 的 Workspace 最小能力契约
+feature/auth/           登录与认证
+feature/chat/           会话、消息时间线、发送与媒体预览
+feature/sidebar/        会话列表及其管理入口
+feature/workspaces/     Workspace 管理
+feature/settings/       设置、运行状态与应用更新
+feature/apps/           Apps 管理
+feature/skills/         Skills 管理
+feature/automations/    Automations 管理
+feature/channels/       Channels 管理
+feature/security/       Security 管理
 ```
 
 依赖方向：
@@ -120,6 +134,7 @@ feature/<name>/src/main/java/com/nanobotkt/feature/<name>/
 ## 5. Kotlin、Compose 与状态管理
 
 - Kotlin/Java 生产代码优先使用不可变数据、纯函数和表达式式写法。
+- 若任务涉及 JavaScript/TypeScript，优先采用纯函数、不可变数据和显式数据转换，避免依赖可变共享状态。
 - 优先使用 `val`、不可变集合、`data class`、`StateFlow` 和单向数据流；避免可变全局状态。
 - Composable 负责渲染和事件转发，不直接承载网络请求、磁盘写入或复杂业务规则。
 - 网络、磁盘和 WebSocket 等副作用必须放在 Repository、DataSource、Transport 或明确的 Use Case 中。
@@ -128,7 +143,8 @@ feature/<name>/src/main/java/com/nanobotkt/feature/<name>/
 - Hilt Module 放在所属 feature 的 `di/` 中，不要把 feature 专属绑定塞进 `app`。
 - UI 模型不要泄漏到 `core` 或其他 feature；跨 feature 只共享能力契约和必要的数据模型。
 - 文件包名必须与目录职责一致。
-- 修改代码时优先做局部、可验证的改变，不进行无关重构或全仓库格式化。
+- 修改代码时优先保持范围可解释、过程可验证；若已确认问题跨越多个文件或模块，可以进行必要的系统性重构，但不要夹带与目标无关的重构或全仓库格式化。
+- 不以“项目功能已基本完成”“当前代码还能运行”或“避免改动过大”为理由推迟已确认的架构问题；也不以“项目处于早期”为理由进行没有明确收益的重写。
 
 ---
 
@@ -137,8 +153,9 @@ feature/<name>/src/main/java/com/nanobotkt/feature/<name>/
 - 只修改当前任务必需的文件。
 - 修改前后检查 `git diff`，确认没有混入无关变化。
 - 发现其他 Agent 或用户的修改时，基于当前内容调整，不要用旧版本覆盖。
-- 只有在任务边界清晰、写入范围不重叠且能独立验收时才委派 Subagent。
-- 架构设计、跨模块重构、关键路径集成和最终验证由主 Agent 负责。
+- Subagent 只处理范围小、边界明确、容易验收的简单任务；不要为了并行而并行。
+- 架构设计、复杂调查、模糊需求、跨模块改造、关键路径集成和最终验证由主 Agent 负责。
+- 委派写入任务时必须明确文件或模块所有权，保证不同 Agent 的写入范围不重叠。
 - Subagent 返回后必须审查其实际改动和验证结果，不能直接假设正确。
 - 最终汇总必须说明是否使用 Subagent、其任务范围以及实际影响。
 
@@ -170,6 +187,13 @@ feature/<name>/src/main/java/com/nanobotkt/feature/<name>/
 - Token、Cookie、Session 信息
 - Provider API Key
 - 渠道凭据、私钥和真实用户数据
+
+发布相关任务必须遵守：
+
+- `docs/RELEASE.md` 是版本递增、Dev 预发布和正式 Release 的唯一操作入口；执行前先完整阅读，不根据 Actions 日志自行猜测流程。
+- 只有用户明确要求发布时，才允许运行 `scripts/release.sh`；脚本要求显式传入 `dev` 或 `release`，并校验当前分支分别为 `dev` 或 `main`；通过后才会修改版本文件、更新日志并创建本地提交。
+- 不手工制造发布版本提交，不在 GitHub Actions 中修改版本号，也不把 Debug APK 当作可发布升级包。
+- 未经用户额外明确要求，不 push、不创建或删除 tag、不创建或删除 GitHub Release，也不覆盖 `dev-latest`。
 
 ---
 
