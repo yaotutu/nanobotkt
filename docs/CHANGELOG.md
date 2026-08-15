@@ -1,10 +1,10 @@
-# NanobotKT 0.1.3
+# NanobotKT 0.1.4
 
-> 自动构建发布，提交：`4d76f3f`。
+> 自动构建发布，提交：`de469a3`。
 
 ## 变更
 
-- Merge remote-tracking branch 'origin/dev' into dev (`4d76f3f`)
+- chore(dev): prepare v0.1.3 (`de469a3`)
 - chore(dev): prepare v0.1.3 (`428a2cd`)
 - Merge remote-tracking branch 'origin/main' into dev (`6f5860b`)
 - ci: prepare versions locally before release (`2cf584b`)
