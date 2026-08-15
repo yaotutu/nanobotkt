@@ -1,9 +1,13 @@
-# NanobotKT 0.1.4
+# NanobotKT 0.1.5
 
-> 自动构建发布，提交：`de469a3`。
+> 自动构建发布，提交：`74d81b9`。
 
 ## 变更
 
+- Merge remote-tracking branch 'origin/main' into dev (`74d81b9`)
+- docs: remove temporary handoff and document releases (`4354457`)
+- ci: serialize JVM tests in Android workflows (`08b2030`)
+- chore(release): prepare v0.1.4 (`40f0d08`)
 - chore(dev): prepare v0.1.3 (`de469a3`)
 - chore(dev): prepare v0.1.3 (`428a2cd`)
 - Merge remote-tracking branch 'origin/main' into dev (`6f5860b`)
