@@ -210,4 +210,5 @@
     <string name="media_play">播放</string>
     <string name="media_pause">暂停</string>
     <string name="media_play_video">播放视频</string>
+    <string name="timeline_error_title">工具结果不可用</string>
 </resources>

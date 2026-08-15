@@ -28,6 +28,22 @@ class ChatTimelineMapperTest {
     }
 
     @Test
+    fun `失败 ID 只把对应用户消息映射为 FAILED`() {
+        val items =
+            buildChatTimelineItems(
+                messages =
+                    listOf(
+                        message("local:failed", role = "user", content = "retry me"),
+                        message("history:sent", role = "user", content = "already sent"),
+                    ),
+                failedMessageIds = setOf("local:failed"),
+            ).filterIsInstance<ChatTimelineItem.UserMessage>()
+
+        assertEquals(UserMessageDeliveryState.FAILED, items[0].deliveryState)
+        assertEquals(UserMessageDeliveryState.SENT, items[1].deliveryState)
+    }
+
+    @Test
     fun `同一轮 reasoning tool 和普通 trace 合并为活动组`() {
         val items =
             buildChatTimelineItems(

@@ -329,7 +329,45 @@ class ChatViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf("first"), repository.sentPrompts.map(SentPrompt::text))
+        assertFalse(repository.sentPrompts.single().options.retainFailureInTimeline)
         assertEquals(listOf("second"), viewModel.composer.value.queuedPrompts.map(QueuedPrompt::text))
+        assertFalse(viewModel.composer.value.sending)
+    }
+
+    @Test
+    fun `fast queued turn end during acceptance continues flushing remaining prompts`() = runTest {
+        val firstAcceptance = CompletableDeferred<Unit>()
+        repository.sendBlock = { text, _, _ ->
+            if (text == "first") firstAcceptance.await()
+        }
+        val viewModel = viewModel()
+        viewModel.open("websocket:a", "a")
+        runCurrent()
+        repository.setActiveTurn("turn-1")
+        runCurrent()
+        viewModel.updateText("first")
+        viewModel.send()
+        viewModel.updateText("second")
+        viewModel.send()
+
+        // 原 turn 结束后开始 flush 第一条；仓储 acceptance 仍挂起，因此 Composer 保持
+        // sending=true，同时第二条仍在 Queue 中。
+        repository.setActiveTurn(null)
+        runCurrent()
+        assertTrue(viewModel.composer.value.sending)
+        assertEquals(listOf("second"), viewModel.composer.value.queuedPrompts.map(QueuedPrompt::text))
+
+        // 模拟服务端极快完成第一条排队消息：turn-2 在 acceptance 返回前已经开始并结束。
+        // 旧逻辑会在这里因为 sending=true 放弃 flush，并让 second 永久卡在 Queue。
+        repository.setActiveTurn("turn-2")
+        runCurrent()
+        repository.setActiveTurn(null)
+        runCurrent()
+        firstAcceptance.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf("first", "second"), repository.sentPrompts.map(SentPrompt::text))
+        assertTrue(viewModel.composer.value.queuedPrompts.isEmpty())
         assertFalse(viewModel.composer.value.sending)
     }
 
@@ -413,6 +451,25 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `retained send failure keeps failed bubble ownership and does not restore composer`() = runTest {
+        repository.sendOutcome = ChatSendOutcome.FailedRetained("local:turn-1", "send_rejected")
+        val viewModel = viewModel()
+        viewModel.open("websocket:a", "a")
+        viewModel.updateText("already represented by failed bubble")
+        viewModel.setQuotedContext("quoted answer")
+
+        viewModel.send()
+        advanceUntilIdle()
+
+        // Repository 已持有原始文本、引用和附件供气泡重试；Composer 若再恢复草稿会形成重复内容。
+        assertEquals("", viewModel.composer.value.text)
+        assertNull(viewModel.composer.value.quotedContext)
+        assertTrue(viewModel.composer.value.attachments.isEmpty())
+        assertNull(viewModel.composer.value.error)
+        assertFalse(viewModel.composer.value.sending)
+    }
+
+    @Test
     fun `opening a different session clears queue and prevents stale flush`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
@@ -480,6 +537,19 @@ class ChatViewModelTest {
         assertEquals("assistant-1", viewModel.composer.value.retryingMessageId)
         runCurrent()
         gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertNull(viewModel.composer.value.retryingMessageId)
+        assertNull(viewModel.composer.value.error)
+    }
+
+    @Test
+    fun `retry rejection keeps failure feedback in timeline without composer error`() = runTest {
+        repository.retryOutcome = ChatSendOutcome.FailedRetained("local:turn-2", "send_rejected")
+        val viewModel = viewModel()
+        viewModel.open("websocket:a", "a")
+
+        viewModel.retry("local:turn-1")
         advanceUntilIdle()
 
         assertNull(viewModel.composer.value.retryingMessageId)
@@ -770,7 +840,9 @@ private class FakeChatRepository : ChatRepository {
     var transcript: String = ""
     var stopCount: Int = 0
     var sendBlock: suspend (String, List<OutboundMedia>, String?) -> Unit = { _, _, _ -> }
+    var sendOutcome: ChatSendOutcome = ChatSendOutcome.Accepted
     var retryBlock: suspend (String) -> Unit = {}
+    var retryOutcome: ChatSendOutcome = ChatSendOutcome.Accepted
     var forkBlock: suspend (Int, String?) -> String = { _, _ -> "websocket:forked" }
     val openedSessions = mutableListOf<OpenedSession>()
     val newChatScopes = mutableListOf<WorkspaceScope?>()
@@ -841,12 +913,16 @@ private class FakeChatRepository : ChatRepository {
         media: List<OutboundMedia>,
         quotedContext: String?,
         options: ChatSendOptions,
-    ) {
+    ): ChatSendOutcome {
         sentPrompts += SentPrompt(text, media, quotedContext, options)
         sendBlock(text, media, quotedContext)
+        return sendOutcome
     }
 
-    override suspend fun retry(messageId: String) = retryBlock(messageId)
+    override suspend fun retry(messageId: String): ChatSendOutcome {
+        retryBlock(messageId)
+        return retryOutcome
+    }
     override suspend fun fork(beforeUserIndex: Int, title: String?): String = forkBlock(beforeUserIndex, title)
     override fun stop() {
         stopCount += 1

@@ -3,6 +3,7 @@ package com.nanobotkt.feature.chat
 import com.nanobotkt.core.model.BootstrapResponse
 import com.nanobotkt.core.model.BootstrapSnapshotProvider
 import com.nanobotkt.core.model.IngressLimitsProvider
+import com.nanobotkt.core.model.OutboundMedia
 import com.nanobotkt.core.model.WorkspacesPayload
 import com.nanobotkt.core.network.AuthContext
 import com.nanobotkt.core.network.GatewayApiClient
@@ -506,6 +507,99 @@ class DefaultChatRepositoryTest {
         assertFalse(repository.state.value.loading)
         assertFalse(repository.state.value.loadingOlder)
         assertEquals(secondSession, repository.state.value.sessionKey)
+    }
+
+    @Test
+    fun `rejected send remains failed and retry preserves original payload without duplicates`() = runBlocking {
+        val socketRef = AtomicReference<WebSocket>()
+        val socketOpened = CountDownLatch(1)
+        val socketClosed = CountDownLatch(1)
+        val messageCount = AtomicInteger(0)
+        val webSocketListener =
+            object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                    socketRef.set(webSocket)
+                    socketOpened.countDown()
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    val frame = json.parseToJsonElement(text).jsonObject
+                    if (frame["type"]?.jsonPrimitive?.content != "message") return
+                    val chatId = frame.getValue("chat_id").jsonPrimitive.content
+                    val turnId = frame.getValue("turn_id").jsonPrimitive.content
+                    if (messageCount.incrementAndGet() == 1) {
+                        webSocket.send(
+                            """{"event":"error","chat_id":"$chatId","turn_id":"$turnId","detail":"send_rejected"}""",
+                        )
+                    } else {
+                        webSocket.send(
+                            """{"event":"message_accepted","chat_id":"$chatId","turn_id":"$turnId"}""",
+                        )
+                    }
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    socketClosed.countDown()
+                }
+            }
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse =
+                    when {
+                        request.path?.substringBefore('?') == "/ws" ->
+                            MockResponse().withWebSocketUpgrade(webSocketListener)
+                        request.path?.substringBefore('?')?.endsWith("/webui-thread") == true ->
+                            jsonResponse(
+                                threadPayload(
+                                    "webui:failed",
+                                    messageId = "initial",
+                                    before = null,
+                                    hasMoreBefore = false,
+                                ),
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+            }
+
+        val repository = newRepository()
+        transport.connect()
+        withTimeout(2_000) {
+            transport.state.first { it.status == TransportStatus.OPEN }
+        }
+        repository.openSession("webui:failed", "failed-chat")
+        awaitState { it.sessionKey == "webui:failed" && !it.loading }
+        assertTrue(socketOpened.await(2, TimeUnit.SECONDS))
+
+        val firstOutcome =
+            repository.send(
+                text = "send video",
+                media = listOf(OutboundMedia("data:video/mp4;base64,AAAA", "clip.mp4")),
+                quotedContext = "quoted answer",
+            )
+        assertTrue(firstOutcome is ChatSendOutcome.FailedRetained)
+        val failedId = (firstOutcome as ChatSendOutcome.FailedRetained).messageId
+        val failedState = repository.state.value
+        val failedMessage = failedState.messages.single { it.id == failedId }
+        assertEquals(setOf(failedId), failedState.failedMessageIds)
+        assertNull(failedState.activeTurnId)
+        assertTrue(failedState.sendingTurnIds.isEmpty())
+        assertNull(failedState.error)
+        assertEquals("video", failedMessage.media?.single()?.kind)
+        assertEquals("clip.mp4", failedMessage.media?.single()?.name)
+
+        val retryOutcome = repository.retry(failedId)
+        assertEquals(ChatSendOutcome.Accepted, retryOutcome)
+        val retriedState = repository.state.value
+        val retriedLocalMessages = retriedState.messages.filter { it.id.startsWith("local:") }
+        assertEquals(1, retriedLocalMessages.size)
+        assertFalse(failedId in retriedState.failedMessageIds)
+        assertTrue(retriedState.failedMessageIds.isEmpty())
+        assertEquals("video", retriedLocalMessages.single().media?.single()?.kind)
+        assertEquals("clip.mp4", retriedLocalMessages.single().media?.single()?.name)
+        assertEquals(2, messageCount.get())
+
+        assertTrue(socketRef.get().close(1000, "test_done"))
+        assertTrue(socketClosed.await(2, TimeUnit.SECONDS))
     }
 
     @Test

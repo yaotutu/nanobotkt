@@ -219,4 +219,5 @@
     <string name="collapse">Show less</string>
     <string name="chat_load_failed_title">Could not load this conversation</string>
     <string name="chat_load_failed_body">Check the connection and try again.</string>
+    <string name="timeline_error_title">Tool result unavailable</string>
 </resources>

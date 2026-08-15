@@ -40,6 +40,7 @@ internal fun MessageList(
     onQuote: (String) -> Unit,
     onPreview: (String) -> Unit,
     onFork: (String, Int) -> Unit,
+    onRetry: (String) -> Unit,
     resolveMediaUrl: (String) -> String,
     highlightedMessageId: String?,
     menuDismissSignal: Int,
@@ -112,9 +113,13 @@ internal fun MessageList(
                             // Queue 是本地待发送状态，历史用户消息也没有稳定的 beforeUserIndex；
                             // 在后端语义未确认前不伪造用户消息 Fork 入口。
                             onFork = null,
-                            // 当前 Repository 不会把发送失败的 optimistic 用户消息留在时间轴；
-                            // 先保持回调为空，未来出现真实 FAILED item 时再接已有 retry 契约。
-                            onRetry = null,
+                            // 重新发送只对真实 FAILED 用户消息开放；成功历史和 Queue 不暴露该入口。
+                            onRetry =
+                                if (item.deliveryState == UserMessageDeliveryState.FAILED) {
+                                    { onRetry(item.message.id) }
+                                } else {
+                                    null
+                                },
                             menuDismissSignal = menuDismissSignal,
                             highlighted = highlightedMessageId == item.message.id,
                         )

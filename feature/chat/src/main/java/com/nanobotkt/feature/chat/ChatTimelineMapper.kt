@@ -28,6 +28,7 @@ private enum class ActivityBucket {
 internal fun buildChatTimelineItems(
     messages: List<UiMessage>,
     activeTurnId: String? = null,
+    failedMessageIds: Set<String> = emptySet(),
 ): List<ChatTimelineItem> {
     val units = mutableListOf<ChatTimelineItem>()
     val turnMessages = mutableListOf<IndexedTimelineMessage>()
@@ -61,7 +62,17 @@ internal fun buildChatTimelineItems(
         when (message.role) {
             "user" -> {
                 flushTurn()
-                units += ChatTimelineItem.UserMessage(message, index)
+                units +=
+                    ChatTimelineItem.UserMessage(
+                        message = message,
+                        originalIndex = index,
+                        deliveryState =
+                            if (message.id in failedMessageIds) {
+                                UserMessageDeliveryState.FAILED
+                            } else {
+                                UserMessageDeliveryState.SENT
+                            },
+                    )
                 currentTurnId = message.turnId
                 currentTurnStartedAtMs = message.createdAt
             }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
@@ -52,9 +53,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nanobotkt.core.model.UiMessage
 
-private const val USER_BUBBLE_MAX_WIDTH_FRACTION = 0.82f
+// 用户气泡只用于区分说话方，不应成为占满时间轴的大色块。76% 在手机端仍能容纳正常段落，
+// 同时为 Assistant 的文档式内容保留明显的宽度层级。
+private const val USER_BUBBLE_MAX_WIDTH_FRACTION = 0.76f
 private const val COLLAPSIBLE_USER_MESSAGE_CHARS = 900
 private const val COLLAPSIBLE_USER_MESSAGE_LINES = 14
+
+internal data class StructuredTimelineError(val detail: String)
+
+/**
+ * 仅把“整条消息就是 error envelope”的服务端降级内容识别成状态块。
+ *
+ * 普通 Markdown、代码示例或正文中偶然出现的 <error> 片段必须继续按文档展示，因此这里要求开始、
+ * 结束标签完整包裹全部内容；UI 只移除协议标签，原始详情仍保留给用户判断问题。
+ */
+internal fun parseStructuredTimelineError(content: String): StructuredTimelineError? {
+    val match = Regex("(?is)^\\s*<error>\\s*(.*?)\\s*</error>\\s*$").matchEntire(content) ?: return null
+    return match.groupValues[1].trim().takeIf(String::isNotBlank)?.let(::StructuredTimelineError)
+}
 
 /**
  * 用户消息使用右侧轻量气泡，正常状态不显示头像、用户名、时间或“已发送”。
@@ -142,7 +158,7 @@ internal fun UserTimelineMessage(
                                 .border(
                                     width = if (highlighted) 2.dp else 0.dp,
                                     color = MaterialTheme.colorScheme.primary,
-                                    shape = MaterialTheme.shapes.extraLarge,
+                                    shape = MaterialTheme.shapes.large,
                                 )
                                 .onGloballyPositioned { coordinates ->
                                     messageTopPx = coordinates.boundsInWindow().top
@@ -156,13 +172,13 @@ internal fun UserTimelineMessage(
                                         }
                                     },
                                 ),
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = MaterialTheme.shapes.large,
                         color = bubbleColor,
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp,
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             parsed.quotedContext?.takeIf(String::isNotBlank)?.let { quote ->
@@ -295,6 +311,7 @@ internal fun AssistantTimelineMessage(
     var detailOpen by rememberSaveable(message.id) { mutableStateOf(false) }
     var messageTopPx by remember(message.id) { mutableFloatStateOf(Float.MAX_VALUE) }
     val hasContent = message.content.isNotBlank()
+    val structuredError = remember(message.content) { parseStructuredTimelineError(message.content) }
     val hasMedia = !message.images.isNullOrEmpty() || !message.media.isNullOrEmpty()
     val actions =
         remember(message.isStreaming, forkIndex, hasContent) {
@@ -336,7 +353,11 @@ internal fun AssistantTimelineMessage(
                 )
             }
             if (hasContent) {
-                MarkdownDocument(markdown = message.content, resolveUrl = resolveUrl)
+                if (structuredError != null) {
+                    TimelineErrorBlock(error = structuredError)
+                } else {
+                    MarkdownDocument(markdown = message.content, resolveUrl = resolveUrl)
+                }
             }
             if (hasMedia) {
                 MessageMediaBlock(
@@ -377,6 +398,52 @@ internal fun AssistantTimelineMessage(
             content = message.content,
             onDismiss = { detailOpen = false },
         )
+    }
+}
+
+/**
+ * 协议错误在时间轴中使用低饱和状态块，而不是把 <error> 标签当作 Assistant 正文直接输出。
+ * 卡片保持内容自适应并限制最大宽度，避免错误信息再次成为占满屏幕的大气泡。
+ */
+@Composable
+private fun TimelineErrorBlock(error: StructuredTimelineError) {
+    Surface(
+        modifier = Modifier.widthIn(min = 220.dp, max = 320.dp),
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.42f),
+        shape = MaterialTheme.shapes.medium,
+        border =
+            androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.error.copy(alpha = 0.28f),
+            ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.ErrorOutline,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(R.string.timeline_error_title),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = error.detail,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }
 

@@ -2,6 +2,7 @@ package com.nanobotkt.feature.chat
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,10 +10,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -21,6 +26,7 @@ import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -50,6 +57,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -98,17 +106,50 @@ internal fun MessageMediaBlock(
         remember(message.images, message.media) {
             buildList {
                 message.images.orEmpty().forEach { image ->
-                    image.url?.takeIf(String::isNotBlank)?.let { add(TimelineImage(it, image.name)) }
-                }
-                message.media.orEmpty().filter { it.kind.equals("image", ignoreCase = true) }
-                    .forEach { media ->
-                        media.url?.takeIf(String::isNotBlank)?.let { add(TimelineImage(it, media.name)) }
+                    image.url?.takeIf(String::isNotBlank)?.let { url ->
+                        if (inferTimelineMediaKind(url = url, name = image.name) == "image") {
+                            add(TimelineImage(url, image.name))
+                        }
                     }
+                }
+                message.media.orEmpty().forEach { media ->
+                    media.url?.takeIf(String::isNotBlank)?.let { url ->
+                        if (
+                            inferTimelineMediaKind(
+                                declaredKind = media.kind,
+                                url = url,
+                                name = media.name,
+                            ) == "image"
+                        ) {
+                            add(TimelineImage(url, media.name))
+                        }
+                    }
+                }
             }.distinctBy { it.url }
         }
     val attachments =
-        remember(message.media) {
-            message.media.orEmpty().filterNot { it.kind.equals("image", ignoreCase = true) }
+        remember(message.images, message.media) {
+            buildList {
+                // 旧服务端把所有 media_urls 都序列化成 UiImage。根据 name/url 重新判断后，WAV
+                // 等非图片媒体必须回到附件播放器，不能继续交给 Coil 形成破图。
+                message.images.orEmpty().forEach { image ->
+                    image.url?.takeIf(String::isNotBlank)?.let { url ->
+                        val kind = inferTimelineMediaKind(url = url, name = image.name)
+                        if (kind != "image") {
+                            add(UiMediaAttachment(kind = kind, url = url, name = image.name))
+                        }
+                    }
+                }
+                message.media.orEmpty().forEach { media ->
+                    val kind =
+                        inferTimelineMediaKind(
+                            declaredKind = media.kind,
+                            url = media.url,
+                            name = media.name,
+                        )
+                    if (kind != "image") add(media.copy(kind = kind))
+                }
+            }.distinctBy { Triple(it.kind, it.url, it.name) }
         }
     var previewImage by remember(message.id) { mutableStateOf<TimelineImage?>(null) }
 
@@ -230,6 +271,7 @@ private fun AudioAttachmentPlayer(
     var positionMs by remember(player) { mutableLongStateOf(0L) }
     var durationMs by remember(player) { mutableLongStateOf(0L) }
     var isPlaying by remember(player) { mutableStateOf(false) }
+    var playbackFailed by remember(player) { mutableStateOf(false) }
     val isActive = playbackCoordinator.activeAttachmentId == attachmentId
 
     DisposableEffect(player, attachmentId) {
@@ -245,6 +287,13 @@ private fun AudioAttachmentPlayer(
                         playbackCoordinator.clearIfActive(attachmentId)
                     }
                 }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    // 服务端可能用 application/octet-stream 返回音频。Media3 无法解析时稳定降级
+                    // 为普通附件入口，而不是永久停留在一个不可操作的播放按钮上。
+                    playbackFailed = true
+                    playbackCoordinator.clearIfActive(attachmentId)
+                }
             }
         player.addListener(listener)
         onDispose {
@@ -254,7 +303,8 @@ private fun AudioAttachmentPlayer(
         }
     }
 
-    LaunchedEffect(isActive, player) {
+    LaunchedEffect(isActive, player, playbackFailed) {
+        if (playbackFailed) return@LaunchedEffect
         // 互斥切换只暂停旧附件，保留其进度；用户再次播放时可以从原位置继续。
         if (!isActive && player.isPlaying) player.pause()
         while (true) {
@@ -265,61 +315,140 @@ private fun AudioAttachmentPlayer(
         }
     }
 
+    if (playbackFailed) {
+        FileAttachmentTile(attachment = attachment.copy(kind = "file"), resolvedUrl = resolvedUrl)
+    } else {
+        CompactAudioPlayer(
+            name =
+                attachment.name?.takeIf(String::isNotBlank)
+                    ?: stringResource(R.string.media_audio),
+            positionMs = positionMs,
+            durationMs = durationMs,
+            isPlaying = isPlaying,
+            onTogglePlayback = {
+                if (player.isPlaying) {
+                    player.pause()
+                    playbackCoordinator.clearIfActive(attachmentId)
+                } else {
+                    playbackCoordinator.activate(attachmentId)
+                    // Media3 在 STATE_ENDED 时不会总是自动回到开头；显式归零保证再次
+                    // 点击播放是“重新播放”，而不是停留在末尾没有反馈。
+                    if (player.playbackState == Player.STATE_ENDED) player.seekTo(0L)
+                    player.play()
+                }
+            },
+            onSeek = { value -> player.seekTo(value.toLong()) },
+        )
+    }
+}
+
+/**
+ * 时间轴中的音频采用紧凑附件卡片，而不是占满整行的媒体控制面板。
+ *
+ * 280dp 上限保证它在 Assistant 文档流中保持“附件”而非“主内容”的视觉权重；父容器更窄时
+ * 会自动收缩。播放键仍保留 48dp 触控区域，进度条只压缩视觉轨道和拇指，不牺牲核心操作。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompactAudioPlayer(
+    name: String,
+    positionMs: Long,
+    durationMs: Long,
+    isPlaying: Boolean,
+    onTogglePlayback: () -> Unit,
+    onSeek: (Float) -> Unit,
+) {
+    val boundedPosition = positionMs.coerceAtMost(durationMs.takeIf { it > 0L } ?: positionMs)
+    val progressText =
+        if (durationMs > 0L) {
+            "${formatMediaTime(boundedPosition)} / ${formatMediaTime(durationMs)}"
+        } else {
+            formatMediaTime(boundedPosition)
+        }
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.outlineVariant
+
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        // widthIn 必须位于 fillMaxWidth 之前：先把可用宽度封顶为 280dp，再让内部 Row
+        // 填满这段紧凑宽度；如果顺序相反，组件会重新膨胀到整条时间轴。
+        modifier = Modifier.widthIn(min = 208.dp, max = 280.dp).fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = MaterialTheme.shapes.large,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier.padding(start = 6.dp, top = 8.dp, end = 12.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            IconButton(
-                onClick = {
-                    if (player.isPlaying) {
-                        player.pause()
-                        playbackCoordinator.clearIfActive(attachmentId)
-                    } else {
-                        playbackCoordinator.activate(attachmentId)
-                        // Media3 在 STATE_ENDED 时不会总是自动回到开头；显式归零保证再次
-                        // 点击播放是“重新播放”，而不是停留在末尾没有反馈。
-                        if (player.playbackState == Player.STATE_ENDED) player.seekTo(0L)
-                        player.play()
-                    }
-                },
-            ) {
+            IconButton(onClick = onTogglePlayback) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     contentDescription =
                         stringResource(if (isPlaying) R.string.media_pause else R.string.media_play),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = activeColor,
                 )
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = attachment.name?.takeIf(String::isNotBlank)
-                        ?: stringResource(R.string.media_audio),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = name,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = progressText,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
                 Slider(
-                    value = positionMs.coerceAtMost(durationMs.takeIf { it > 0L } ?: positionMs).toFloat(),
-                    onValueChange = { value -> player.seekTo(value.toLong()) },
+                    value = boundedPosition.toFloat(),
+                    onValueChange = onSeek,
                     valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
                     enabled = durationMs > 0L,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text =
-                        if (durationMs > 0L) {
-                            "${formatMediaTime(positionMs)} / ${formatMediaTime(durationMs)}"
-                        } else {
-                            formatMediaTime(positionMs)
-                        },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.fillMaxWidth().height(28.dp),
+                    // Material 3 1.4 的默认 Slider 使用强调型高拇指，在聊天附件里会形成截图中
+                    // 醒目的紫色竖条。这里保留标准 Slider 的手势和语义，只替换视觉轨道与拇指。
+                    thumb = {
+                        Box(
+                            modifier =
+                                Modifier.size(10.dp)
+                                    .background(
+                                        if (durationMs > 0L) activeColor else inactiveColor,
+                                        CircleShape,
+                                    )
+                        )
+                    },
+                    track = { sliderState ->
+                        val range = sliderState.valueRange
+                        val span = (range.endInclusive - range.start).takeIf { it > 0f } ?: 1f
+                        val fraction = ((sliderState.value - range.start) / span).coerceIn(0f, 1f)
+                        Box(
+                            modifier =
+                                Modifier.fillMaxWidth()
+                                    .height(3.dp)
+                                    .clip(CircleShape)
+                                    .background(inactiveColor)
+                        ) {
+                            Box(
+                                modifier =
+                                    Modifier.fillMaxWidth(fraction)
+                                        .fillMaxHeight()
+                                        .background(activeColor)
+                            )
+                        }
+                    },
                 )
             }
         }

@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
 /**
  * 聊天页唯一的顶部常驻区域。
  *
- * 顶部只承载“会话标题、当前最重要状态、当前会话菜单”。全局导航和会话切换已经在底部输入区
+ * 顶部只承载“会话标题、运行/连接状态、队列状态、当前会话菜单”。全局导航和会话切换已经在底部输入区
  * 提供入口，不能再在这里重复占用左侧空间。空闲时不渲染任何状态文案，标题因此可以自然居中在
  * 64dp 的最小高度内；出现运行、等待、连接或队列状态时才增加第二行。
  */
@@ -84,12 +84,18 @@ internal fun ChatTopStatusBar(
                 overflow = TextOverflow.Ellipsis,
             )
             if (hasSecondaryRow) {
-                Box(modifier = Modifier.padding(top = 2.dp)) {
-                    // 顶部第二行始终只显示一个“当前最重要状态”。Queue 排在等待确认、
-                    // 连接异常和运行状态之后，避免同一行并列多个状态造成阅读歧义。
+                Row(
+                    modifier = Modifier.padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Queue 是用户主动提交、并且仍等待处理的独立状态，不能被 Running/Waiting
+                    // 覆盖。两者并列后，用户在长回复期间仍能立即确认排队数量，并点击查看摘要；
+                    // 每个状态仍保持独立点击区域，避免把“定位运行记录”和“打开队列”混成一个入口。
                     if (status != ChatHeaderStatus.IDLE) {
                         HeaderStatusLabel(status = status, onClick = onStatusClick)
-                    } else if (queuedPrompts.isNotEmpty()) {
+                    }
+                    if (queuedPrompts.isNotEmpty()) {
                         QueueStatusMenu(
                             prompts = queuedPrompts,
                             expanded = queueOpen,

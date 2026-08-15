@@ -183,4 +183,5 @@
     <string name="media_audio">音频</string>
     <string name="media_file">文件</string>
     <string name="automation_source">自动化 · %1$s</string>
+    <string name="timeline_error_title">工具结果不可用</string>
 </resources>

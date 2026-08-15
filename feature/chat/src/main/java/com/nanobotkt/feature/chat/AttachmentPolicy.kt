@@ -76,6 +76,16 @@ private val documentMimes = documentMimeByExtension.values.toSet() + setOf(
     "text/yaml",
 )
 
+/**
+ * 普通附件上传当前只新增服务端已经确认支持的 MP4。入站媒体识别支持更多扩展名并不代表这些格式
+ * 可以上传；两条策略必须分开，避免客户端向用户暴露服务端无法接收的音频能力。
+ */
+private val videoMimeByExtension = mapOf(
+    ".mp4" to "video/mp4",
+)
+
+private val videoMimes = videoMimeByExtension.values.toSet()
+
 internal val supportedImageMimes = setOf("image/png", "image/jpeg", "image/webp", "image/gif")
 
 internal fun canonicalDocumentMime(name: String, declared: String?): String? {
@@ -84,6 +94,14 @@ internal fun canonicalDocumentMime(name: String, declared: String?): String? {
     documentMimeByExtension[extension]?.let { return it }
     val normalized = declared?.substringBefore(';')?.trim()?.lowercase()
     return normalized?.takeIf { it in documentMimes }
+}
+
+internal fun canonicalVideoMime(name: String, declared: String?): String? {
+    val dot = name.lastIndexOf('.')
+    val extension = if (dot < 0) "" else name.substring(dot).lowercase()
+    videoMimeByExtension[extension]?.let { return it }
+    val normalized = declared?.substringBefore(';')?.trim()?.lowercase()
+    return normalized?.takeIf { it in videoMimes }
 }
 
 internal fun sniffImageMime(bytes: ByteArray): String? = when {

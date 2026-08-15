@@ -131,8 +131,12 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val timelineItems =
-        remember(state.messages, state.activeTurnId) {
-            buildChatTimelineItems(state.messages, activeTurnId = state.activeTurnId)
+        remember(state.messages, state.activeTurnId, state.failedMessageIds) {
+            buildChatTimelineItems(
+                messages = state.messages,
+                activeTurnId = state.activeTurnId,
+                failedMessageIds = state.failedMessageIds,
+            )
         }
     val visibleTimelineItems =
         remember(timelineItems, composer.queuedPrompts) {
@@ -371,6 +375,7 @@ fun ChatScreen(
                     onFork = { messageId, beforeUserIndex ->
                         viewModel.fork(messageId, beforeUserIndex, forkTitle, onSessionCreated)
                     },
+                    onRetry = viewModel::retry,
                     resolveMediaUrl = viewModel::resolveMediaUrl,
                     highlightedMessageId = highlightedMessageId,
                     menuDismissSignal = menuDismissSignal,

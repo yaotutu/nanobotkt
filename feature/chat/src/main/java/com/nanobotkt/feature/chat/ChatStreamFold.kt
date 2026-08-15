@@ -111,7 +111,10 @@ internal class ChatStreamFold(
             newAssistant(turnId, event.turnPhase, event.turnSeq, trace = isProgress)
         }
         val foldedTools = mergeToolEvents(base.toolEvents.orEmpty(), event.toolEvents.orEmpty())
-        val media = event.media?.map { url -> UiMediaAttachment(kind = mediaKind(url), url = url) }
+        val media =
+            event.media?.map { url ->
+                UiMediaAttachment(kind = inferTimelineMediaKind(url = url), url = url)
+            }
         val completed = base.copy(
             content = event.text,
             kind = if (isProgress) "trace" else event.kind,
@@ -283,11 +286,4 @@ internal class ChatStreamFold(
         else -> "unscoped"
     }
 
-    private fun mediaKind(url: String): String = when {
-        url.substringBefore('?').endsWith(".mp4", ignoreCase = true) -> "video"
-        url.startsWith("data:audio/", ignoreCase = true) -> "audio"
-        url.startsWith("data:image/", ignoreCase = true) -> "image"
-        else -> "file"
-    }
 }
-

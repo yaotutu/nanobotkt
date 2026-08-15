@@ -41,6 +41,10 @@ constructor(
     private var composerEpoch: Long = 0
     private var lastTurnActive = state.value.activeTurnId != null
     private var skipNextQueueFlush = false
+    // 自动发送 Queue 头项时，acceptance 协程可能仍处于 sending=true，但服务端对应 turn 已经
+    // 极快地开始并结束。此时 turn-end 不能直接发送下一项，也不能简单丢弃这次触发；先记录
+    // “发送结束后继续 flush”，待 acceptance 收敛后再串行处理，避免剩余 Queue 永久卡住。
+    private var queueFlushDeferredUntilSendCompletes = false
     private var queueCounter = 0L
     private val composerRecents = mutableListOf<String>()
     private val composerRecentsSaveMutex = Mutex()
@@ -65,6 +69,10 @@ constructor(
                 if (wasTurnActive && !turnActive) {
                     if (skipNextQueueFlush) {
                         skipNextQueueFlush = false
+                        queueFlushDeferredUntilSendCompletes = false
+                    } else if (mutableComposer.value.sending) {
+                        queueFlushDeferredUntilSendCompletes =
+                            mutableComposer.value.queuedPrompts.isNotEmpty()
                     } else {
                         flushNextQueuedPrompt()
                     }
@@ -88,6 +96,7 @@ constructor(
             voiceRecorder.cancel()
             recordingAnalysis = RecordingAnalysis()
             skipNextQueueFlush = false
+            queueFlushDeferredUntilSendCompletes = false
             mutableComposer.value = ComposerUiState(recentCommands = composerRecents.toList())
             openedSessionKey = sessionKey
         }
@@ -103,6 +112,7 @@ constructor(
         recordingAnalysis = RecordingAnalysis()
         openedSessionKey = null
         skipNextQueueFlush = false
+        queueFlushDeferredUntilSendCompletes = false
         mutableComposer.value = ComposerUiState(recentCommands = composerRecents.toList())
         repository.startNewTopic()
     }
@@ -363,6 +373,7 @@ constructor(
         }
 
         skipNextQueueFlush = false
+        queueFlushDeferredUntilSendCompletes = false
         mutableComposer.value =
             current.copy(
                 text = "",
@@ -401,6 +412,13 @@ constructor(
         viewModelScope.launch {
             val requestEpoch = composerEpoch
             runCatching { repository.retry(messageId) }
+                .onSuccess {
+                    // 重试再次被服务端拒绝时 Repository 会保留新的 FAILED 气泡；Composer 不再
+                    // 额外显示同一错误，避免用户同时看到气泡状态和底部错误两份反馈。
+                    if (requestEpoch == composerEpoch) {
+                        mutableComposer.value = mutableComposer.value.copy(error = null)
+                    }
+                }
                 .onFailure { error ->
                     if (requestEpoch == composerEpoch) {
                         mutableComposer.value =
@@ -538,6 +556,7 @@ constructor(
     fun stop() {
         val current = mutableComposer.value
         skipNextQueueFlush = current.queuedPrompts.isNotEmpty()
+        queueFlushDeferredUntilSendCompletes = false
         mutableComposer.value = current.copy(queuedPrompts = emptyList())
         repository.stop()
     }
@@ -565,13 +584,19 @@ constructor(
         val current = mutableComposer.value
         if (current.sending || state.value.activeTurnId != null) return
         val next = current.queuedPrompts.firstOrNull() ?: return
+        queueFlushDeferredUntilSendCompletes = false
         mutableComposer.value =
             current.copy(
                 queuedPrompts = current.queuedPrompts.drop(1),
                 sending = true,
                 error = null,
             )
-        submitPrompt(next, restoreDraftOnFailure = false, requeueOnFailure = true)
+        submitPrompt(
+            prompt = next,
+            options = ChatSendOptions(retainFailureInTimeline = false),
+            restoreDraftOnFailure = false,
+            requeueOnFailure = true,
+        )
     }
 
     private fun submitPrompt(
@@ -596,7 +621,7 @@ constructor(
                             ),
                     )
                 }
-                .onSuccess {
+                .onSuccess { outcome ->
                     if (requestEpoch == composerEpoch) {
                         mutableComposer.value =
                             mutableComposer.value.copy(
@@ -604,12 +629,24 @@ constructor(
                                     if (restoreDraftOnFailure) emptyList()
                                     else mutableComposer.value.attachments,
                                 sending = false,
+                                // FailedRetained 已经通过时间轴气泡提供可操作反馈；底部不再重复
+                                // 展示全局错误。Accepted 同样清除上一轮 Composer 错误。
                                 error = null,
                             )
+                        // 如果 turn-end 发生在 acceptance 返回之前，状态收集器已经把本次
+                        // flush 延后。必须在 sending=false 之后补做一次，否则不会再出现新的
+                        // active→idle 边沿，剩余排队消息会一直停在顶部和时间轴中。
+                        if (queueFlushDeferredUntilSendCompletes) {
+                            queueFlushDeferredUntilSendCompletes = false
+                            flushNextQueuedPrompt()
+                        }
                     }
                 }
                 .onFailure { error ->
                     if (requestEpoch == composerEpoch) {
+                        // Queue acceptance 失败会把当前 prompt 插回队首并等待用户处理；不能沿用
+                        // 较早的 turn-end 信号立即重试，否则会形成无上限的自动失败循环。
+                        queueFlushDeferredUntilSendCompletes = false
                         val current = mutableComposer.value
                         mutableComposer.value =
                             current.copy(
