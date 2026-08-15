@@ -8,9 +8,11 @@
     <string name="chat_status_running">Running</string>
     <string name="chat_status_reconnecting">Reconnecting</string>
     <string name="chat_status_failed">Failed</string>
-    <string name="jump_to_latest_messages">New messages</string>
+    <string name="jump_to_latest_messages">Scroll to latest message</string>
+    <string name="jump_to_latest_messages_with_count">%1$d new messages. Scroll to latest.</string>
     <string name="open_conversation_list">Open conversations</string>
     <string name="conversation_list_title">Conversations</string>
+    <string name="conversation_button_label">Chats</string>
     <string name="conversation_archived_title">Archived</string>
     <string name="conversation_unarchive">Unarchive</string>
     <string name="conversation_search_hint">Search conversations</string>
@@ -167,21 +169,26 @@
     <string name="activity_tool">Tool</string>
     <string name="activity_cli">CLI app</string>
     <string name="activity_mcp">MCP</string>
-    <string name="activity_step">Activity</string>
+    <string name="activity_step">Step</string>
     <string name="activity_completed">Completed</string>
-    <string name="activity_in_progress">Preparing agent activity…</string>
+    <string name="activity_in_progress">Preparing the next step…</string>
     <plurals name="activity_running_count">
-        <item quantity="one">Working · %1$d activity</item>
-        <item quantity="other">Working · %1$d activities</item>
+        <item quantity="one">Running %1$d step</item>
+        <item quantity="other">Running %1$d steps</item>
     </plurals>
     <plurals name="activity_completed_count">
-        <item quantity="one">Completed · %1$d activity</item>
-        <item quantity="other">Completed · %1$d activities</item>
+        <item quantity="one">Completed %1$d step</item>
+        <item quantity="other">Completed %1$d steps</item>
     </plurals>
     <plurals name="activity_failed_count">
-        <item quantity="one">Failed · %1$d activity</item>
-        <item quantity="other">Failed · %1$d activities</item>
+        <item quantity="one">Failed at %1$d step</item>
+        <item quantity="other">Failed across %1$d steps</item>
     </plurals>
+    <plurals name="activity_waiting_count">
+        <item quantity="one">Waiting for you · %1$d step</item>
+        <item quantity="other">Waiting for you · %1$d steps</item>
+    </plurals>
+    <string name="activity_status_with_duration">%1$s · %2$s</string>
     <string name="file_diff_show_more">Show more</string>
     <string name="file_diff_show_less">Show less</string>
     <string name="file_diff_truncated">Diff truncated by the server.</string>

@@ -20,9 +20,9 @@ private enum class ActivityBucket {
  * 锁定复杂的 turn/segment 排序规则。实现语义与官方 WebUI 的 activity timeline 保持一致：
  *
  * 1. 用户消息先结束上一轮，并作为独立单元出现。
- * 2. trace 与纯 reasoning assistant 归入 Agent Activity。
+ * 2. trace、纯 reasoning assistant 与旧历史 role=tool 归入 Agent Activity。
  * 3. 同时含 reasoning 和正文的 assistant 被拆成“Activity + 正文”。
- * 4. 已完成轮次末尾的 trace 移到最终 assistant 正文之前，避免活动卡悬在答案之后。
+ * 4. 已完成轮次末尾的 Activity 移到最终 assistant 正文之前，避免活动卡悬在答案之后。
  * 5. 活跃轮次保留尾部活动，以准确呈现仍在执行的实时顺序。
  */
 internal fun buildChatTimelineItems(
@@ -66,9 +66,11 @@ internal fun buildChatTimelineItems(
                 currentTurnStartedAtMs = message.createdAt
             }
 
-            "assistant" -> {
-                // turnId 变化说明服务端历史中进入了另一轮。即使中间缺少 user 记录，也必须先切断分组，
-                // 否则两个独立 Turn 的工具活动会被错误合并到同一张 Activity 卡片。
+            "assistant", "tool" -> {
+                // 官方旧历史会把工具结果保存为 role=tool，而实时新协议通常把结构化工具事件放进
+                // assistant trace。两种形态必须进入同一个 Turn 管线，否则旧工具会退化成全宽 Marker。
+                // turnId 变化说明服务端历史中进入了另一轮。即使中间缺少 user 记录，也必须先切断
+                // 分组，防止两个独立 Turn 的工具活动被错误合并到同一张 Activity 卡片。
                 if (message.turnId != null && currentTurnId != null && message.turnId != currentTurnId) {
                     flushTurn()
                 }
@@ -162,7 +164,14 @@ private fun orderMessagesByTurnSeq(
     }
 
 private fun isAgentActivityMember(message: UiMessage): Boolean =
-    message.kind == "trace" || isReasoningOnlyAssistant(message)
+    isLegacyToolActivityMessage(message) || message.kind == "trace" || isReasoningOnlyAssistant(message)
+
+/**
+ * 兼容持久化历史中的经典 Chat Completion 结构：工具结果以独立 role=tool 消息存在。
+ * 这里只识别明确的 tool 角色，未知 system/custom 角色仍走 Marker 降级，避免扩大产品语义。
+ */
+private fun isLegacyToolActivityMessage(message: UiMessage): Boolean =
+    message.role.equals("tool", ignoreCase = true)
 
 private fun isReasoningOnlyAssistant(message: UiMessage): Boolean =
     message.role == "assistant" &&

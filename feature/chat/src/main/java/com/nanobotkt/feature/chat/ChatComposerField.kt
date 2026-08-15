@@ -11,8 +11,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Stop
@@ -98,7 +98,6 @@ internal fun ComposerTextField(
 @Composable
 internal fun AttachmentMenuButton(
     enabled: Boolean,
-    controlColor: Color,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
 ) {
@@ -109,7 +108,8 @@ internal fun AttachmentMenuButton(
             enabled = enabled,
             modifier = Modifier.size(48.dp),
             shape = CircleShape,
-            color = controlColor,
+            // “+”只是输入胶囊内的次级入口，不再绘制独立圆底，避免和发送按钮争夺层级。
+            color = Color.Transparent,
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Icon(
@@ -173,28 +173,41 @@ internal fun ComposerPrimaryActionButton(
         enabled = enabled,
         modifier = Modifier.size(48.dp),
         shape = CircleShape,
-        color = if (showSendAction || stopButton) sendColor else controlColor,
+        // 外层透明 Surface 保留完整 48dp 点击与涟漪区域，内部视觉圆只占 40dp，
+        // 因而输入胶囊更轻巧，同时不会牺牲无障碍触控尺寸。
+        color = Color.Transparent,
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            when {
-                sending ->
-                    CircularProgressIndicator(
-                        Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = sendContentColor,
-                    )
-                stopButton ->
-                    Icon(
-                        Icons.Rounded.Stop,
-                        contentDescription = stringResource(R.string.stop),
-                        tint = sendContentColor,
-                    )
-                else ->
-                    Icon(
-                        Icons.Rounded.ArrowUpward,
-                        contentDescription = stringResource(R.string.send),
-                        tint = sendContentColor,
-                    )
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = if (showSendAction || stopButton) sendColor else controlColor,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    when {
+                        sending ->
+                            CircularProgressIndicator(
+                                Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = sendContentColor,
+                            )
+                        stopButton ->
+                            Icon(
+                                Icons.Rounded.Stop,
+                                contentDescription = stringResource(R.string.stop),
+                                modifier = Modifier.size(20.dp),
+                                tint = sendContentColor,
+                            )
+                        else ->
+                            // 纸飞机和“回到底部”的下箭头具有不同轮廓，降低两个右侧动作的导航歧义。
+                            Icon(
+                                Icons.AutoMirrored.Rounded.Send,
+                                contentDescription = stringResource(R.string.send),
+                                modifier = Modifier.size(20.dp),
+                                tint = sendContentColor,
+                            )
+                    }
+                }
             }
         }
     }

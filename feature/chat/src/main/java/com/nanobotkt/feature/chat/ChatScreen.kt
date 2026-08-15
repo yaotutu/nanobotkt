@@ -4,32 +4,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -54,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nanobotkt.core.designsystem.NanobotThemeDefaults
+import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.transport.TransportStatus
 import kotlinx.coroutines.launch
 
@@ -129,13 +126,45 @@ fun ChatScreen(
         remember(state.messages, state.activeTurnId) {
             buildChatTimelineItems(state.messages, activeTurnId = state.activeTurnId)
         }
+    val visibleTimelineItems =
+        remember(timelineItems) {
+            // LazyColumn、Prompt 跳转和“回到底部”必须共享同一份可见时间轴。若这里只保留
+            // 原始列表，隐藏的纯 reasoning Activity 仍会占用索引，最终让程序化滚动越过真实 item。
+            visibleChatTimelineItems(timelineItems)
+        }
     val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
     var jumpTargetId by remember { mutableStateOf<String?>(null) }
     var autoFollow by remember { mutableStateOf(true) }
+    val incomingTurnKeys =
+        remember(state.messages) {
+            incomingAssistantTurnKeys(state.messages)
+        }
+    // 已确认的 key 只用于当前会话内的视觉提示，不属于业务未读状态。用户位于底部或开启
+    // auto-follow 时，当前所有 assistant turn 都视为已看到；用户向上浏览后才开始累计尾部新增 turn。
+    var acknowledgedIncomingTurnKeys by
+        remember(state.sessionKey) { mutableStateOf(incomingTurnKeys.toSet()) }
+    val unreadTurnCount =
+        remember(incomingTurnKeys, acknowledgedIncomingTurnKeys, autoFollow) {
+            if (autoFollow) {
+                0
+            } else {
+                unreadIncomingTurnCount(
+                    currentKeys = incomingTurnKeys,
+                    acknowledgedKeys = acknowledgedIncomingTurnKeys,
+                )
+            }
+        }
 
     LaunchedEffect(state.sessionKey) {
         // 新会话从底部开始；旧会话的手动浏览状态不能泄漏到新会话。
         autoFollow = true
+    }
+    LaunchedEffect(incomingTurnKeys, autoFollow) {
+        if (autoFollow) {
+            // 流式 delta 会不断修改同一条消息，但 turn key 不变，因此这里不会把每个 token
+            // 当成一条新消息；同时在底部自动跟随时立即确认，避免按钮短暂闪出错误 Badge。
+            acknowledgedIncomingTurnKeys = incomingTurnKeys.toSet()
+        }
     }
     LaunchedEffect(listState, state.sessionKey, isUserDragging) {
         snapshotFlow { isUserDragging to listState.canScrollForward }
@@ -149,11 +178,11 @@ fun ChatScreen(
             }
     }
 
-    LaunchedEffect(jumpTargetId, timelineItems, state.hasMoreBefore) {
+    LaunchedEffect(jumpTargetId, visibleTimelineItems, state.hasMoreBefore) {
         jumpTargetId?.let { targetId ->
             autoFollow = false
             val timelineIndex =
-                timelineItems.indexOfFirst {
+                visibleTimelineItems.indexOfFirst {
                     it is ChatTimelineItem.UserMessage && it.message.id == targetId
                 }
             if (timelineIndex >= 0) {
@@ -290,7 +319,7 @@ fun ChatScreen(
                 MessageList(
                     listState = listState,
                     state = state,
-                    timelineItems = timelineItems,
+                    timelineItems = visibleTimelineItems,
                     loadOlder = viewModel::loadOlder,
                     onQuote = { quoteDraft = normalizeQuotedContext(it) },
                     onPreview = viewModel::previewFile,
@@ -309,39 +338,30 @@ fun ChatScreen(
                     Modifier.align(Alignment.BottomCenter)
                         .padding(horizontal = spacing.md, vertical = spacing.sm),
             )
-        }
 
-        AnimatedVisibility(
-            visible = !state.loading && !hero && listState.canScrollForward,
-            enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
-            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            // 快捷入口拥有独立布局高度，位于消息区和 Composer 之间。相比原先覆盖在 LazyColumn
-            // 右下角的裸文字，这种布局不会遮挡消息正文，也不会和 Snackbar 争抢同一锚点。
-            Box(
+            JumpToLatestMessagesVisibility(
+                visible = !state.loading && !hero && listState.canScrollForward,
+                unreadCount = unreadTurnCount,
                 modifier =
-                    Modifier.fillMaxWidth()
-                        .padding(horizontal = spacing.md, vertical = spacing.xxs),
-                contentAlignment = Alignment.Center,
-            ) {
-                JumpToLatestMessagesButton(
-                    onClick = {
-                        // 从 Prompt Navigator 跳转历史消息时会暂停自动跟随；用户主动回到最新消息
-                        // 后必须恢复该状态，后续新增或流式消息才能继续自然跟随列表尾部。
-                        val headerOffset = if (state.hasMoreBefore) 1 else 0
-                        val lastIndex = headerOffset + timelineItems.lastIndex
-                        if (lastIndex >= 0) {
-                            autoFollow = true
-                            coroutineScope.launch {
-                                // 主工作区已将原始消息映射为时间轴单元；这里必须使用相同索引体系，
-                                // 并复用可处理超长正文的底部定位函数，避免跳到错误消息或只到单元顶部。
-                                listState.scrollToTimelineBottom(lastIndex)
-                            }
+                    Modifier.align(Alignment.BottomEnd)
+                        // 该入口必须覆盖在时间轴之上，不能重新占据一整行布局高度。靠右放置既避开
+                        // 正文阅读主轴，也和输入框的发送动作形成稳定的右侧辅助操作区。
+                        .padding(end = spacing.md, bottom = spacing.sm),
+                onClick = {
+                    // 从 Prompt Navigator 跳转历史消息时会暂停自动跟随；用户主动回到最新消息
+                    // 后必须恢复该状态，后续新增或流式消息才能继续自然跟随列表尾部。
+                    val headerOffset = if (state.hasMoreBefore) 1 else 0
+                    val lastIndex = headerOffset + visibleTimelineItems.lastIndex
+                    if (lastIndex >= 0) {
+                        autoFollow = true
+                        coroutineScope.launch {
+                            // 主工作区已将原始消息映射为时间轴单元；这里必须使用相同索引体系，
+                            // 并复用可处理超长正文的底部定位函数，避免跳到错误消息或只到单元顶部。
+                            listState.scrollToTimelineBottom(lastIndex)
                         }
-                    },
-                )
-            }
+                    }
+                },
+            )
         }
 
         if (!state.loading) {
@@ -407,41 +427,111 @@ fun ChatScreen(
 }
 
 /**
- * 显示“回到最新消息”的明确按钮容器。
+ * 隔离 AnimatedVisibility 的作用域解析。
  *
- * FilledTonalButton 在浅色和深色主题下都使用 Material 语义色，同时默认提供可点击语义；额外的
- * 48dp 最小高度保证键盘弹出、可用空间变小时仍保留合格的触控目标。
+ * Chat 主体同时嵌套 ColumnScope 与 BoxScope，直接在内部调用 AnimatedVisibility 会让 Compose 的
+ * ColumnScope 扩展重载产生隐式接收者冲突。把动画包在普通 Composable 中，既保留淡入淡出，也让
+ * 外层 Box 只负责右下角定位，不引入额外布局高度。
  */
 @Composable
-private fun JumpToLatestMessagesButton(
+private fun JumpToLatestMessagesVisibility(
+    visible: Boolean,
+    unreadCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val spacing = NanobotThemeDefaults.spacing
-    FilledTonalButton(
-        onClick = onClick,
-        modifier =
-            modifier
-                .heightIn(min = spacing.touchTarget)
-                // 输入框获得焦点且 IME 打开时，按钮不抢占 Compose 焦点，避免键盘在按下与
-                // 抬起之间收起并触发布局位移，从而保证一次触摸能够稳定执行滚动动作。
-                .focusProperties { canFocus = false },
-        shape = MaterialTheme.shapes.extraLarge,
-        contentPadding = PaddingValues(horizontal = spacing.md, vertical = spacing.xs),
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
     ) {
-        // 按钮文字已经向 TalkBack 说明动作，图标仅作为方向提示，避免重复朗读。
-        Icon(
-            imageVector = Icons.Rounded.KeyboardArrowDown,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(spacing.xs))
-        Text(
-            text = stringResource(R.string.jump_to_latest_messages),
-            style = MaterialTheme.typography.labelLarge,
-        )
+        JumpToLatestMessagesButton(unreadCount = unreadCount, onClick = onClick)
     }
 }
+
+/**
+ * 显示紧凑的“回到最新消息”悬浮入口。
+ *
+ * 普通离底状态只显示向下箭头；确实有新 assistant turn 时才叠加数字 Badge。这样“滚动到底部”
+ * 与“收到新消息”共享同一入口，但不会用常驻大胶囊遮挡正文或误导用户。
+ */
+@Composable
+private fun JumpToLatestMessagesButton(
+    unreadCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val contentDescription =
+        if (unreadCount > 0) {
+            stringResource(R.string.jump_to_latest_messages_with_count, unreadCount)
+        } else {
+            stringResource(R.string.jump_to_latest_messages)
+        }
+    Box(modifier = modifier.size(52.dp)) {
+        FilledTonalIconButton(
+            onClick = onClick,
+            modifier =
+                Modifier.align(Alignment.BottomStart)
+                    // FilledTonalIconButton 保留 Material 规定的 48dp 触控面积；视觉上仍只是紧凑
+                    // 圆形按钮，不再像旧胶囊一样把时间轴向上推开一整行。
+                    .size(48.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+
+        if (unreadCount > 0) {
+            Badge(
+                modifier = Modifier.align(Alignment.TopEnd),
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ) {
+                // Badge 最多显示 9+，避免两位以上数字撑大悬浮入口；TalkBack 仍通过按钮语义
+                // 朗读真实数量，因此视觉压缩不会损失可访问性信息。
+                Text(text = unreadBadgeLabel(unreadCount))
+            }
+        }
+    }
+}
+
+/**
+ * 将可见的 assistant/tool 记录折叠为“回复轮次”key。
+ *
+ * 同一 turn 中的 reasoning、工具进度和最终正文可能对应多条 UiMessage，但对用户只算一条新回复；
+ * 旧历史缺少 turnId 时才回退 message id，确保不会因为流式内容变化重复增加 Badge。
+ */
+internal fun incomingAssistantTurnKeys(messages: List<UiMessage>): List<String> =
+    messages.asSequence()
+        .filter { message -> message.role == "assistant" || message.role == "tool" }
+        .map { message ->
+            message.turnId?.let { turnId -> "turn:$turnId" } ?: "message:${message.id}"
+        }
+        .distinct()
+        .toList()
+
+/**
+ * 只统计已确认边界之后新增的回复轮次。
+ *
+ * 加载更早历史会把消息插到列表头部；若简单做集合差集，旧历史会被误判为新消息。这里以最后一个
+ * 已确认 key 作为边界，只检查其后的尾部增量，从而同时兼容历史分页和正常的新回复追加。
+ */
+internal fun unreadIncomingTurnCount(
+    currentKeys: List<String>,
+    acknowledgedKeys: Set<String>,
+): Int {
+    val lastAcknowledgedIndex = currentKeys.indexOfLast(acknowledgedKeys::contains)
+    return currentKeys
+        .drop(lastAcknowledgedIndex + 1)
+        .count { key -> key !in acknowledgedKeys }
+}
+
+/** Badge 视觉最多展示 9+；真实数量由按钮的 contentDescription 完整提供。 */
+internal fun unreadBadgeLabel(unreadCount: Int): String =
+    if (unreadCount > 9) "9+" else unreadCount.coerceAtLeast(0).toString()
 
 @Composable
 internal fun EmptyChat(modifier: Modifier = Modifier) {

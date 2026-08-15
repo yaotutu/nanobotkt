@@ -44,5 +44,10 @@ dependencies {
     testImplementation(libs.kotlinx.serialization.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    // Composer 仪器测试使用独立 Compose Host Activity 渲染真实组件，不依赖登录态或 Gateway 数据；
+    // manifest 仅进入 debug 变体，避免把测试 Activity 带入正式包。
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 

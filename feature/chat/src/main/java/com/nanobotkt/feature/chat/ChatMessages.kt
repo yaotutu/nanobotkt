@@ -1,6 +1,7 @@
 package com.nanobotkt.feature.chat
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,7 +23,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.FilePreviewPayload
@@ -62,12 +65,14 @@ internal fun MessageList(
         contentPadding =
             PaddingValues(
                 start = NanobotThemeDefaults.spacing.sm,
-                top = NanobotThemeDefaults.spacing.lg,
+                top = NanobotThemeDefaults.spacing.md,
                 end = NanobotThemeDefaults.spacing.sm,
                 // Composer 是独立底部区域，这里只保留消息与输入框之间的呼吸空间。
                 bottom = NanobotThemeDefaults.spacing.md,
             ),
-        verticalArrangement = Arrangement.spacedBy(NanobotThemeDefaults.spacing.md),
+        // 不再用统一 spacedBy：用户回合、Activity 与 Assistant 正文属于不同层级，
+        // 必须根据相邻类型决定间距，才能避免短对话被机械地拉成多张卡片。
+        verticalArrangement = Arrangement.Top,
     ) {
         if (state.hasMoreBefore) {
             item(key = "load-older") {
@@ -79,41 +84,68 @@ internal fun MessageList(
                     if (state.loadingOlder) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
-                        Text(androidx.compose.ui.res.stringResource(R.string.load_older))
+                        Text(stringResource(R.string.load_older))
                     }
                 }
             }
         }
 
-        itemsIndexed(timelineItems, key = { _, item -> item.key }) { _, item ->
-            when (item) {
-                is ChatTimelineItem.UserMessage ->
-                    UserTimelineMessage(
-                        message = item.message,
-                        resolveUrl = resolveMediaUrl,
-                    )
+        itemsIndexed(timelineItems, key = { _, item -> item.key }) { index, item ->
+            val previous = timelineItems.getOrNull(index - 1)
+            Box(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .padding(top = timelineItemTopSpacing(previous = previous, current = item))
+            ) {
+                when (item) {
+                    is ChatTimelineItem.UserMessage ->
+                        UserTimelineMessage(
+                            message = item.message,
+                            resolveUrl = resolveMediaUrl,
+                        )
 
-                is ChatTimelineItem.AssistantMessage -> {
-                    val forkIndex = forkIndexes.getOrNull(item.originalIndex)
-                    AssistantTimelineMessage(
-                        message = item.message,
-                        forkIndex = forkIndex,
-                        resolveUrl = resolveMediaUrl,
-                        onQuote = { onQuote(item.message.content) },
-                        onFork = {
-                            forkIndex?.let { onFork(item.message.id, it) }
-                        },
-                    )
+                    is ChatTimelineItem.AssistantMessage -> {
+                        val forkIndex = forkIndexes.getOrNull(item.originalIndex)
+                        AssistantTimelineMessage(
+                            message = item.message,
+                            forkIndex = forkIndex,
+                            resolveUrl = resolveMediaUrl,
+                            onQuote = { onQuote(item.message.content) },
+                            onFork = {
+                                forkIndex?.let { onFork(item.message.id, it) }
+                            },
+                        )
+                    }
+
+                    is ChatTimelineItem.AgentActivity ->
+                        AgentActivityCluster(item = item, onPreview = onPreview)
+
+                    is ChatTimelineItem.Marker -> TimelineMarker(item)
                 }
-
-                is ChatTimelineItem.AgentActivity ->
-                    AgentActivityCluster(item = item, onPreview = onPreview)
-
-                is ChatTimelineItem.Marker -> TimelineMarker(item)
             }
         }
     }
 }
+
+/**
+ * 计算相邻时间轴单元之间的层级间距。
+ *
+ * 用户消息代表新回合，和上一轮保持 24dp；同一回合内的过程摘要与回答只保留 8–12dp。
+ * 这种规则比全列表统一 16dp 更能表达“一个回合是一个整体”。
+ */
+private fun timelineItemTopSpacing(
+    previous: ChatTimelineItem?,
+    current: ChatTimelineItem,
+): Dp =
+    when {
+        previous == null -> 0.dp
+        current is ChatTimelineItem.UserMessage -> 24.dp
+        current is ChatTimelineItem.Marker || previous is ChatTimelineItem.Marker -> 16.dp
+        previous is ChatTimelineItem.UserMessage -> 12.dp
+        previous is ChatTimelineItem.AgentActivity && current is ChatTimelineItem.AssistantMessage -> 8.dp
+        previous is ChatTimelineItem.AssistantMessage && current is ChatTimelineItem.AgentActivity -> 8.dp
+        else -> 12.dp
+    }
 
 /**
  * 将消息列表定位到真实内容尾部，而不是只把最后一个时间轴单元的顶部对齐到视口顶部。
@@ -176,13 +208,13 @@ internal fun FilePreviewDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(androidx.compose.ui.res.stringResource(R.string.file_preview_title)) },
+        title = { Text(stringResource(R.string.file_preview_title)) },
         text = {
             when {
                 loading -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
                 failed ->
                     Text(
-                        androidx.compose.ui.res.stringResource(R.string.file_preview_load_failed),
+                        stringResource(R.string.file_preview_load_failed),
                         color = MaterialTheme.colorScheme.error,
                     )
                 preview != null ->
@@ -199,7 +231,7 @@ internal fun FilePreviewDialog(
                             fontWeight = FontWeight.Medium,
                         )
                         Text(
-                            androidx.compose.ui.res.stringResource(
+                            stringResource(
                                 R.string.file_preview_language,
                                 preview.language,
                             ),
@@ -207,7 +239,7 @@ internal fun FilePreviewDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            androidx.compose.ui.res.stringResource(
+                            stringResource(
                                 R.string.file_preview_size,
                                 preview.size,
                             ),
@@ -216,7 +248,7 @@ internal fun FilePreviewDialog(
                         )
                         if (preview.truncated) {
                             Text(
-                                androidx.compose.ui.res.stringResource(
+                                stringResource(
                                     R.string.file_preview_truncated
                                 ),
                                 style = MaterialTheme.typography.labelSmall,
@@ -239,7 +271,7 @@ internal fun FilePreviewDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text(androidx.compose.ui.res.stringResource(R.string.close))
+                Text(stringResource(R.string.close))
             }
         },
     )

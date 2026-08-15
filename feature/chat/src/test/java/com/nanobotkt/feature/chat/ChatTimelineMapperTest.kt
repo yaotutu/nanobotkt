@@ -162,6 +162,58 @@ class ChatTimelineMapperTest {
     }
 
     @Test
+    fun `旧历史 tool 角色不会降级为 Marker`() {
+        val items =
+            buildChatTimelineItems(
+                listOf(message("tool-1", role = "tool", content = "web_fetch(...)"))
+            )
+
+        assertEquals(1, items.size)
+        assertTrue(items.single() is ChatTimelineItem.AgentActivity)
+        assertFalse(items.single() is ChatTimelineItem.Marker)
+    }
+
+    @Test
+    fun `同一轮连续旧工具合并为一个 Activity 并保持正文顺序`() {
+        val items =
+            buildChatTimelineItems(
+                listOf(
+                    message("user-1", role = "user", content = "调研", turnId = "turn-1"),
+                    message("tool-1", role = "tool", content = "web_fetch(...)", turnId = "turn-1"),
+                    message("tool-2", role = "tool", content = "web_search(...)", turnId = "turn-1"),
+                    message("tool-3", role = "tool", content = "web_fetch(...)", turnId = "turn-1"),
+                    message("answer-1", content = "调研完成", turnId = "turn-1"),
+                )
+            )
+
+        assertEquals(3, items.size)
+        assertTrue(items[0] is ChatTimelineItem.UserMessage)
+        val activity = items[1] as ChatTimelineItem.AgentActivity
+        assertEquals(listOf("tool-1", "tool-2", "tool-3"), activity.messages.map { it.id })
+        assertTrue(items[2] is ChatTimelineItem.AssistantMessage)
+    }
+
+    @Test
+    fun `不同 Turn 的旧工具不会跨轮错误合并`() {
+        val items =
+            buildChatTimelineItems(
+                listOf(
+                    message("user-1", role = "user", turnId = "turn-1"),
+                    message("tool-1", role = "tool", content = "first", turnId = "turn-1"),
+                    message("answer-1", content = "first done", turnId = "turn-1"),
+                    message("user-2", role = "user", turnId = "turn-2"),
+                    message("tool-2", role = "tool", content = "second", turnId = "turn-2"),
+                    message("answer-2", content = "second done", turnId = "turn-2"),
+                )
+            )
+
+        val activities = items.filterIsInstance<ChatTimelineItem.AgentActivity>()
+        assertEquals(2, activities.size)
+        assertEquals(listOf("tool-1"), activities[0].messages.map { it.id })
+        assertEquals(listOf("tool-2"), activities[1].messages.map { it.id })
+    }
+
+    @Test
     fun `未知角色使用时间轴标记稳定降级`() {
         val items = buildChatTimelineItems(listOf(message("system", role = "system", content = "notice")))
 
