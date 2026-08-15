@@ -1,7 +1,7 @@
 # ============================================================
 # NanobotKT 正式 Release workflow
-# 作用：main 分支每次 push 后自动递增版本、生成更新日志、构建正式 Release APK，
-#       然后创建对应版本的 GitHub Release。
+# 作用：main 分支读取本地已经准备好的版本，执行测试、构建和正式发布。
+#       版本号与更新日志不在云端生成，避免远端回写造成开发者本地仓库不一致。
 # ============================================================
 name: Android Release
 
@@ -10,10 +10,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# 正式 Release 需要写权限创建 GitHub Release；不会写回仓库代码。
 permissions:
   contents: write
 
-# 避免多个 main push 同时递增同一个版本号。
 concurrency:
   group: android-release-main
   cancel-in-progress: false
@@ -24,12 +24,12 @@ env:
 jobs:
   release:
     name: Build and publish formal Release
-    # 手动运行也只允许 main：否则从其他分支 dispatch 后把 HEAD 推到 main，可能发布错误源码。
-    # Actions 版本提交默认不会再次触发发布；提交前缀保护用于未来改用 PAT 后避免循环。
+    # main push 必须来自本地 release.sh prepare release 生成的版本提交；手动运行用于
+    # 重试当前已准备好的提交，因此不再自动 bump，也不会产生云端版本提交。
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'workflow_dispatch' ||
-      !startsWith(github.event.head_commit.message, 'chore(release): prepare '))
+      startsWith(github.event.head_commit.message, 'chore(release): prepare v'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -38,28 +38,39 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Configure Git identity
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-      - name: Bump version and generate changelog
+      - name: Read local release metadata
         id: version
         run: |
-          result="$(./scripts/release.sh bump)"
-          echo "$result"
-          version_name="$(echo "$result" | awk -F= '$1 == "VERSION_NAME" { print $2 }')"
-          version_code="$(echo "$result" | awk -F= '$1 == "VERSION_CODE" { print $2 }')"
-          test -n "$version_name"
-          test -n "$version_code"
+          version_name="$(awk -F= '$1 == "VERSION_NAME" { print $2; exit }' version.properties)"
+          version_code="$(awk -F= '$1 == "VERSION_CODE" { print $2; exit }' version.properties)"
+          [[ "$version_name" =~ ^0\.1\.[0-9]+$ ]]
+          [[ "$version_code" =~ ^[1-9][0-9]*$ ]]
           echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
-          ./scripts/release.sh changelog "$version_name"
+          echo "使用本地提交中的版本：$version_name (versionCode $version_code)"
 
-      - name: Commit version and changelog locally
+      - name: Validate local release preparation
+        if: github.event_name == 'push'
         run: |
-          git add version.properties docs/CHANGELOG.md
-          git commit -m "chore(release): prepare v${{ steps.version.outputs.version_name }}"
+          expected="chore(release): prepare v${{ steps.version.outputs.version_name }}"
+          actual="$(git log -1 --pretty=%s)"
+          test "$actual" = "$expected" || {
+            echo "最后一个提交必须是：$expected" >&2
+            echo "实际提交是：$actual" >&2
+            exit 1
+          }
+
+      - name: Check release tag is available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.version.outputs.version_name }}"
+          # 同时检查 Release 和 Git tag：只检查 Release 会漏掉“tag 已存在但 Release 被删除”的情况，
+          # 后续 gh release create 仍会因 tag 冲突失败，导致本地版本与云端状态难以判断。
+          if gh release view "$tag" >/dev/null 2>&1 || git ls-remote --exit-code --refs origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Release 或 tag $tag 已存在，请先在本地递增版本号。" >&2
+            exit 1
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -101,9 +112,6 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: sh gradlew :app:assembleRelease --console=plain
 
-      - name: Push version and changelog commit
-        run: git push origin HEAD:main
-
       - name: Upload formal APK artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -118,6 +126,6 @@ jobs:
         run: |
           gh release create "v${{ steps.version.outputs.version_name }}" \
             app/build/outputs/apk/release/*.apk \
-            --target main \
+            --target "${GITHUB_SHA}" \
             --title "NanobotKT v${{ steps.version.outputs.version_name }}" \
             --notes-file docs/CHANGELOG.md

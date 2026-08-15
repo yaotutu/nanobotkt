@@ -1,7 +1,7 @@
 # ============================================================
 # NanobotKT Dev Release workflow
 #
-# dev 分支：构建并更新一个 rolling 的 dev-latest 预发布版本。
+# dev 分支：读取本地已经准备好的版本，构建并更新 rolling 的 dev-latest 预发布版本。
 # Pull Request：只构建 dev Release 并上传 Actions artifact，不向 Release 写入内容。
 # 这里完全不使用 assembleDebug；dev 是独立的非 Debug 构建类型。
 # ============================================================
@@ -14,7 +14,8 @@ on:
     branches: [ dev, main ]
   workflow_dispatch:
 
-# 默认只读；构建 dev 的 job 仅为回写自动递增版本而提升 contents: write，PR 不会执行回写步骤。
+# 构建任务只读仓库；发布任务单独申请 contents: write 创建 rolling Release。
+# 版本号和更新日志已经由本地脚本提交，云端不再修改或回写代码。
 permissions:
   contents: read
 
@@ -28,16 +29,15 @@ env:
 jobs:
   build-dev:
     name: Build dev Release APK
-    # 版本提交只用于保存下一次发布版本，不应再次触发完整构建，避免 CI 无限循环。
-    # pull_request 的 github.ref 是 refs/pull/...，不能用分支 ref 判断，否则 PR 会被错误跳过。
+    # PR 必须允许普通提交进入构建检查；dev push 则要求最后一个提交是本地发布脚本
+    # 生成的版本提交，避免用户忘记准备版本时云端重复发布旧版本。
     if: >-
       github.event_name == 'pull_request' ||
       (github.ref == 'refs/heads/dev' &&
-      (github.event_name != 'push' ||
-      !startsWith(github.event.head_commit.message, 'chore(dev): prepare ')))
+      (github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message, 'chore(dev): prepare v')))
     permissions:
-      # dev push 需要把自动递增后的版本文件推回 dev；PR 的令牌仍由 GitHub 按来源仓库权限限制。
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -46,32 +46,27 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # 版本号由 CI 在真正发布前递增；自动生成的版本提交会被 workflow 条件跳过，避免循环构建。
-      - name: Configure Git identity
-        if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-      - name: Bump dev version and generate changelog
+      - name: Read local release metadata
         id: version
-        if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
-          result="$(./scripts/release.sh bump)"
-          echo "$result"
-          version_name="$(echo "$result" | awk -F= '$1 == "VERSION_NAME" { print $2 }')"
-          version_code="$(echo "$result" | awk -F= '$1 == "VERSION_CODE" { print $2 }')"
-          test -n "$version_name"
-          test -n "$version_code"
+          version_name="$(awk -F= '$1 == "VERSION_NAME" { print $2; exit }' version.properties)"
+          version_code="$(awk -F= '$1 == "VERSION_CODE" { print $2; exit }' version.properties)"
+          [[ "$version_name" =~ ^0\.1\.[0-9]+$ ]]
+          [[ "$version_code" =~ ^[1-9][0-9]*$ ]]
           echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
-          ./scripts/release.sh changelog "$version_name"
+          echo "使用本地提交中的版本：$version_name (versionCode $version_code)"
 
-      - name: Commit dev version and changelog
-        if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      - name: Validate local dev preparation
+        if: github.event_name == 'push'
         run: |
-          git add version.properties docs/CHANGELOG.md
-          git commit -m "chore(dev): prepare v${{ steps.version.outputs.version_name }}"
+          expected="chore(dev): prepare v${{ steps.version.outputs.version_name }}"
+          actual="$(git log -1 --pretty=%s)"
+          test "$actual" = "$expected" || {
+            echo "最后一个提交必须是：$expected" >&2
+            echo "实际提交是：$actual" >&2
+            exit 1
+          }
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -135,10 +130,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Push dev version commit
-        if: github.ref == 'refs/heads/dev' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        run: git push origin HEAD:dev
-
   publish-dev:
     name: Publish rolling dev Release
     needs: build-dev
@@ -151,10 +142,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # 版本递增提交已经推送回 dev；发布任务读取该提交中的版本号和更新日志。
+          # 发布任务直接读取触发构建的 dev 提交；该提交已经包含本地准备好的版本和日志。
           ref: dev
           fetch-depth: 0
           fetch-tags: true
+
+      - name: Read local release metadata
+        id: version
+        run: |
+          version_name="$(awk -F= '$1 == "VERSION_NAME" { print $2; exit }' version.properties)"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
 
       - name: Download dev APK artifact
         uses: actions/download-artifact@v4
@@ -171,6 +168,6 @@ jobs:
           target_sha="$(git rev-parse HEAD)"
           gh release create dev-latest release-assets/*.apk \
             --target "$target_sha" \
-            --title "NanobotKT dev latest" \
+            --title "NanobotKT dev latest (${{ steps.version.outputs.version_name }}-dev)" \
             --notes-file docs/CHANGELOG.md \
             --prerelease
