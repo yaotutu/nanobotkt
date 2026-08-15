@@ -78,7 +78,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Run JVM unit tests
-        run: sh gradlew test --console=plain
+        # Chat 的 MockWebServer 测试依赖 Dispatchers.IO；串行执行各模块测试，避免 CI 高负载时出现调度超时。
+        run: sh gradlew test --no-parallel --console=plain
 
       - name: Run Android lint
         run: sh gradlew :app:lintDev --console=plain
