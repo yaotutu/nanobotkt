@@ -1,16 +1,21 @@
-# NanobotKT 0.1.1
+# NanobotKT 0.1.2
 
-> 自动构建发布，提交：`6a5b7c2`。
+> 自动构建发布，提交：`2b68bd2`。
 
 ## 变更
 
+- merge: integrate settings control center into dev (`2b68bd2`)
+- merge: integrate chat page redesign into dev (`c948cc0`)
+- feat(chat): redesign message timeline and composer (`421d023`)
+- feat(settings): unify settings and support gateway switching (`014e2dc`)
+- merge: conversation bottom sheet (`45d2d9d`)
+- feat(chat): move conversations into bottom sheet (`728c147`)
+- chore(dev): prepare v0.1.1 (`34416ec`)
 - ci: automate dev and release publishing (`6a5b7c2`)
 - fix(build): generate release keystore as JKS (`7f71f49`)
 - docs: move project notes under docs (`c22e6b1`)
 - build: add dev and release publishing workflows (`62cbd05`)
 - feat(chat): add structured agent activity timeline (`55c1a18`)
-- merge: conversation bottom sheet (`45d2d9d`)
-- feat(chat): move conversations into bottom sheet (`728c147`)
 - docs: pin Android gateway endpoint (`fc6b0f6`)
 - fix(app): use LAN gateway by default (`409ec91`)
 - docs: pin Android gateway endpoint (`7781001`)
