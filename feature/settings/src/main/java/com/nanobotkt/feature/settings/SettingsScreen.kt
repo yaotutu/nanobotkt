@@ -1,5 +1,7 @@
 package com.nanobotkt.feature.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -112,9 +114,35 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val appearance by viewModel.appearance.collectAsStateWithLifecycle()
+    val appUpdateState by viewModel.appUpdateState.collectAsStateWithLifecycle()
+    val appUpdateDialogVisible by viewModel.appUpdateDialogVisible.collectAsStateWithLifecycle()
     val section = initialSection.takeIf(settingsSections::contains) ?: SETTINGS_SECTION_OVERVIEW
 
-    LaunchedEffect(refreshKey) { viewModel.refresh() }
+    val installPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        // 系统设置页没有可靠的 resultCode；返回后必须重新查询 PackageManager 的真实授权状态。
+        viewModel.onInstallPermissionReturned()
+    }
+    val packageInstallerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        // 安装器返回可能是完成、失败或用户取消，不能在客户端把 resultCode 当成安装成功凭据。
+        viewModel.onPackageInstallerReturned()
+    }
+
+    LaunchedEffect(refreshKey) {
+        viewModel.refresh()
+        viewModel.autoCheckAppUpdate()
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.appUpdateEffects.collect { effect ->
+            when (effect) {
+                is AppUpdateEffect.RequestInstallPermission -> installPermissionLauncher.launch(effect.intent)
+                is AppUpdateEffect.LaunchPackageInstaller -> packageInstallerLauncher.launch(effect.intent)
+            }
+        }
+    }
 
     LazyColumn(
         modifier =
@@ -145,6 +173,8 @@ fun SettingsScreen(
                         onOpenWorkspaces = onOpenWorkspaces,
                         onOpenSecurityAndPairing = onOpenSecurityAndPairing,
                         onCheckVersion = viewModel::checkVersion,
+                        appUpdateState = appUpdateState,
+                        onOpenAppUpdate = viewModel::openAppUpdate,
                         onLogout = onLogout,
                     )
                 SETTINGS_SECTION_APPEARANCE -> AppearancePage(appearance, viewModel)
@@ -179,6 +209,17 @@ fun SettingsScreen(
                 SETTINGS_SECTION_SECURITY -> SecurityPage(state, viewModel)
             }
         }
+    }
+
+    if (appUpdateDialogVisible) {
+        AppUpdateDialog(
+            state = appUpdateState,
+            onDismiss = viewModel::dismissAppUpdateDialog,
+            onCheck = viewModel::checkAppUpdate,
+            onDownload = viewModel::downloadAppUpdate,
+            onInstall = viewModel::installAppUpdate,
+            onRetry = viewModel::retryAppUpdate,
+        )
     }
 }
 

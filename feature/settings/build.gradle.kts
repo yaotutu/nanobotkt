@@ -17,6 +17,9 @@ dependencies {
     implementation(project(":core:network"))
     implementation(project(":core:persistence"))
     implementation(project(":core:designsystem"))
+    // FileProvider 与 Activity Result API 分别用于安全共享 APK、接收系统权限/安装器返回。
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)

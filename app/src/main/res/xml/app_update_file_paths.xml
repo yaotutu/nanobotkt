@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 更新 APK 只允许位于 app-updates 子目录，避免 FileProvider 暴露整个缓存树。 -->
+    <cache-path
+        name="app_update_internal_cache"
+        path="app-updates/" />
+    <external-cache-path
+        name="app_update_external_cache"
+        path="app-updates/" />
+</paths>
