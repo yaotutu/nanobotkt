@@ -33,12 +33,20 @@ internal data class RootUiState(
     val destination: AppDestination = AppDestination.CHAT,
     val draftingNewTopic: Boolean = false,
     val settingsSection: String = SETTINGS_SECTION_OVERVIEW,
+    /**
+     * 当前非聊天页面的返回目标。
+     *
+     * Settings Home 打开的独立 feature 页面需要回到 Settings，而聊天页的模型快捷入口
+     * 需要直接回到 Chat。把来源写入 SavedStateHandle，保证系统回收进程后返回行为不漂移。
+     */
+    val returnDestination: AppDestination = AppDestination.CHAT,
 )
 
 private const val ROOT_SELECTED_KEY = "root.selectedKey"
 private const val ROOT_DESTINATION = "root.destination"
 private const val ROOT_DRAFTING_NEW_TOPIC = "root.draftingNewTopic"
 private const val ROOT_SETTINGS_SECTION = "root.settingsSection"
+private const val ROOT_RETURN_DESTINATION = "root.returnDestination"
 
 internal fun SavedStateHandle.readRootUiState(): RootUiState = RootUiState(
     selectedKey = get(ROOT_SELECTED_KEY),
@@ -49,7 +57,38 @@ internal fun SavedStateHandle.readRootUiState(): RootUiState = RootUiState(
     settingsSection = get<String>(ROOT_SETTINGS_SECTION)
         ?.takeIf(String::isNotBlank)
         ?: SETTINGS_SECTION_OVERVIEW,
+    returnDestination = get<String>(ROOT_RETURN_DESTINATION)
+        ?.let { saved -> AppDestination.entries.firstOrNull { it.name == saved } }
+        ?.takeIf { it == AppDestination.CHAT || it == AppDestination.SETTINGS }
+        ?: AppDestination.CHAT,
 )
+
+/**
+ * 计算根页面返回状态，保持实现为纯函数，便于锁定进程恢复后的导航语义。
+ *
+ * - Settings 内部详情以 Settings 自身作为 returnDestination，第一次返回只回首页；
+ * - Apps、Skills 等独立 feature 以 Settings 作为来源，返回后恢复 Settings Home；
+ * - 从 Chat 直接打开的设置详情以 Chat 为来源，不额外经过 Settings Home。
+ */
+internal fun RootUiState.navigateBackState(): RootUiState = when {
+    destination == AppDestination.CHAT -> this
+    destination == AppDestination.SETTINGS && returnDestination == AppDestination.SETTINGS ->
+        copy(
+            settingsSection = SETTINGS_SECTION_OVERVIEW,
+            returnDestination = AppDestination.CHAT,
+        )
+    returnDestination == AppDestination.SETTINGS ->
+        copy(
+            destination = AppDestination.SETTINGS,
+            settingsSection = SETTINGS_SECTION_OVERVIEW,
+            returnDestination = AppDestination.CHAT,
+        )
+    else ->
+        copy(
+            destination = AppDestination.CHAT,
+            returnDestination = AppDestination.CHAT,
+        )
+}
 
 /**
  * 执行退出登录时的同步清理，并把认证仓库的异步注销排到清理之后。
@@ -78,6 +117,7 @@ private fun SavedStateHandle.writeRootUiState(value: RootUiState) {
     this[ROOT_DESTINATION] = value.destination.name
     this[ROOT_DRAFTING_NEW_TOPIC] = value.draftingNewTopic
     this[ROOT_SETTINGS_SECTION] = value.settingsSection
+    this[ROOT_RETURN_DESTINATION] = value.returnDestination.name
 }
 
 @HiltViewModel
@@ -95,6 +135,15 @@ class AppViewModel @Inject constructor(
         UserPreferences(),
     )
     val transportState: StateFlow<TransportState> = transport.state
+
+    /**
+     * 当前认证会话真正使用的 Gateway 入口。
+     *
+     * Settings 摘要必须展示客户端连接入口，而不能展示服务端 payload 中的内部监听地址；
+     * 后者可能是 127.0.0.1 等仅对服务端进程有意义的地址，会误导 Android 端排障。
+     */
+    val gatewayServerUrl: String
+        get() = authRepository.baseUrl
 
     private val mutableRootUiState = MutableStateFlow(savedStateHandle.readRootUiState())
     internal val rootUiState: StateFlow<RootUiState> = mutableRootUiState.asStateFlow()
@@ -115,7 +164,9 @@ class AppViewModel @Inject constructor(
     }
 
     fun authenticate(secret: String) = viewModelScope.launch { authRepository.authenticate(secret) }
+
     fun retry() = viewModelScope.launch { authRepository.retry() }
+
     fun logout() {
         scheduleLogoutCleanup(
             scope = viewModelScope,
@@ -143,17 +194,69 @@ class AppViewModel @Inject constructor(
     fun onBackground() = transport.onBackground()
     fun setNetworkAvailable(available: Boolean) = transport.setNetworkAvailable(available)
 
+    /** 打开普通根页面；这些旧入口默认返回聊天页。 */
     internal fun navigate(destination: AppDestination) = updateRootUiState {
-        copy(destination = destination)
+        copy(destination = destination, returnDestination = AppDestination.CHAT)
     }
 
-    internal fun openSettings(section: String) = updateRootUiState {
-        copy(destination = AppDestination.SETTINGS, settingsSection = section)
+    /** 从聊天页直接进入 Settings Home 或某个快捷设置，返回时仍回到聊天页。 */
+    internal fun openSettings(section: String = SETTINGS_SECTION_OVERVIEW) {
+        updateRootUiState {
+            copy(
+                destination = AppDestination.SETTINGS,
+                settingsSection = section,
+                returnDestination = AppDestination.CHAT,
+            )
+        }
     }
 
-    internal fun setSettingsSection(section: String) = updateRootUiState {
-        copy(settingsSection = section)
+    /** 从 Settings Home 进入内部设置详情；返回键先回到 Settings Home。 */
+    internal fun openSettingsSection(section: String) {
+        updateRootUiState {
+            copy(
+                destination = AppDestination.SETTINGS,
+                settingsSection = section,
+                returnDestination = AppDestination.SETTINGS,
+            )
+        }
     }
+
+    /**
+     * 从 Settings Home 打开独立 feature 页面。
+     *
+     * app 继续承担组合根职责，Settings feature 只发出导航事件，不直接依赖 Apps、Skills
+     * 等兄弟 feature；同时把返回来源持久化，避免进程恢复后直接跳回 Chat。
+     */
+    internal fun openSettingsChild(destination: AppDestination) = updateRootUiState {
+        // 使用显式白名单，而不是简单排除 Chat/Settings，防止兼容保留的 Conversations
+        // 被误当成设置子页面，进而形成“会话列表返回设置”的错误导航层级。
+        require(
+            destination in
+                setOf(
+                    AppDestination.WORKSPACES,
+                    AppDestination.APPS,
+                    AppDestination.SKILLS,
+                    AppDestination.AUTOMATIONS,
+                    AppDestination.CHANNELS,
+                    AppDestination.SECURITY,
+                ),
+        ) {
+            "Settings child must be a destination exposed by Settings Home."
+        }
+        copy(
+            destination = destination,
+            settingsSection = SETTINGS_SECTION_OVERVIEW,
+            returnDestination = AppDestination.SETTINGS,
+        )
+    }
+
+    /** 设置详情之间的内部跳转保留最初进入来源。 */
+    internal fun setSettingsSection(section: String) {
+        updateRootUiState { copy(settingsSection = section) }
+    }
+
+    /** 依据持久化的来源执行系统返回和页面返回，形成 Chat → Settings → Child 的稳定层级。 */
+    internal fun navigateBack() = updateRootUiState { navigateBackState() }
 
     internal fun selectSession(key: String) = updateRootUiState {
         copy(selectedKey = key, draftingNewTopic = false)

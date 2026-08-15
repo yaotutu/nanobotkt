@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="open_navigation">打开导航</string>
+    <string name="open_settings">打开设置</string>
     <string name="current_session_settings">当前会话配置</string>
     <string name="chat_status_idle">空闲</string>
     <string name="chat_status_running">运行中</string>

@@ -1,78 +1,65 @@
 package com.nanobotkt.feature.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.outlined.Hub
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.MicNone
-import androidx.compose.material.icons.outlined.MonitorHeart
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
+/** 保留旧 Overview wire value，确保已保存的 Root 状态升级后仍能恢复到新的 Settings Home。 */
 const val SETTINGS_SECTION_OVERVIEW = "Overview"
 const val SETTINGS_SECTION_MODELS = "Models"
 internal const val SETTINGS_SECTION_APPEARANCE = "Appearance"
+internal const val SETTINGS_SECTION_IMAGE = "Image"
+internal const val SETTINGS_SECTION_VOICE = "Voice"
+internal const val SETTINGS_SECTION_WEB = "Web"
+const val SETTINGS_SECTION_SYSTEM = "System"
+internal const val SETTINGS_SECTION_SECURITY = "Security"
 
-internal val sections =
-    listOf(
+/** Settings 内部详情白名单；独立 Apps、Skills 等页面仍由 app 组合根负责。 */
+internal val settingsSections =
+    setOf(
         SETTINGS_SECTION_OVERVIEW,
         SETTINGS_SECTION_APPEARANCE,
         SETTINGS_SECTION_MODELS,
-        "Image",
-        "Voice",
-        "Web",
-        "Channels",
-        "System",
-        "Security",
+        SETTINGS_SECTION_IMAGE,
+        SETTINGS_SECTION_VOICE,
+        SETTINGS_SECTION_WEB,
+        SETTINGS_SECTION_SYSTEM,
+        SETTINGS_SECTION_SECURITY,
     )
 
+/**
+ * Gateway 当前接受的图片宽高比和尺寸枚举。
+ *
+ * 这些值属于 ImageGenerationPage 的接口边界而不是首页导航状态；统一设置页重构只移动入口，
+ * 不能删除原有表单依赖的合法值集合，否则已保存值将无法继续编辑。
+ */
 internal val IMAGE_ASPECT_RATIOS = listOf("1:1", "3:4", "9:16", "4:3", "16:9", "3:2", "2:3", "21:9")
 internal val IMAGE_SIZES = listOf("1K", "2K", "4K", "1024x1024", "1536x1024", "1024x1536")
 
@@ -98,201 +85,139 @@ internal val SecondaryText: Color
 internal val DividerColor: Color
     @Composable get() = if (settingsDark) Color(0xFF474747) else Color(0xFFE8E7E5)
 
-/** Settings 页面入口、分区导航和跨页面共享主题令牌。 */
+/**
+ * Settings 统一控制中心。
+ *
+ * Settings feature 只渲染首页和自身拥有的配置页面；Apps、Skills、Automations 等兄弟
+ * feature 通过事件交给 app 组合根打开，避免形成 feature 之间的反向依赖。
+ */
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenApps: () -> Unit,
+    onOpenSkills: () -> Unit,
+    onOpenAutomations: () -> Unit,
     onOpenChannels: () -> Unit,
+    onOpenWorkspaces: () -> Unit,
+    onOpenSecurityAndPairing: () -> Unit,
     onLogout: () -> Unit = {},
+    onReconnect: () -> Unit = {},
+    connectionStatus: String = "Unknown",
+    gatewayEndpoint: String = "",
     initialSection: String = SETTINGS_SECTION_OVERVIEW,
+    onOpenSection: (String) -> Unit = {},
     onSectionChange: (String) -> Unit = {},
     refreshKey: Long = 0L,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val appearance by viewModel.appearance.collectAsStateWithLifecycle()
-    var section by
-        rememberSaveable(initialSection) {
-            mutableStateOf(initialSection.takeIf(sections::contains) ?: SETTINGS_SECTION_OVERVIEW)
-        }
-    val selectSection: (String) -> Unit = { requested ->
-        val next = requested.takeIf(sections::contains) ?: SETTINGS_SECTION_OVERVIEW
-        section = next
-        onSectionChange(next)
-    }
+    val section = initialSection.takeIf(settingsSections::contains) ?: SETTINGS_SECTION_OVERVIEW
+
     LaunchedEffect(refreshKey) { viewModel.refresh() }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(PageBackground),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(PageBackground)
+                // Settings 顶栏和滚动内容共享同一列表；对整个滚动视口应用状态栏安全区，
+                // 可避免标题滚出屏幕后，下一行设置项继续绘制到系统时间和图标下方。
+                .statusBarsPadding(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
     ) {
-        item { SettingsHeader(section = section, onBack = onBack, onSectionChange = selectSection) }
+        item { SettingsHeader(title = settingsSectionTitle(section), onBack = onBack) }
         item {
             when (section) {
                 SETTINGS_SECTION_OVERVIEW ->
-                    OverviewPage(
+                    SettingsHomePage(
                         state = state,
                         showBrandLogos = appearance.showBrandLogos,
-                        onSectionChange = selectSection,
+                        connectionStatus = connectionStatus,
+                        gatewayEndpoint = gatewayEndpoint,
+                        onReconnect = onReconnect,
+                        onManageGateway = { onOpenSection(SETTINGS_SECTION_SYSTEM) },
+                        onOpenSection = onOpenSection,
+                        onOpenApps = onOpenApps,
+                        onOpenSkills = onOpenSkills,
+                        onOpenAutomations = onOpenAutomations,
+                        onOpenChannels = onOpenChannels,
+                        onOpenWorkspaces = onOpenWorkspaces,
+                        onOpenSecurityAndPairing = onOpenSecurityAndPairing,
                         onCheckVersion = viewModel::checkVersion,
+                        onLogout = onLogout,
                     )
                 SETTINGS_SECTION_APPEARANCE -> AppearancePage(appearance, viewModel)
                 SETTINGS_SECTION_MODELS -> ModelsPage(state, viewModel, appearance.showBrandLogos)
-                "Image" ->
+                SETTINGS_SECTION_IMAGE ->
                     ImageGenerationPage(
                         state = state,
                         showBrandLogos = appearance.showBrandLogos,
-                        onOpenProviders = { selectSection(SETTINGS_SECTION_MODELS) },
+                        onOpenProviders = { onSectionChange(SETTINGS_SECTION_MODELS) },
                         onSave = viewModel::updateImage,
                     )
-                "Voice" ->
+                SETTINGS_SECTION_VOICE ->
                     TranscriptionPage(
                         state = state,
                         showBrandLogos = appearance.showBrandLogos,
-                        onOpenProviders = { selectSection(SETTINGS_SECTION_MODELS) },
+                        onOpenProviders = { onSectionChange(SETTINGS_SECTION_MODELS) },
                         onSave = viewModel::updateTranscription,
                     )
-                "Web" ->
+                SETTINGS_SECTION_WEB ->
                     WebSearchPage(
                         state = state,
                         showBrandLogos = appearance.showBrandLogos,
                         onSave = viewModel::updateWebSearch,
                     )
-                "Channels" ->
-                    OpenSectionPage(
-                        title = "Channels",
-                        description = "Manage the channels connected to your assistant.",
-                        icon = Icons.Outlined.Hub,
-                        onOpen = onOpenChannels,
-                    )
-                "System" -> SystemPage(state, viewModel)
-                "Security" -> SecurityPage(state, viewModel)
-            }
-        }
-        item {
-            // Android 设置页采用单列布局，没有 Web 端固定在侧栏底部的账户操作区；
-            // 因此把退出登录放在所有设置内容之后，确保用户始终能找到同一项账户操作。
-            Spacer(Modifier.height(24.dp))
-            HorizontalDivider(color = DividerColor)
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = onLogout,
-                modifier = Modifier.fillMaxWidth(),
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-            ) {
-                Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Log out")
+                SETTINGS_SECTION_SYSTEM -> SystemPage(
+                    state = state,
+                    viewModel = viewModel,
+                    connectionStatus = connectionStatus,
+                    gatewayEndpoint = gatewayEndpoint,
+                    onReconnect = onReconnect,
+                )
+                SETTINGS_SECTION_SECURITY -> SecurityPage(state, viewModel)
             }
         }
     }
 }
 
+/** 统一 Settings 顶栏；不再用下拉菜单承载整棵信息架构。 */
 @Composable
-internal fun SettingsHeader(
-    section: String,
-    onBack: () -> Unit,
-    onSectionChange: (String) -> Unit,
-) {
-    Spacer(Modifier.height(16.dp))
+internal fun SettingsHeader(title: String, onBack: () -> Unit) {
+    Spacer(Modifier.height(10.dp))
     Row(
-        modifier =
-            Modifier.clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onBack)
-                .padding(horizontal = 6.dp, vertical = 7.dp),
+        modifier = Modifier.height(64.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-            contentDescription = null,
-            tint = SecondaryText,
-            modifier = Modifier.size(15.dp),
+        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "Back",
+                tint = PrimaryText,
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = title,
+            color = PrimaryText,
+            fontSize = 24.sp,
+            lineHeight = 30.sp,
+            fontWeight = FontWeight.SemiBold,
         )
-        Spacer(Modifier.width(5.dp))
-        Text("Back to chat", color = SecondaryText, fontSize = 12.sp)
     }
-    Spacer(Modifier.height(15.dp))
-    Text(
-        text = "Settings",
-        color = PrimaryText,
-        fontSize = 24.sp,
-        lineHeight = 30.sp,
-        fontWeight = FontWeight.Normal,
-    )
-    Spacer(Modifier.height(13.dp))
-    SettingsSectionPicker(section, onSectionChange)
-    Spacer(Modifier.height(27.dp))
+    Spacer(Modifier.height(8.dp))
 }
 
-@Composable
-internal fun SettingsSectionPicker(section: String, onSectionChange: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth()) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().height(44.dp).clickable { expanded = true },
-            shape = RoundedCornerShape(14.dp),
-            color = CardBackground,
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = sectionIcon(section),
-                    contentDescription = null,
-                    tint = PrimaryText,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(11.dp))
-                Text(
-                    text = section,
-                    color = PrimaryText,
-                    fontSize = 14.sp,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    imageVector = Icons.Rounded.ExpandMore,
-                    contentDescription = "Choose settings section",
-                    tint = SecondaryText,
-                    modifier = Modifier.size(19.dp),
-                )
-            }
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.fillMaxWidth(0.91f).background(PageBackground),
-        ) {
-            sections.forEach { item ->
-                DropdownMenuItem(
-                    text = { Text(item, fontSize = 14.sp) },
-                    leadingIcon = { Icon(sectionIcon(item), null, Modifier.size(18.dp)) },
-                    trailingIcon = {
-                        if (item == section) Icon(Icons.Rounded.Check, null, Modifier.size(17.dp))
-                    },
-                    onClick = {
-                        expanded = false
-                        onSectionChange(item)
-                    },
-                )
-            }
-        }
-    }
-}
-
-internal fun sectionIcon(section: String): ImageVector =
+internal fun settingsSectionTitle(section: String): String =
     when (section) {
-        SETTINGS_SECTION_OVERVIEW -> Icons.Outlined.MonitorHeart
-        SETTINGS_SECTION_APPEARANCE -> Icons.Outlined.Palette
-        SETTINGS_SECTION_MODELS -> Icons.Outlined.Tune
-        "Image" -> Icons.Outlined.Image
-        "Voice" -> Icons.Outlined.MicNone
-        "Web" -> Icons.Outlined.Public
-        "Channels" -> Icons.Outlined.Hub
-        "Security" -> Icons.Outlined.Security
-        else -> Icons.Outlined.Settings
+        SETTINGS_SECTION_OVERVIEW -> "Settings"
+        SETTINGS_SECTION_APPEARANCE -> "Appearance"
+        SETTINGS_SECTION_MODELS -> "Models & Providers"
+        SETTINGS_SECTION_IMAGE -> "Image generation"
+        SETTINGS_SECTION_VOICE -> "Voice"
+        SETTINGS_SECTION_WEB -> "Web search"
+        SETTINGS_SECTION_SYSTEM -> "Gateway & System"
+        SETTINGS_SECTION_SECURITY -> "App safety"
+        else -> "Settings"
     }

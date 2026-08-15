@@ -2,13 +2,19 @@ package com.nanobotkt.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,30 +25,49 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nanobotkt.core.model.RuntimeSurface
 
 /** System、Security、Image、Voice 与 Web 等能力页。 */
 @Composable
-internal fun SystemPage(state: SettingsUiState, viewModel: SettingsViewModel) {
+internal fun SystemPage(
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+    connectionStatus: String,
+    gatewayEndpoint: String,
+    onReconnect: () -> Unit,
+) {
     val payload = state.payload
     val service = state.apiService
 
-    SettingsGroup("Runtime") {
+    SettingsGroup("Server connection") {
         SettingsRow(
             icon = Icons.Outlined.Dns,
-            title = "Gateway",
-            subtitle = if (payload == null) "Not connected" else "Ready",
-            value =
-                payload?.runtime?.let {
-                    if (it.gatewayHost.isNotBlank() && it.gatewayPort > 0)
-                        "${it.gatewayHost}:${it.gatewayPort}"
-                    else "Unavailable"
-                } ?: "Unavailable",
+            title = "Current Gateway",
+            subtitle = connectionStatus,
+            // 只展示 Android 客户端实际使用的固定入口；服务端 payload 中的内部监听地址
+            // 可能是 loopback，且不允许在客户端作为可编辑连接目标。
+            value = gatewayEndpointLabel(gatewayEndpoint),
             showChevron = false,
         )
         CardDivider()
+        PreferenceBlock(
+            title = "Connection",
+            description = "The Android client uses the configured Nanobot Gateway endpoint.",
+        ) {
+            OutlinePillButton(
+                text = "Reconnect current",
+                onClick = onReconnect,
+                icon = Icons.Outlined.Sync,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    GroupSpacer()
+    SettingsGroup("Runtime") {
         SettingsRow(
             icon = Icons.Outlined.FolderOpen,
             title = "Workspace",
@@ -56,8 +81,8 @@ internal fun SystemPage(state: SettingsUiState, viewModel: SettingsViewModel) {
     SettingsGroup("API service") {
         PreferenceBlock(
             title = if (service?.running == true) "Running" else "Stopped",
-            description =
-                service?.endpoint?.takeIf { it.isNotBlank() } ?: "Local API service is unavailable.",
+            description = service?.endpoint?.takeIf { it.isNotBlank() }
+                ?: "Local API service is unavailable.",
         ) {
             SegmentedSetting(
                 options = listOf("Stop", "Start"),

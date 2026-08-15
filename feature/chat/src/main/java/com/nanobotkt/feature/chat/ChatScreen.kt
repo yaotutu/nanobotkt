@@ -60,7 +60,7 @@ import kotlinx.coroutines.launch
 fun ChatScreen(
     viewModel: ChatViewModel,
     title: String,
-    onOpenDrawer: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenModelSettings: () -> Unit,
     onToggleTheme: () -> Unit = {},
     transportStatus: TransportStatus,
@@ -293,7 +293,8 @@ fun ChatScreen(
             hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
             hasSessionInfo = state.sessionKey != null,
             hasAccessSettings = activeWorkspaceScope != null,
-            onOpenDrawer = onOpenDrawer,
+            onOpenSettings = onOpenSettings,
+            onNewConversation = onNewConversation,
             onQueueOpenChange = { queueOpen = it },
             onConfigMenuOpenChange = { configMenuOpen = it },
             onRemoveQueuedPrompt = viewModel::removeQueuedPrompt,
