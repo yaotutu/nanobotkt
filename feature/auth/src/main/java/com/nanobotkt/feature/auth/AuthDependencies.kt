@@ -33,18 +33,19 @@ class DefaultAuthBootstrapGateway @Inject constructor(
 
 /** 认证只需要的持久化 secret 能力，避免测试直接触碰 Android Keystore。 */
 interface AuthSecretStore {
-    suspend fun save(secret: String)
-    suspend fun load(): String?
-    suspend fun clear()
+    /** 每个 Gateway 地址拥有独立的 Secret 槽位，禁止跨地址隐式复用凭据。 */
+    suspend fun save(serverUrl: String, secret: String)
+    suspend fun load(serverUrl: String): String?
+    suspend fun clear(serverUrl: String)
 }
 
 @Singleton
 class DefaultAuthSecretStore @Inject constructor(
     private val store: EncryptedSecretStore,
 ) : AuthSecretStore {
-    override suspend fun save(secret: String) = store.save(secret)
-    override suspend fun load(): String? = store.load()
-    override suspend fun clear() = store.clear()
+    override suspend fun save(serverUrl: String, secret: String) = store.save(serverUrl, secret)
+    override suspend fun load(serverUrl: String): String? = store.load(serverUrl)
+    override suspend fun clear(serverUrl: String) = store.clear(serverUrl)
 }
 
 /** 认证只读取/修改的用户偏好能力。 */

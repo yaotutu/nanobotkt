@@ -30,4 +30,5 @@
     <string name="model_select_title">選擇模型</string>
     <string name="model_select_help">用於新的回覆。</string>
     <string name="model_settings">模型與供應商</string>
+    <string name="change_server">更改伺服器</string>
 </resources>

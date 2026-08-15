@@ -1,4 +1,4 @@
-﻿package com.nanobotkt.core.persistence
+package com.nanobotkt.core.persistence
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
@@ -43,8 +43,32 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
     suspend fun setFileEditDisplay(value: FileEditDisplay) = update(Keys.fileEditDisplay, value.name)
     suspend fun setServerUrl(value: String?) { context.nanobotDataStore.edit { if (value.isNullOrBlank()) it.remove(Keys.serverUrl) else it[Keys.serverUrl] = value.trim().trimEnd('/') } }
 
-    internal suspend fun readEncryptedSecret(): String? = context.nanobotDataStore.data.map { it[Keys.bootstrapSecret] }.firstValue()
-    internal suspend fun writeEncryptedSecret(value: String?) { context.nanobotDataStore.edit { if (value == null) it.remove(Keys.bootstrapSecret) else it[Keys.bootstrapSecret] = value } }
+    /** 读取旧版本只保存一个 Secret 的字段，供按端点迁移时使用。 */
+    internal suspend fun readLegacyEncryptedSecret(): String? =
+        context.nanobotDataStore.data.map { it[Keys.bootstrapSecret] }.firstValue()
+
+    /** 迁移完成或旧密文损坏时清理旧字段，避免后续错误关联到另一台服务器。 */
+    internal suspend fun writeLegacyEncryptedSecret(value: String?) {
+        context.nanobotDataStore.edit {
+            if (value == null) it.remove(Keys.bootstrapSecret) else it[Keys.bootstrapSecret] = value
+        }
+    }
+
+    /**
+     * 按规范化服务器地址的不可逆摘要保存密文。
+     *
+     * DataStore 的 key 不直接包含服务器地址，既避免特殊字符影响 key，也避免在偏好文件
+     * 元数据中暴露完整内部域名；真正的 Secret 仍由 Android Keystore 加密。
+     */
+    internal suspend fun readEncryptedSecret(scope: String): String? =
+        context.nanobotDataStore.data.map { it[scopedBootstrapSecretKey(scope)] }.firstValue()
+
+    internal suspend fun writeEncryptedSecret(scope: String, value: String?) {
+        val key = scopedBootstrapSecretKey(scope)
+        context.nanobotDataStore.edit {
+            if (value == null) it.remove(key) else it[key] = value
+        }
+    }
 
     private suspend fun <T> update(key: Preferences.Key<T>, value: T) { context.nanobotDataStore.edit { it[key] = value } }
 
@@ -71,6 +95,9 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
         val bootstrapSecret = stringPreferencesKey("bootstrap_secret_ciphertext")
     }
 }
+
+private fun scopedBootstrapSecretKey(scope: String): Preferences.Key<String> =
+    stringPreferencesKey("bootstrap_secret_ciphertext_$scope")
 
 private suspend fun <T> Flow<T>.firstValue(): T = first()
 

@@ -2,13 +2,19 @@ package com.nanobotkt.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,30 +25,161 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nanobotkt.core.model.RuntimeSurface
+import com.nanobotkt.core.network.GatewayServerAddressError
+import com.nanobotkt.core.network.GatewayServerAddressResult
+import com.nanobotkt.core.network.normalizeGatewayServerAddress
 
 /** System、Security、Image、Voice 与 Web 等能力页。 */
 @Composable
-internal fun SystemPage(state: SettingsUiState, viewModel: SettingsViewModel) {
+internal fun SystemPage(
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+    connectionStatus: String,
+    gatewayEndpoint: String,
+    serverSwitching: Boolean,
+    serverSwitchFeedback: String?,
+    serverSwitchSucceeded: Boolean,
+    onReconnect: () -> Unit,
+    onSwitchServer: (serverUrl: String, secret: String) -> Unit,
+) {
     val payload = state.payload
     val service = state.apiService
+    // Gateway 地址与 Secret 是一次性的候选认证输入，不属于服务端 Settings payload。
+    // 特别是 Secret 只能保存在当前 Composable 内存中：禁止 rememberSaveable，避免页面
+    // 重建、进程恢复或 SavedStateHandle 把敏感值带回来。
+    var serverAddress by remember(gatewayEndpoint) {
+        mutableStateOf(gatewayEndpoint.trim().trimEnd('/'))
+    }
+    var bootstrapSecret by remember { mutableStateOf("") }
+    var editedSinceSubmit by remember { mutableStateOf(false) }
+    val normalizedAddress = normalizeGatewayServerAddress(serverAddress)
+    val canSubmit = canSubmitServerSwitch(serverAddress, bootstrapSecret, serverSwitching)
 
-    SettingsGroup("Runtime") {
+    // 成功激活后清空本次 Secret，并让地址框跟随 app 组合根发布的新真实入口。
+    // serverSwitchSucceeded 参与 key，确保“切回相同端点”时即使 URL 未变化也会清空 Secret。
+    LaunchedEffect(serverSwitchSucceeded, gatewayEndpoint) {
+        if (serverSwitchSucceeded) {
+            serverAddress = gatewayEndpoint.trim().trimEnd('/')
+            bootstrapSecret = ""
+            editedSinceSubmit = false
+        }
+    }
+
+    SettingsGroup("Server connection") {
         SettingsRow(
             icon = Icons.Outlined.Dns,
-            title = "Gateway",
-            subtitle = if (payload == null) "Not connected" else "Ready",
-            value =
-                payload?.runtime?.let {
-                    if (it.gatewayHost.isNotBlank() && it.gatewayPort > 0)
-                        "${it.gatewayHost}:${it.gatewayPort}"
-                    else "Unavailable"
-                } ?: "Unavailable",
+            title = "Current Gateway",
+            subtitle = connectionStatus,
+            // runtime.gatewayHost/runtime.gatewayPort 是服务端自身的监听地址，可能是
+            // Android 无法访问的 loopback。此处只能展示 app 正在使用的客户端入口。
+            value = gatewayEndpointLabel(gatewayEndpoint),
             showChevron = false,
         )
         CardDivider()
+        FormSettingRow(
+            title = "Server address",
+            description = "Enter the complete HTTP or HTTPS base address. Reverse-proxy paths are supported.",
+        ) {
+            PillTextField(
+                value = serverAddress,
+                onValueChange = {
+                    serverAddress = it
+                    editedSinceSubmit = true
+                },
+                placeholder = "http://192.168.55.147:8765",
+            )
+            val addressError = (normalizedAddress as? GatewayServerAddressResult.Invalid)
+                ?.error
+                ?.takeUnless { it == GatewayServerAddressError.EMPTY }
+            if (addressError != null) {
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    text = addressError.serverAddressMessage(),
+                    color = Color(0xFFB54848),
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+        }
+        CardDivider()
+        FormSettingRow(
+            title = "Bootstrap Secret",
+            description = "Required for every switch. The Secret saved for the current server is never reused.",
+        ) {
+            PillTextField(
+                value = bootstrapSecret,
+                onValueChange = {
+                    bootstrapSecret = it
+                    editedSinceSubmit = true
+                },
+                placeholder = "Enter the Secret for this server",
+                isSecret = true,
+            )
+        }
+        CardDivider()
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+            val visibleFeedback = serverSwitchFeedback?.takeIf { !editedSinceSubmit }
+            Text(
+                text = visibleFeedback
+                    ?: "The current connection stays active until the candidate server is validated.",
+                color = when {
+                    visibleFeedback == null -> SecondaryText
+                    serverSwitchSucceeded -> if (settingsDark) Color(0xFF8FD3A8) else Color(0xFF287A45)
+                    else -> Color(0xFFB54848)
+                },
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            // 两个操作纵向排列，避免小屏幕、较大字体或较长本地化文案把横向按钮挤出卡片。
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Button(
+                    onClick = {
+                        val candidate = normalizedAddress as? GatewayServerAddressResult.Valid
+                            ?: return@Button
+                        editedSinceSubmit = false
+                        onSwitchServer(candidate.url, bootstrapSecret)
+                    },
+                    enabled = canSubmit,
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = PrimaryText,
+                            contentColor = PageBackground,
+                            disabledContainerColor = DividerColor,
+                            disabledContentColor = SecondaryText,
+                        ),
+                ) {
+                    if (serverSwitching) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 1.5.dp,
+                            color = PageBackground,
+                        )
+                        Spacer(Modifier.size(8.dp))
+                    }
+                    Text(if (serverSwitching) "Validating" else "Validate and switch", fontSize = 12.sp)
+                }
+                OutlinePillButton(
+                    text = "Reconnect current",
+                    onClick = onReconnect,
+                    enabled = !serverSwitching,
+                    icon = Icons.Outlined.Sync,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+
+    GroupSpacer()
+    SettingsGroup("Runtime") {
         SettingsRow(
             icon = Icons.Outlined.FolderOpen,
             title = "Workspace",
@@ -69,6 +206,33 @@ internal fun SystemPage(state: SettingsUiState, viewModel: SettingsViewModel) {
             )
         }
     }
+}
+
+/**
+ * 服务器切换按钮的纯状态规则。
+ *
+ * Secret 只判断是否为空，不做 trim 后再提交，避免无意改变用户真实凭据；地址则统一复用
+ * core:network 的严格规则，确保 Settings 与登录页不会接受两套不同格式。
+ */
+internal fun canSubmitServerSwitch(
+    serverAddress: String,
+    bootstrapSecret: String,
+    switching: Boolean,
+): Boolean =
+    !switching &&
+        bootstrapSecret.isNotBlank() &&
+        normalizeGatewayServerAddress(serverAddress) is GatewayServerAddressResult.Valid
+
+/** 将稳定的网络层错误映射为 Settings 页面提示，避免向用户暴露解析库异常文本。 */
+private fun GatewayServerAddressError.serverAddressMessage(): String = when (this) {
+    GatewayServerAddressError.EMPTY -> "Enter a server address."
+    GatewayServerAddressError.MISSING_SCHEME -> "Include http:// or https:// in the address."
+    GatewayServerAddressError.UNSUPPORTED_SCHEME -> "Only http:// and https:// addresses are supported."
+    GatewayServerAddressError.INVALID_URL -> "Enter a valid server address."
+    GatewayServerAddressError.MISSING_HOST -> "The server address must include a host."
+    GatewayServerAddressError.EMBEDDED_CREDENTIALS -> "Do not include a username or password in the address."
+    GatewayServerAddressError.QUERY_NOT_ALLOWED -> "Remove the query string from the server address."
+    GatewayServerAddressError.FRAGMENT_NOT_ALLOWED -> "Remove the fragment from the server address."
 }
 
 @Composable

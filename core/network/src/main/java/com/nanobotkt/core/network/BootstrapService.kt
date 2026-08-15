@@ -50,19 +50,18 @@ class BootstrapService @Inject constructor(
     }
 
     fun deriveWebSocketUrl(baseUrl: String, payload: BootstrapResponse): String {
-        // OkHttp's HttpUrl only accepts http/https schemes (the WebSocket upgrade
-        // is handled transparently), so map ws/wss back to http/https.
-        val base = payload.wsUrl?.takeIf { url ->
-            url.startsWith("ws://", ignoreCase = true) || url.startsWith("wss://", ignoreCase = true)
-        }?.let { wsUrl ->
-            val secure = wsUrl.startsWith("wss://", ignoreCase = true)
-            wsUrl.replaceFirst(if (secure) "wss" else "ws", if (secure) "https" else "http", ignoreCase = true)
-        } ?: run {
-            val http = baseUrl.toHttpUrl()
-            http.newBuilder()
-                .encodedPath(if (payload.wsPath.startsWith('/')) payload.wsPath else "/${payload.wsPath}")
-                .build().toString()
-        }
-        return base.toHttpUrl().newBuilder().addQueryParameter("token", payload.token).build().toString()
+        // WebSocket 必须与 HTTP/Bootstrap 使用同一个用户已选择的 origin。服务端返回的
+        // ws_url 可能包含 127.0.0.1、容器地址或其他仅服务端可见的监听主机，因此客户端
+        // 绝不能直接采用它的 scheme/host/port；只使用 Bootstrap 明确下发的 ws_path 与 token。
+        // OkHttp 使用 http/https URL 发起 WebSocket upgrade，所以无需手动转换为 ws/wss。
+        val path = if (payload.wsPath.startsWith('/')) payload.wsPath else "/${payload.wsPath}"
+        return baseUrl.toHttpUrl()
+            .newBuilder()
+            .encodedPath(path)
+            .query(null)
+            .fragment(null)
+            .addQueryParameter("token", payload.token)
+            .build()
+            .toString()
     }
 }

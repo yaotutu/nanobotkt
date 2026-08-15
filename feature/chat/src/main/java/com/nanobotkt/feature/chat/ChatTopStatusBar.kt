@@ -17,7 +17,8 @@ import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.DropdownMenu
@@ -38,8 +39,8 @@ import androidx.compose.ui.unit.dp
 /**
  * 聊天首页唯一的顶部常驻区域。
  *
- * 左侧严格保留全局导航；中间只展示会话身份、真实运行状态和本地 Queue；右侧菜单只承载
- * 当前会话配置。会话生命周期、附件和全局设置不会在这里重复出现。
+ * 左侧设置按钮直接进入统一控制中心；中间只展示会话身份、真实运行状态和本地 Queue；右侧
+ * “新话题”和更多菜单分别承载会话创建与当前会话配置，避免再次引入隐藏的全局抽屉。
  */
 @Composable
 internal fun ChatTopStatusBar(
@@ -51,7 +52,8 @@ internal fun ChatTopStatusBar(
     hasPromptNavigator: Boolean,
     hasSessionInfo: Boolean,
     hasAccessSettings: Boolean,
-    onOpenDrawer: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onNewConversation: () -> Unit,
     onQueueOpenChange: (Boolean) -> Unit,
     onConfigMenuOpenChange: (Boolean) -> Unit,
     onRemoveQueuedPrompt: (String) -> Unit,
@@ -73,10 +75,10 @@ internal fun ChatTopStatusBar(
                 .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onOpenDrawer, modifier = Modifier.size(48.dp)) {
+        IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
             Icon(
-                Icons.Rounded.Menu,
-                contentDescription = stringResource(R.string.open_navigation),
+                Icons.Rounded.Settings,
+                contentDescription = stringResource(R.string.open_settings),
                 modifier = Modifier.size(20.dp),
                 tint = muted,
             )
@@ -103,6 +105,16 @@ internal fun ChatTopStatusBar(
                     )
                 }
             }
+        }
+        // 新建会话提升为顶栏一级操作；它与会话列表 Sheet 中的入口复用同一回调，
+        // 因而不会绕过 Root 的 drafting-new-topic 竞态保护。
+        IconButton(onClick = onNewConversation, modifier = Modifier.size(48.dp)) {
+            Icon(
+                Icons.Rounded.Add,
+                contentDescription = stringResource(R.string.new_topic),
+                modifier = Modifier.size(22.dp),
+                tint = muted,
+            )
         }
         Box {
             IconButton(onClick = { onConfigMenuOpenChange(true) }, modifier = Modifier.size(48.dp)) {

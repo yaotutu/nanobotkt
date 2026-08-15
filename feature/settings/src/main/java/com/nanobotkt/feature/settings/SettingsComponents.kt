@@ -911,10 +911,11 @@ internal fun OutlinePillButton(
     onClick: () -> Unit,
     enabled: Boolean = true,
     icon: ImageVector? = null,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier =
-            Modifier.clip(RoundedCornerShape(50)).clickable(enabled = enabled, onClick = onClick),
+            modifier.clip(RoundedCornerShape(50)).clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(50),
         color = Color.Transparent,
         border = BorderStroke(1.dp, DividerColor),

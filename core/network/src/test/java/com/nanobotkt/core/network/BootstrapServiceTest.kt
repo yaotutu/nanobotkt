@@ -172,18 +172,20 @@ class BootstrapServiceTest {
     }
 
     @Test
-    fun `derive websocket url encodes token and maps websocket scheme`() {
+    fun `derive websocket url keeps selected origin and ignores bootstrap internal host`() {
         val payload = BootstrapResponse(
             token = "a token&value",
             apiToken = "api",
-            wsPath = "/ignored",
-            wsUrl = "wss://gateway.example/ws/socket",
+            wsPath = "/ws/socket",
+            wsUrl = "wss://127.0.0.1:18790/internal-socket",
             expiresIn = 60,
         )
 
-        val result = service().deriveWebSocketUrl("http://localhost:8765", payload)
+        val result = service().deriveWebSocketUrl("https://gateway.example:8765/proxy", payload)
 
-        assertEquals("https://gateway.example/ws/socket?token=a%20token%26value", result)
+        // 服务端内部 ws_url 只能作为兼容字段保留在模型中；客户端连接 origin 必须来自
+        // 用户选择的 Gateway，路径和 token 则由本次 Bootstrap 响应决定。
+        assertEquals("https://gateway.example:8765/ws/socket?token=a%20token%26value", result)
     }
 
     @Test
