@@ -25,7 +25,6 @@
 每次开始任务都必须先执行：
 
 ```bash
-cat docs/HANDOFF.md
 git status --short
 git log -1 --oneline --decorate
 git rev-parse HEAD
@@ -34,7 +33,6 @@ git rev-parse origin/main
 
 执行原则：
 
-- `docs/HANDOFF.md` 只提供背景、历史验证和交接信息；实时 Git 输出优先。
 - 先识别工作区已有修改、未跟踪文件和它们可能的来源，再开始编辑。
 - 不覆盖、回退、删除或格式化用户、其他 Agent 或上一阶段留下的未知修改。
 - 明确本轮任务边界。用户要求完成当前阶段后停止时，不要未经确认扩展到下一阶段。
@@ -47,7 +45,7 @@ git rev-parse origin/main
 ### 3.1 参考优先级
 
 - 官方 Nanobot WebUI 是 UI、交互和数据语义的主要参考。
-- 修改 UI、消息行为、Sidebar、Settings 或会话状态前，优先阅读 `docs/HANDOFF.md` 中记录的上游路径、参考提交和已验证行为。
+- 修改 UI、消息行为、Sidebar、Settings 或会话状态前，优先阅读现有源码、测试和相关文档中的上游路径、参考提交与已验证行为。
 - 不要仅凭截图重新设计交互。若上游源码、真实行为和截图不一致，以源码和真实行为为准，并说明差异。
 - 不要把局部专项验证描述为“整个应用已经全部测试完成”；最终汇总必须明确验证范围。
 
