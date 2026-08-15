@@ -1,15 +1,18 @@
 # NanobotKT 0.1.3
 
-> 自动构建发布，提交：`6f5860b`。
+> 自动构建发布，提交：`4d76f3f`。
 
 ## 变更
 
+- Merge remote-tracking branch 'origin/dev' into dev (`4d76f3f`)
+- chore(dev): prepare v0.1.3 (`428a2cd`)
 - Merge remote-tracking branch 'origin/main' into dev (`6f5860b`)
 - ci: prepare versions locally before release (`2cf584b`)
 - merge: integrate settings control center into dev (`2b68bd2`)
 - merge: integrate chat page redesign into dev (`c948cc0`)
 - feat(chat): redesign message timeline and composer (`421d023`)
 - feat(settings): unify settings and support gateway switching (`014e2dc`)
+- chore(dev): prepare v0.1.2 (`00bb2b9`)
 - merge: conversation bottom sheet (`45d2d9d`)
 - feat(chat): move conversations into bottom sheet (`728c147`)
 - chore(release): prepare v0.1.2 (`621e6e8`)
