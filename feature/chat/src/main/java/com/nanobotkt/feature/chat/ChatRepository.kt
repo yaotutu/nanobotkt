@@ -34,6 +34,7 @@ import com.nanobotkt.core.transport.TransportError
 import com.nanobotkt.core.transport.TransportStatus
 import com.nanobotkt.core.workspace.WorkspaceAccessProvider
 import java.net.URLEncoder
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -170,8 +171,13 @@ class DefaultChatRepository @Inject constructor(
     private var runtimeModelName: String? = null
     private var turnModelName: String? = null
     override val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
-    /** 文件预览请求代次；同一会话内的新请求也必须淘汰旧响应。 */
-    private var filePreviewGeneration = 0L
+    /**
+     * 文件预览请求代次；同一会话内的新请求也必须淘汰旧响应。
+     *
+     * 入口通常由主线程调用，HTTP 回调则运行在 IO 线程。这里必须使用原子计数器保证
+     * 自增和可见性，否则新请求的回调偶尔会读到旧代次，错误地丢弃当前文件预览。
+     */
+    private val filePreviewGeneration = AtomicLong(0L)
 
     init {
         scope.launch { refreshComposerCatalogs() }
@@ -206,7 +212,7 @@ class DefaultChatRepository @Inject constructor(
     override fun reset() {
         // 退出登录时必须同时清理服务端会话标识、规范化消息和所有乐观消息，
         // 同时淘汰所有在途文件预览响应，避免旧账号内容回写到新登录会话。
-        filePreviewGeneration += 1
+        filePreviewGeneration.incrementAndGet()
         // 否则下一次登录可能短暂复用上一个账号的聊天内容。
         activeSessionModelPreset = null
         localModelSelection = null
@@ -222,7 +228,7 @@ class DefaultChatRepository @Inject constructor(
     }
 
     override fun startNewTopic() {
-        filePreviewGeneration += 1
+        filePreviewGeneration.incrementAndGet()
         val catalogs = mutableState.value
         activeSessionModelPreset = null
         turnModelName = null
@@ -244,7 +250,7 @@ class DefaultChatRepository @Inject constructor(
     }
 
     override fun openSession(sessionKey: String, chatId: String, workspaceScope: WorkspaceScope?, modelPreset: String?) {
-        filePreviewGeneration += 1
+        filePreviewGeneration.incrementAndGet()
         val current = mutableState.value
         if (current.sessionKey == sessionKey && current.chatId == chatId) {
             activeSessionModelPreset = modelPreset
@@ -605,7 +611,7 @@ class DefaultChatRepository @Inject constructor(
 
         // 捕获请求发起时的完整身份和代次。用户切换会话、重新打开同一会话，
         // 或在同一会话中点击另一个文件后，迟到的旧响应都不能回写当前预览。
-        val requestGeneration = ++filePreviewGeneration
+        val requestGeneration = filePreviewGeneration.incrementAndGet()
         mutableState.value = mutableState.value.copy(
             filePreview = null,
             filePreviewLoading = true,
@@ -619,7 +625,7 @@ class DefaultChatRepository @Inject constructor(
                     query = mapOf("path" to path),
                 )
             }.onSuccess { preview ->
-                if (filePreviewGeneration == requestGeneration && mutableState.value.sessionKey == requestSessionKey) {
+                if (filePreviewGeneration.get() == requestGeneration && mutableState.value.sessionKey == requestSessionKey) {
                     mutableState.value = mutableState.value.copy(
                         filePreview = preview,
                         filePreviewLoading = false,
@@ -627,7 +633,7 @@ class DefaultChatRepository @Inject constructor(
                     )
                 }
             }.onFailure { error ->
-                if (filePreviewGeneration == requestGeneration && mutableState.value.sessionKey == requestSessionKey) {
+                if (filePreviewGeneration.get() == requestGeneration && mutableState.value.sessionKey == requestSessionKey) {
                     mutableState.value = mutableState.value.copy(
                         filePreview = null,
                         filePreviewLoading = false,
@@ -639,7 +645,7 @@ class DefaultChatRepository @Inject constructor(
     }
 
     override fun clearFilePreview() {
-        filePreviewGeneration += 1
+        filePreviewGeneration.incrementAndGet()
         mutableState.value = mutableState.value.copy(
             filePreview = null,
             filePreviewLoading = false,
