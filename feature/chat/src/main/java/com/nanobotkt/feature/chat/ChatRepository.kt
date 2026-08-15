@@ -69,6 +69,11 @@ interface ChatRepository {
     fun loadFilePreview(path: String)
     /** 关闭预览并清理可能已经过期的加载错误。 */
     fun clearFilePreview()
+    /**
+     * 把历史消息中的相对媒体路径解析为可加载地址。默认实现原样返回，测试 Fake 无需感知网络；
+     * 生产 Repository 会补齐当前 Gateway origin，但不会把 Token 拼入 URL。
+     */
+    fun resolveMediaUrl(url: String): String = url
     fun clearError()
 }
 
@@ -525,6 +530,9 @@ class DefaultChatRepository @Inject constructor(
             filePreviewError = null,
         )
     }
+
+    /** 媒体 URL 解析委托给共享网络客户端，确保与当前登录会话实际 baseUrl 保持一致。 */
+    override fun resolveMediaUrl(url: String): String = api.resolveUrl(url)
 
     override fun clearError() {
         mutableState.value = mutableState.value.copy(

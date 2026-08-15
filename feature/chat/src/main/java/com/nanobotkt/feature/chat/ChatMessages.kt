@@ -1,68 +1,46 @@
 package com.nanobotkt.feature.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.CallSplit
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.FilePreviewPayload
-import com.nanobotkt.core.model.UiMessage
 
-/** 消息列表、消息气泡与文件预览；只负责渲染消息相关状态和转发事件。 */
+/** 消息列表只负责编排时间轴单元；具体消息、Activity 和媒体分别由独立组件渲染。 */
 @Composable
 internal fun MessageList(
-    listState: androidx.compose.foundation.lazy.LazyListState,
+    listState: LazyListState,
     state: ChatUiState,
+    timelineItems: List<ChatTimelineItem>,
     loadOlder: () -> Unit,
     onQuote: (String) -> Unit,
     onPreview: (String) -> Unit,
     onFork: (String, Int) -> Unit,
+    resolveMediaUrl: (String) -> String,
     modifier: Modifier = Modifier,
     autoFollow: Boolean = true,
 ) {
@@ -70,253 +48,155 @@ internal fun MessageList(
         remember(state.messages, state.userMessageOffset) {
             assistantForkIndexes(state.messages, state.userMessageOffset)
         }
-    LaunchedEffect(state.messages.size) {
-        if (autoFollow && state.messages.isNotEmpty())
-            listState.animateScrollToItem(state.messages.lastIndex)
+    val tailSignature = remember(state.messages) { timelineTailSignature(state.messages) }
+    val timelineStartIndex = if (state.hasMoreBefore) 1 else 0
+
+    LaunchedEffect(tailSignature, autoFollow, timelineItems.lastOrNull()?.key) {
+        // 只观察尾消息签名，不观察列表总长度：加载更早历史只会在头部插入，不应把用户从顶部
+        // 强制拉回底部。新消息、流式正文和工具状态都会改变尾签名，因此在 autoFollow=true 时跟随。
+        if (autoFollow && timelineItems.isNotEmpty()) {
+            listState.scrollToTimelineBottom(timelineStartIndex + timelineItems.lastIndex)
+        }
     }
+
     LazyColumn(
         state = listState,
         modifier = modifier,
         contentPadding =
             PaddingValues(
                 start = NanobotThemeDefaults.spacing.sm,
-                top = NanobotThemeDefaults.spacing.lg,
+                top = NanobotThemeDefaults.spacing.md,
                 end = NanobotThemeDefaults.spacing.sm,
-                // Composer 已经是 Column 的独立底部区域，这里只保留消息与边界的呼吸空间。
+                // Composer 是独立底部区域，这里只保留消息与输入框之间的呼吸空间。
                 bottom = NanobotThemeDefaults.spacing.md,
             ),
-        verticalArrangement = Arrangement.spacedBy(NanobotThemeDefaults.spacing.md),
+        // 不再用统一 spacedBy：用户回合、Activity 与 Assistant 正文属于不同层级，
+        // 必须根据相邻类型决定间距，才能避免短对话被机械地拉成多张卡片。
+        verticalArrangement = Arrangement.Top,
     ) {
         if (state.hasMoreBefore) {
-            item {
+            item(key = "load-older") {
                 TextButton(
                     onClick = loadOlder,
                     enabled = !state.loadingOlder,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    if (state.loadingOlder)
+                    if (state.loadingOlder) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text(stringResource(R.string.load_older))
+                    } else {
+                        Text(stringResource(R.string.load_older))
+                    }
                 }
             }
         }
-        itemsIndexed(state.messages, key = { _, message -> message.id }) { index, message ->
-            MessageBubble(
-                message = message,
-                forkIndex = forkIndexes.getOrNull(index),
-                onQuote = { onQuote(message.content) },
-                onPreview = onPreview,
-                onFork = { forkIndexes.getOrNull(index)?.let { onFork(message.id, it) } },
-            )
+
+        itemsIndexed(timelineItems, key = { _, item -> item.key }) { index, item ->
+            val previous = timelineItems.getOrNull(index - 1)
+            Box(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .padding(top = timelineItemTopSpacing(previous = previous, current = item))
+            ) {
+                when (item) {
+                    is ChatTimelineItem.UserMessage ->
+                        UserTimelineMessage(
+                            message = item.message,
+                            resolveUrl = resolveMediaUrl,
+                        )
+
+                    is ChatTimelineItem.AssistantMessage -> {
+                        val forkIndex = forkIndexes.getOrNull(item.originalIndex)
+                        AssistantTimelineMessage(
+                            message = item.message,
+                            forkIndex = forkIndex,
+                            resolveUrl = resolveMediaUrl,
+                            onQuote = { onQuote(item.message.content) },
+                            onFork = {
+                                forkIndex?.let { onFork(item.message.id, it) }
+                            },
+                        )
+                    }
+
+                    is ChatTimelineItem.AgentActivity ->
+                        AgentActivityCluster(item = item, onPreview = onPreview)
+
+                    is ChatTimelineItem.Marker -> TimelineMarker(item)
+                }
+            }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/**
+ * 计算相邻时间轴单元之间的层级间距。
+ *
+ * 用户消息代表新回合，和上一轮保持 24dp；同一回合内的过程摘要与回答只保留 8–12dp。
+ * 这种规则比全列表统一 16dp 更能表达“一个回合是一个整体”。
+ */
+private fun timelineItemTopSpacing(
+    previous: ChatTimelineItem?,
+    current: ChatTimelineItem,
+): Dp =
+    when {
+        previous == null -> 0.dp
+        current is ChatTimelineItem.UserMessage -> 24.dp
+        current is ChatTimelineItem.Marker || previous is ChatTimelineItem.Marker -> 16.dp
+        previous is ChatTimelineItem.UserMessage -> 12.dp
+        previous is ChatTimelineItem.AgentActivity && current is ChatTimelineItem.AssistantMessage -> 8.dp
+        previous is ChatTimelineItem.AssistantMessage && current is ChatTimelineItem.AgentActivity -> 8.dp
+        else -> 12.dp
+    }
+
+/**
+ * 将消息列表定位到真实内容尾部，而不是只把最后一个时间轴单元的顶部对齐到视口顶部。
+ *
+ * Assistant 正文、Reasoning 或文件 Diff 可能高于一整屏。若只调用 `scrollToItem(lastIndex)`，
+ * Compose 会停在最后一个单元的开头，界面仍然可以继续向下滚动，“新消息”按钮也不会消失。
+ * 使用最大正偏移让 LazyColumn 在测量时把请求裁剪到可滚动上限，因而无论最后一个单元多高，
+ * 都会稳定落在时间轴真正的底部。这里使用立即跳转而不是长距离动画，避免超长会话产生持续动画，
+ * 也避免流式 delta 高频到达时积压多个滚动动画。
+ */
+internal suspend fun LazyListState.scrollToTimelineBottom(lastIndex: Int) {
+    if (lastIndex < 0) return
+    scrollToItem(index = lastIndex, scrollOffset = Int.MAX_VALUE)
+}
+
+/** 未知角色的真实记录使用居中小标记，避免被误认成 assistant 回答。 */
 @Composable
-internal fun MessageBubble(
-    message: UiMessage,
-    forkIndex: Int?,
-    onQuote: () -> Unit,
-    onPreview: (String) -> Unit,
-    onFork: () -> Unit,
-) {
-    val user = message.role == "user"
-    val textColor = MaterialTheme.colorScheme.onSurface
-    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
-    // 用户消息使用 primaryContainer，助手消息保持页面背景，阅读层级更接近 MD3 的 tonal surface。
-    val userBubbleColor = MaterialTheme.colorScheme.primaryContainer
-    val userTextColor = MaterialTheme.colorScheme.onPrimaryContainer
-    val context = LocalContext.current
-    val clipboard = remember(context) { context.getSystemService(ClipboardManager::class.java) }
-    val copyText: (String) -> Boolean = { text ->
-        clipboard?.let {
-            runCatching { it.setPrimaryClip(ClipData.newPlainText("message", text)) }.isSuccess
-        } ?: false
-    }
-    var copied by remember(message.id) { mutableStateOf(false) }
-    var reasoningOpen by remember(message.id) { mutableStateOf(false) }
-    LaunchedEffect(copied) {
-        if (copied) {
-            kotlinx.coroutines.delay(1_500L)
-            copied = false
-        }
-    }
-    val elapsedMs =
-        message.latencyMs ?: message.completedAt?.minus(message.createdAt)?.coerceAtLeast(0L)
-
-    if (user) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Column(horizontalAlignment = Alignment.End) {
-                Surface(
-                    modifier =
-                        Modifier.widthIn(min = 54.dp, max = 320.dp)
-                            .combinedClickable(
-                                onClick = {},
-                                onLongClick = { copyText(message.content) },
-                            ),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = userBubbleColor,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = message.content,
-                            color = userTextColor,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                IconButton(
-                    onClick = { copyText(message.content) },
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(
-                        Icons.Rounded.ContentCopy,
-                        stringResource(R.string.copy),
-                        modifier = Modifier.size(17.dp),
-                        tint = mutedColor,
-                    )
-                }
-            }
-        }
-        return
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = {}, onLongClick = onQuote)
+private fun TimelineMarker(item: ChatTimelineItem.Marker) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        shape = MaterialTheme.shapes.medium,
     ) {
-        val reasoning = message.reasoning
-        if (!reasoning.isNullOrBlank()) {
-            Row(
-                modifier =
-                    Modifier.height(28.dp)
-                        .combinedClickable(
-                            onClick = { reasoningOpen = !reasoningOpen },
-                            onLongClick = {},
-                        ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text =
-                        when {
-                            message.reasoningStreaming == true -> "Thinking…"
-                            elapsedMs != null ->
-                                "Thought for ${(elapsedMs / 1_000L).coerceAtLeast(1L)}s"
-                            else -> "Thought"
-                        },
-                    color = mutedColor,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Icon(
-                    Icons.Rounded.ExpandMore,
-                    contentDescription = null,
-                    modifier = Modifier.padding(start = 3.dp).size(13.dp),
-                    tint = mutedColor,
-                )
-            }
-            AnimatedVisibility(reasoningOpen) {
-                Text(
-                    text = reasoning,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
-                    color = mutedColor,
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp),
-                )
-            }
-            Spacer(Modifier.height(22.dp))
-        }
-
-        if (message.content.isNotBlank()) {
-            Text(
-                text = message.content,
-                color = textColor,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        }
-        message.toolEvents
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { tools ->
-                Text(
-                    pluralStringResource(R.plurals.tool_count, tools.size, tools.size),
-                    modifier = Modifier.padding(top = 8.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = mutedColor,
-                )
-            }
-        message.fileEdits?.forEach { edit ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    "${edit.path}  +${edit.added} -${edit.deleted}",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                TextButton(
-                    onClick = { onPreview(edit.absolutePath ?: edit.path) },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                ) {
-                    Text(stringResource(R.string.file_preview))
-                }
-            }
-        }
-        if (message.isStreaming == true) {
-            CircularProgressIndicator(
-                modifier = Modifier.padding(top = 8.dp).size(14.dp),
-                strokeWidth = 1.5.dp,
-                color = mutedColor,
-            )
-        }
-        if (message.isStreaming != true && message.content.isNotBlank()) {
-            Row(
-                modifier = Modifier.padding(top = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                val copyLabel = stringResource(if (copied) R.string.copied else R.string.copy)
-                IconButton(
-                    onClick = { if (copyText(message.content)) copied = true },
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(
-                        imageVector =
-                            if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                        contentDescription = copyLabel,
-                        modifier = Modifier.size(17.dp),
-                        tint = mutedColor,
-                    )
-                }
-                if (forkIndex != null) {
-                    IconButton(onClick = onFork, modifier = Modifier.size(40.dp)) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.CallSplit,
-                            stringResource(R.string.fork),
-                            modifier = Modifier.size(18.dp),
-                            tint = mutedColor,
-                        )
-                    }
-                }
-                elapsedMs?.let {
-                    Text(
-                        text = formatMessageLatency(it),
-                        modifier = Modifier.padding(start = 8.dp),
-                        color = mutedColor,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-        }
+        Text(
+            text = item.message.content.ifBlank { item.message.role },
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
+}
+
+/**
+ * 生成尾部内容签名。不能直接依赖 messages.size，因为 reasoning delta、tool phase 和 file edit
+ * 更新通常复用同一条消息；也不能使用整列表 hashCode，否则加载更早历史会误触发回到底部。
+ */
+private fun timelineTailSignature(messages: List<com.nanobotkt.core.model.UiMessage>): Int? {
+    val tail = messages.lastOrNull() ?: return null
+    return listOf(
+        tail.id,
+        tail.content.length,
+        tail.content.hashCode(),
+        tail.reasoning?.length,
+        tail.reasoning?.hashCode(),
+        tail.reasoningStreaming,
+        tail.isStreaming,
+        tail.toolEvents?.map { listOf(it.callId, it.phase, it.error?.hashCode(), it.result?.hashCode()) },
+        tail.fileEdits?.map { listOf(it.callId, it.path, it.status, it.added, it.deleted, it.error) },
+        tail.media?.size,
+        tail.images?.size,
+    ).hashCode()
 }
 
 @Composable
@@ -351,18 +231,26 @@ internal fun FilePreviewDialog(
                             fontWeight = FontWeight.Medium,
                         )
                         Text(
-                            stringResource(R.string.file_preview_language, preview.language),
+                            stringResource(
+                                R.string.file_preview_language,
+                                preview.language,
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            stringResource(R.string.file_preview_size, preview.size),
+                            stringResource(
+                                R.string.file_preview_size,
+                                preview.size,
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (preview.truncated) {
                             Text(
-                                stringResource(R.string.file_preview_truncated),
+                                stringResource(
+                                    R.string.file_preview_truncated
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.error,
                             )
@@ -381,12 +269,20 @@ internal fun FilePreviewDialog(
                     }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        },
     )
 }
 
 internal fun formatMessageLatency(durationMs: Long): String {
     if (durationMs < 1_000L) return "${durationMs.coerceAtLeast(0L)}ms"
     val tenths = (durationMs.coerceAtLeast(0L) + 50L) / 100L
-    return if (tenths % 10L == 0L) "${tenths / 10L}s" else "${tenths / 10L}.${tenths % 10L}s"
+    return if (tenths % 10L == 0L) {
+        "${tenths / 10L}s"
+    } else {
+        "${tenths / 10L}.${tenths % 10L}s"
+    }
 }

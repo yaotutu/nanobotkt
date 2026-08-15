@@ -549,6 +549,9 @@ constructor(
 
     fun closeFilePreview() = repository.clearFilePreview()
 
+    /** Compose 只获得无凭据的绝对媒体地址，不直接依赖 AuthContext 或网络客户端。 */
+    fun resolveMediaUrl(url: String): String = repository.resolveMediaUrl(url)
+
     val loadSessionAutomations: suspend (String) -> List<SessionAutomationJob> =
         repository::loadSessionAutomations
 

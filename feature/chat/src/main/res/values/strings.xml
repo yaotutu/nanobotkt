@@ -8,9 +8,11 @@
     <string name="chat_status_running">Running</string>
     <string name="chat_status_reconnecting">Reconnecting</string>
     <string name="chat_status_failed">Failed</string>
-    <string name="jump_to_latest_messages">New messages</string>
+    <string name="jump_to_latest_messages">Scroll to latest message</string>
+    <string name="jump_to_latest_messages_with_count">%1$d new messages. Scroll to latest.</string>
     <string name="open_conversation_list">Open conversations</string>
     <string name="conversation_list_title">Conversations</string>
+    <string name="conversation_button_label">Chats</string>
     <string name="conversation_archived_title">Archived</string>
     <string name="conversation_unarchive">Unarchive</string>
     <string name="conversation_search_hint">Search conversations</string>
@@ -160,4 +162,40 @@
         <item quantity="one">%1$d second</item>
         <item quantity="other">%1$d seconds</item>
     </plurals>
+
+    <!-- Message timeline and Agent Activity labels. -->
+    <string name="activity_expand">Expand agent activity</string>
+    <string name="activity_collapse">Collapse agent activity</string>
+    <string name="activity_tool">Tool</string>
+    <string name="activity_cli">CLI app</string>
+    <string name="activity_mcp">MCP</string>
+    <string name="activity_step">Step</string>
+    <string name="activity_completed">Completed</string>
+    <string name="activity_in_progress">Preparing the next step…</string>
+    <plurals name="activity_running_count">
+        <item quantity="one">Running %1$d step</item>
+        <item quantity="other">Running %1$d steps</item>
+    </plurals>
+    <plurals name="activity_completed_count">
+        <item quantity="one">Completed %1$d step</item>
+        <item quantity="other">Completed %1$d steps</item>
+    </plurals>
+    <plurals name="activity_failed_count">
+        <item quantity="one">Failed at %1$d step</item>
+        <item quantity="other">Failed across %1$d steps</item>
+    </plurals>
+    <plurals name="activity_waiting_count">
+        <item quantity="one">Waiting for you · %1$d step</item>
+        <item quantity="other">Waiting for you · %1$d steps</item>
+    </plurals>
+    <string name="activity_status_with_duration">%1$s · %2$s</string>
+    <string name="file_diff_show_more">Show more</string>
+    <string name="file_diff_show_less">Show less</string>
+    <string name="file_diff_truncated">Diff truncated by the server.</string>
+    <string name="media_image">Image</string>
+    <string name="media_image_load_failed">Could not load image</string>
+    <string name="media_video">Video</string>
+    <string name="media_audio">Audio</string>
+    <string name="media_file">File</string>
+    <string name="automation_source">Automation · %1$s</string>
 </resources>

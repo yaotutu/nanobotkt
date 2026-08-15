@@ -1,4 +1,4 @@
-﻿package com.nanobotkt.core.network
+package com.nanobotkt.core.network
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -71,6 +71,27 @@ class GatewayApiClientTest {
         client().get<TestPayload>("/api/items")
 
         assertNull(server.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test
+    fun `resolve url joins relative media paths and preserves complete uri schemes`() {
+        val client = client()
+        val baseUrl = auth.baseUrl.trimEnd('/')
+
+        // Gateway 历史既可能返回根相对路径，也可能返回不带斜杠的相对路径；两者都必须
+        // 使用当前认证上下文的 origin 补齐，且绝不能把 API Token 拼进媒体地址。
+        assertEquals("$baseUrl/api/media/a.png", client.resolveUrl("/api/media/a.png"))
+        assertEquals("$baseUrl/api/media/b.png", client.resolveUrl("api/media/b.png"))
+        assertTrue(client.resolveUrl("/api/media/a.png").contains("api-token").not())
+
+        // 已经可直接消费的 URI 不属于 Gateway 相对路径。大小写协议和首尾空白统一归一化，
+        // 避免系统 Intent 或图片加载器收到无效的前导空格。
+        assertEquals("https://cdn.example/a.png", client.resolveUrl("  https://cdn.example/a.png  "))
+        assertEquals("HTTP://cdn.example/b.png", client.resolveUrl("HTTP://cdn.example/b.png"))
+        assertEquals("data:image/png;base64,abc", client.resolveUrl("data:image/png;base64,abc"))
+        assertEquals("content://media/external/1", client.resolveUrl("content://media/external/1"))
+        assertEquals("file:///tmp/a.png", client.resolveUrl("file:///tmp/a.png"))
+        assertEquals("", client.resolveUrl("   "))
     }
 
     @Test
