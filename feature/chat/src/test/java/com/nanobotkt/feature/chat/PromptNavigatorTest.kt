@@ -8,7 +8,7 @@ import org.junit.Test
 class PromptNavigatorTest {
 
     // -----------------------------------------------------------------------
-    // extractPromptAnchors
+    // Prompt 锚点提取。
     // -----------------------------------------------------------------------
 
     @Test
@@ -38,6 +38,25 @@ class PromptNavigatorTest {
         assertEquals("What is Kotlin?", anchors[0].label)
         assertEquals("What is Kotlin?", anchors[0].preview)
         assertEquals(0, anchors[0].ordinal)
+    }
+
+    @Test
+    fun `failed and queued prompts are excluded while automation prompts remain`() {
+        val messages =
+            listOf(
+                userMessage(id = "normal", content = "Normal"),
+                userMessage(id = "queued", content = "Queued", turnPhase = "queued"),
+                userMessage(id = "failed", content = "Failed", turnPhase = "send_failed"),
+                UiMessage(
+                    id = "automation",
+                    role = "user",
+                    content = "Daily check",
+                    createdAt = 4,
+                    source = com.nanobotkt.core.model.UiMessageSource("automation", "Daily review"),
+                ),
+            )
+
+        assertEquals(listOf("normal", "automation"), extractPromptAnchors(messages).map { it.messageId })
     }
 
     @Test
@@ -76,10 +95,10 @@ class PromptNavigatorTest {
         val messages = listOf(userMessage(id = "u1", content = longText))
         val anchors = extractPromptAnchors(messages)
         assertEquals(1, anchors.size)
-        // label max 80 chars -> 77 + "..."
+        // 标题最多 80 个字符：保留前 77 个字符并追加省略号。
         assertTrue(anchors[0].label.length <= 80)
         assertTrue(anchors[0].label.endsWith("..."))
-        // preview max 320 chars -> 317 + "..."
+        // 预览最多 320 个字符：保留前 317 个字符并追加省略号。
         assertTrue(anchors[0].preview.length <= 320)
         assertTrue(anchors[0].preview.endsWith("..."))
     }
@@ -137,7 +156,7 @@ class PromptNavigatorTest {
     }
 
     // -----------------------------------------------------------------------
-    // filterPrompts
+    // Prompt 搜索过滤。
     // -----------------------------------------------------------------------
 
     @Test
@@ -188,24 +207,27 @@ class PromptNavigatorTest {
     }
 
     // -----------------------------------------------------------------------
-    // helpers
+    // 文本辅助规则。
     // -----------------------------------------------------------------------
 
     private fun userMessage(
         id: String,
         content: String,
         createdAt: Long = 1000000L,
+        turnPhase: String? = null,
     ) = UiMessage(
         id = id,
         role = "user",
         content = content,
         createdAt = createdAt,
+        turnPhase = turnPhase,
     )
 
     private fun assistantMessage(
         id: String,
         content: String,
         createdAt: Long = 1000000L,
+        turnPhase: String? = null,
     ) = UiMessage(
         id = id,
         role = "assistant",

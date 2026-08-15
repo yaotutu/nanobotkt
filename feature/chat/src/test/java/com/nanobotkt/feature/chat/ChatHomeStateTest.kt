@@ -1,41 +1,45 @@
 package com.nanobotkt.feature.chat
 
+import com.nanobotkt.core.model.ToolProgressEvent
+import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.transport.TransportStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatHomeStateTest {
     @Test
-    fun `重连状态优先于活动回合和聊天错误`() {
+    fun `等待确认优先于重连和活动回合`() {
         assertEquals(
-            ChatHeaderStatus.RECONNECTING,
+            ChatHeaderStatus.WAITING_FOR_USER,
             resolveChatHeaderStatus(
                 transportStatus = TransportStatus.RECONNECTING,
-                hasError = true,
+                waitingForUser = true,
                 active = true,
             ),
         )
     }
 
     @Test
-    fun `连接错误优先显示失败`() {
+    fun `连接关闭时显示断开而不是笼统失败`() {
         assertEquals(
-            ChatHeaderStatus.FAILED,
+            ChatHeaderStatus.DISCONNECTED,
             resolveChatHeaderStatus(
                 transportStatus = TransportStatus.ERROR,
-                hasError = false,
+                waitingForUser = false,
                 active = true,
             ),
         )
     }
 
     @Test
-    fun `连接正常时聊天错误优先于运行状态`() {
+    fun `连接正常时等待确认优先于普通运行`() {
         assertEquals(
-            ChatHeaderStatus.FAILED,
+            ChatHeaderStatus.WAITING_FOR_USER,
             resolveChatHeaderStatus(
                 transportStatus = TransportStatus.OPEN,
-                hasError = true,
+                waitingForUser = true,
                 active = true,
             ),
         )
@@ -47,22 +51,48 @@ class ChatHomeStateTest {
             ChatHeaderStatus.RUNNING,
             resolveChatHeaderStatus(
                 transportStatus = TransportStatus.OPEN,
-                hasError = false,
+                waitingForUser = false,
                 active = true,
             ),
         )
     }
 
     @Test
-    fun `无错误无活动回合时显示空闲`() {
+    fun `无临时状态时返回空闲但界面不渲染标签`() {
         assertEquals(
             ChatHeaderStatus.IDLE,
             resolveChatHeaderStatus(
                 transportStatus = TransportStatus.OPEN,
-                hasError = false,
+                waitingForUser = false,
                 active = false,
             ),
         )
+    }
+
+    @Test
+    fun `只从当前活动轮次识别等待确认`() {
+        val historical =
+            UiMessage(
+                id = "old",
+                role = "assistant",
+                content = "",
+                createdAt = 1,
+                turnId = "old-turn",
+                toolEvents = listOf(ToolProgressEvent(phase = "awaiting_confirmation")),
+            )
+        val active =
+            UiMessage(
+                id = "active",
+                role = "assistant",
+                content = "",
+                createdAt = 2,
+                turnId = "active-turn",
+                toolEvents = listOf(ToolProgressEvent(phase = "awaiting_user")),
+            )
+
+        assertTrue(hasWaitingForUserActivity(listOf(historical, active), "active-turn"))
+        assertFalse(hasWaitingForUserActivity(listOf(historical), "active-turn"))
+        assertFalse(hasWaitingForUserActivity(listOf(active), null))
     }
 
     @Test

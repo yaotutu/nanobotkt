@@ -2,7 +2,10 @@ package com.nanobotkt.feature.chat
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,165 +13,316 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.CallSplit
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nanobotkt.core.model.UiMessage
 
 private const val USER_BUBBLE_MAX_WIDTH_FRACTION = 0.82f
+private const val COLLAPSIBLE_USER_MESSAGE_CHARS = 900
+private const val COLLAPSIBLE_USER_MESSAGE_LINES = 14
 
 /**
- * 用户消息使用右侧、内容自适应的 tonal 气泡。
+ * 用户消息使用右侧轻量气泡，正常状态不显示头像、用户名、时间或“已发送”。
  *
- * 这里不能再给气泡调用 fillMaxWidth：短文本会因此被强制拉到屏幕最大宽度，复制按钮也会被挤到
- * 独立一行。操作入口统一改为长按菜单，时间轴默认只保留真正的消息内容。
+ * 排队和失败属于单条消息状态，因此紧贴气泡展示；失败时只有右侧 Retry 是常驻操作。复制、引用、
+ * Fork 与查看统一收进长按悬浮菜单，避免低频动作长期占据时间轴。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun UserTimelineMessage(
     message: UiMessage,
+    deliveryState: UserMessageDeliveryState,
     resolveUrl: (String) -> String,
+    playbackCoordinator: TimelinePlaybackCoordinator,
+    onQuote: () -> Unit,
+    onFork: (() -> Unit)?,
+    onRetry: (() -> Unit)?,
+    menuDismissSignal: Int,
+    highlighted: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val copyText = rememberClipboardCopy()
     val parsed = remember(message.content) { parseQuotedUserMessage(message.content) }
     val hasText = parsed.content.isNotBlank() || !parsed.quotedContext.isNullOrBlank()
     val hasMedia = !message.images.isNullOrEmpty() || !message.media.isNullOrEmpty()
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
     var actionsExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
+    var detailOpen by rememberSaveable(message.id) { mutableStateOf(false) }
+    var messageTopPx by remember(message.id) { mutableFloatStateOf(Float.MAX_VALUE) }
+    var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
+    val shouldCollapse =
+        parsed.content.length > COLLAPSIBLE_USER_MESSAGE_CHARS ||
+            parsed.content.lineSequence().count() > COLLAPSIBLE_USER_MESSAGE_LINES
+    val actions =
+        remember(deliveryState, message.isStreaming, onFork, hasText) {
+            availableMessageActions(
+                role = "user",
+                deliveryState = deliveryState,
+                streaming = message.isStreaming == true,
+                canFork = onFork != null,
+                hasContent = hasText,
+            )
+        }
+    // Prompt/Queue 导航落点需要明显但短暂。仅切换相近容器色在动态主题下可能难以辨认，
+    // 因此同时动画过渡背景并增加 primary 描边；状态结束后恢复普通用户气泡，不改变布局。
+    val bubbleColor by
+        animateColorAsState(
+            targetValue =
+                if (highlighted) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.secondaryContainer
+                },
+            animationSpec = tween(durationMillis = 180),
+            label = "user-message-highlight",
+        )
+
+    LaunchedEffect(menuDismissSignal) { actionsExpanded = false }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        // 使用当前可用宽度而不是固定手机像素值，既让短消息保持紧凑，也能适配横屏和折叠屏。
         val maxBubbleWidth = maxWidth * USER_BUBBLE_MAX_WIDTH_FRACTION
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Box {
-                Surface(
-                    modifier =
-                        Modifier.widthIn(min = 48.dp, max = maxBubbleWidth).combinedClickable(
-                            onClick = {},
-                            onLongClick = {
-                                if (hasText) actionsExpanded = true
-                            },
-                        ),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    // 用户消息只需要和 Assistant 正文形成方向区分，不应再与高优先级状态共用
-                    // 过强的 primaryContainer，因此使用更克制的 secondaryContainer。
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+        val placeMenuBelow = with(density) { messageTopPx < 112.dp.toPx() }
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            message.source?.takeIf { it.kind.equals("automation", ignoreCase = true) }?.let { source ->
+                Text(
+                    text = stringResource(R.string.automation_source, source.label ?: source.kind),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box {
+                    Surface(
+                        modifier =
+                            Modifier.widthIn(min = 48.dp, max = maxBubbleWidth)
+                                .border(
+                                    width = if (highlighted) 2.dp else 0.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = MaterialTheme.shapes.extraLarge,
+                                )
+                                .onGloballyPositioned { coordinates ->
+                                    messageTopPx = coordinates.boundsInWindow().top
+                                }
+                                .combinedClickable(
+                                    onClick = {},
+                                    onLongClick = {
+                                        if (actions.isNotEmpty()) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            actionsExpanded = true
+                                        }
+                                    },
+                                ),
+                        shape = MaterialTheme.shapes.extraLarge,
+                        color = bubbleColor,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
                     ) {
-                        parsed.quotedContext?.takeIf(String::isNotBlank)?.let { quote ->
-                            Surface(
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-                                shape = MaterialTheme.shapes.medium,
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.Top,
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            parsed.quotedContext?.takeIf(String::isNotBlank)?.let { quote ->
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                                    shape = MaterialTheme.shapes.medium,
                                 ) {
-                                    Icon(
-                                        Icons.Rounded.FormatQuote,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    Text(
-                                        text = quote,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.Top,
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.FormatQuote,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            quote,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 4,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
                             }
-                        }
-                        parsed.content.takeIf(String::isNotBlank)?.let { content ->
-                            Text(
-                                text = content,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        if (hasMedia) {
-                            MessageMediaBlock(message = message, resolveUrl = resolveUrl)
+                            if (parsed.content.isNotBlank()) {
+                                Text(
+                                    text = parsed.content,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    maxLines =
+                                        if (shouldCollapse && !expanded) COLLAPSIBLE_USER_MESSAGE_LINES
+                                        else Int.MAX_VALUE,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (shouldCollapse) {
+                                    TextButton(
+                                        onClick = { expanded = !expanded },
+                                        modifier = Modifier.align(Alignment.End),
+                                    ) {
+                                        Text(
+                                            if (expanded) stringResource(R.string.collapse)
+                                            else stringResource(R.string.expand)
+                                        )
+                                    }
+                                }
+                            }
+                            if (hasMedia) {
+                                MessageMediaBlock(
+                                    message = message,
+                                    resolveUrl = resolveUrl,
+                                    playbackCoordinator = playbackCoordinator,
+                                )
+                            }
                         }
                     }
-                }
-
-                DropdownMenu(
-                    expanded = actionsExpanded,
-                    onDismissRequest = { actionsExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.copy)) },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.ContentCopy, contentDescription = null)
-                        },
-                        onClick = {
-                            copyText(message.content)
+                    MessageFloatingActionMenu(
+                        expanded = actionsExpanded,
+                        actions = actions,
+                        placeBelow = placeMenuBelow,
+                        onDismiss = { actionsExpanded = false },
+                        onAction = { action ->
                             actionsExpanded = false
+                            when (action) {
+                                MessageAction.COPY -> copyText(message.content)
+                                MessageAction.QUOTE -> onQuote()
+                                MessageAction.FORK -> onFork?.invoke()
+                                MessageAction.VIEW -> detailOpen = true
+                            }
                         },
                     )
                 }
+                if (deliveryState == UserMessageDeliveryState.FAILED && onRetry != null) {
+                    IconButton(onClick = onRetry) {
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = stringResource(R.string.retry_message),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+            when (deliveryState) {
+                UserMessageDeliveryState.QUEUED ->
+                    Text(
+                        text = stringResource(R.string.message_queued),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                UserMessageDeliveryState.FAILED ->
+                    Text(
+                        text = stringResource(R.string.message_failed),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                UserMessageDeliveryState.SENT -> Unit
             }
         }
     }
+
+    if (detailOpen) {
+        MessageDetailDialog(
+            title = stringResource(R.string.user_message_detail),
+            content = message.content,
+            onDismiss = { detailOpen = false },
+        )
+    }
 }
 
-/**
- * Assistant 正文保持文档式布局，不套大气泡。
- *
- * Copy、引用和 Fork 都属于当前消息的低频局部操作，默认隐藏在长按菜单中。这样不会让每条回复
- * 永久携带一排图标，也不会重复展示已经由 Activity 摘要承载的耗时信息。
- */
+/** Assistant 最终回复直接采用文档式排版，不套大气泡或重复展示头像与名称。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun AssistantTimelineMessage(
     message: UiMessage,
     forkIndex: Int?,
     resolveUrl: (String) -> String,
+    playbackCoordinator: TimelinePlaybackCoordinator,
     onQuote: () -> Unit,
     onFork: () -> Unit,
+    menuDismissSignal: Int,
     modifier: Modifier = Modifier,
 ) {
     val copyText = rememberClipboardCopy()
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
     var actionsExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
+    var detailOpen by rememberSaveable(message.id) { mutableStateOf(false) }
+    var messageTopPx by remember(message.id) { mutableFloatStateOf(Float.MAX_VALUE) }
     val hasContent = message.content.isNotBlank()
     val hasMedia = !message.images.isNullOrEmpty() || !message.media.isNullOrEmpty()
-    val canOpenActions = message.isStreaming != true && hasContent
+    val actions =
+        remember(message.isStreaming, forkIndex, hasContent) {
+            availableMessageActions(
+                role = "assistant",
+                streaming = message.isStreaming == true,
+                canFork = forkIndex != null,
+                hasContent = hasContent,
+            )
+        }
 
-    Box(modifier = modifier.fillMaxWidth()) {
+    LaunchedEffect(menuDismissSignal) { actionsExpanded = false }
+
+    Box(
+        modifier =
+            modifier.fillMaxWidth().onGloballyPositioned { coordinates ->
+                messageTopPx = coordinates.boundsInWindow().top
+            }
+    ) {
         Column(
             modifier =
                 Modifier.fillMaxWidth().combinedClickable(
                     onClick = {},
                     onLongClick = {
-                        if (canOpenActions) actionsExpanded = true
+                        if (actions.isNotEmpty()) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            actionsExpanded = true
+                        }
                     },
                 ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -182,14 +336,14 @@ internal fun AssistantTimelineMessage(
                 )
             }
             if (hasContent) {
-                Text(
-                    text = message.content,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                MarkdownDocument(markdown = message.content, resolveUrl = resolveUrl)
             }
             if (hasMedia) {
-                MessageMediaBlock(message = message, resolveUrl = resolveUrl)
+                MessageMediaBlock(
+                    message = message,
+                    resolveUrl = resolveUrl,
+                    playbackCoordinator = playbackCoordinator,
+                )
             }
             if (message.isStreaming == true) {
                 CircularProgressIndicator(
@@ -200,49 +354,55 @@ internal fun AssistantTimelineMessage(
             }
         }
 
-        DropdownMenu(
+        MessageFloatingActionMenu(
             expanded = actionsExpanded,
-            onDismissRequest = { actionsExpanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.copy)) },
-                leadingIcon = {
-                    Icon(Icons.Rounded.ContentCopy, contentDescription = null)
-                },
-                onClick = {
-                    // Android 系统会为剪贴板写入提供统一反馈；菜单立即关闭，避免在时间轴内部
-                    // 再维护一套不会自动复位的“已复制”状态，也防止下次长按仍显示旧反馈。
-                    copyText(message.content)
-                    actionsExpanded = false
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.quote_selection_title)) },
-                leadingIcon = {
-                    Icon(Icons.Rounded.FormatQuote, contentDescription = null)
-                },
-                onClick = {
-                    actionsExpanded = false
-                    onQuote()
-                },
-            )
-            if (forkIndex != null) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.fork)) },
-                    leadingIcon = {
-                        Icon(Icons.AutoMirrored.Rounded.CallSplit, contentDescription = null)
-                    },
-                    onClick = {
-                        actionsExpanded = false
-                        onFork()
-                    },
-                )
-            }
-        }
+            actions = actions,
+            placeBelow = with(density) { messageTopPx < 112.dp.toPx() },
+            onDismiss = { actionsExpanded = false },
+            onAction = { action ->
+                actionsExpanded = false
+                when (action) {
+                    MessageAction.COPY -> copyText(message.content)
+                    MessageAction.QUOTE -> onQuote()
+                    MessageAction.FORK -> if (forkIndex != null) onFork()
+                    MessageAction.VIEW -> detailOpen = true
+                }
+            },
+        )
+    }
+
+    if (detailOpen) {
+        MessageDetailDialog(
+            title = stringResource(R.string.assistant_message_detail),
+            content = message.content,
+            onDismiss = { detailOpen = false },
+        )
     }
 }
 
-/** Clipboard 获取集中在 UI 边界；异常只影响复制反馈，不能中断消息渲染。 */
+@Composable
+private fun MessageDetailDialog(
+    title: String,
+    content: String,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Text(
+                text = content,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+        },
+    )
+}
+
+/** Clipboard 获取集中在 UI 边界；异常只影响复制结果，不能中断消息渲染。 */
 @Composable
 private fun rememberClipboardCopy(): (String) -> Boolean {
     val context = LocalContext.current

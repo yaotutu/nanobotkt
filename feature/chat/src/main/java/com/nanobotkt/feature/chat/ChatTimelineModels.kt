@@ -9,6 +9,12 @@ import com.nanobotkt.core.model.UiMessage
  * reasoning、tool trace 和文件修改虽然也是消息记录，但产品上属于同一个 Agent 活动组。
  * 因此本模型只存在于 chat feature 的展示层，不反向写回 Repository，也不改变 WebSocket 协议。
  */
+internal enum class UserMessageDeliveryState {
+    SENT,
+    QUEUED,
+    FAILED,
+}
+
 internal sealed interface ChatTimelineItem {
     /** LazyColumn 使用的稳定键；流式增量到达时不得因为内容变化而重建整个单元。 */
     val key: String
@@ -17,6 +23,7 @@ internal sealed interface ChatTimelineItem {
     data class UserMessage(
         val message: UiMessage,
         val originalIndex: Int,
+        val deliveryState: UserMessageDeliveryState = UserMessageDeliveryState.SENT,
     ) : ChatTimelineItem {
         override val key: String = "user:${message.id}"
     }

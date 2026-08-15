@@ -41,6 +41,8 @@ internal fun MessageList(
     onPreview: (String) -> Unit,
     onFork: (String, Int) -> Unit,
     resolveMediaUrl: (String) -> String,
+    highlightedMessageId: String?,
+    menuDismissSignal: Int,
     modifier: Modifier = Modifier,
     autoFollow: Boolean = true,
 ) {
@@ -50,6 +52,8 @@ internal fun MessageList(
         }
     val tailSignature = remember(state.messages) { timelineTailSignature(state.messages) }
     val timelineStartIndex = if (state.hasMoreBefore) 1 else 0
+    // 播放互斥只属于当前消息列表实例。会话切换导致 MessageList 重建后不会继续持有旧附件状态。
+    val playbackCoordinator = remember(state.sessionKey) { TimelinePlaybackCoordinator() }
 
     LaunchedEffect(tailSignature, autoFollow, timelineItems.lastOrNull()?.key) {
         // 只观察尾消息签名，不观察列表总长度：加载更早历史只会在头部插入，不应把用户从顶部
@@ -101,7 +105,18 @@ internal fun MessageList(
                     is ChatTimelineItem.UserMessage ->
                         UserTimelineMessage(
                             message = item.message,
+                            deliveryState = item.deliveryState,
                             resolveUrl = resolveMediaUrl,
+                            playbackCoordinator = playbackCoordinator,
+                            onQuote = { onQuote(item.message.content) },
+                            // Queue 是本地待发送状态，历史用户消息也没有稳定的 beforeUserIndex；
+                            // 在后端语义未确认前不伪造用户消息 Fork 入口。
+                            onFork = null,
+                            // 当前 Repository 不会把发送失败的 optimistic 用户消息留在时间轴；
+                            // 先保持回调为空，未来出现真实 FAILED item 时再接已有 retry 契约。
+                            onRetry = null,
+                            menuDismissSignal = menuDismissSignal,
+                            highlighted = highlightedMessageId == item.message.id,
                         )
 
                     is ChatTimelineItem.AssistantMessage -> {
@@ -110,10 +125,12 @@ internal fun MessageList(
                             message = item.message,
                             forkIndex = forkIndex,
                             resolveUrl = resolveMediaUrl,
+                            playbackCoordinator = playbackCoordinator,
                             onQuote = { onQuote(item.message.content) },
                             onFork = {
                                 forkIndex?.let { onFork(item.message.id, it) }
                             },
+                            menuDismissSignal = menuDismissSignal,
                         )
                     }
 

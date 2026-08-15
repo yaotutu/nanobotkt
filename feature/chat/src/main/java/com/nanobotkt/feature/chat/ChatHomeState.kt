@@ -1,47 +1,70 @@
 package com.nanobotkt.feature.chat
 
+import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.transport.TransportStatus
 
 /**
- * 聊天首页顶部只展示能够从现有真实状态可靠推导出的粗粒度执行状态。
+ * 聊天页顶部状态的产品级枚举。
  *
- * 当前协议虽然包含 goal/tool 事件，但 Repository 尚未把“思考”“工具执行”等阶段归一化为
- * 会话级状态。这里因此不会根据历史消息猜测工具是否仍在运行，避免旧事件让顶部状态滞留。
+ * [IDLE] 只表示“没有需要用户注意的临时状态”，界面不会把“空闲”三个字渲染出来；其余状态
+ * 都对应可操作或需要关注的会话级事实。消息发送失败等单条消息问题不进入这里，避免顶部状态与
+ * 具体消息的错误提示重复。
  */
 internal enum class ChatHeaderStatus {
     IDLE,
+    WAITING_FOR_USER,
     RUNNING,
     RECONNECTING,
-    FAILED,
+    DISCONNECTED,
 }
 
 /**
- * 以纯函数集中定义顶部状态优先级，防止多个 Composable 各自解释连接、错误和活动回合。
+ * 集中定义顶部状态优先级：等待用户确认高于连接问题，其次才是普通运行。
  *
- * 连接恢复与连接失败优先于聊天回合，因为此时发送链路本身不可用；其次显示当前错误，
- * 再显示活动回合。只有所有实时状态都正常时才回到 Idle。
+ * `hasError` 不再参与顶部状态推导。Repository 的通用错误可能来自加载、模型配置或某次发送，
+ * 这些错误应由对应内容区或 Snackbar 解释；把它们统一显示成“失败”会让用户无法判断哪里出了问题。
  */
 internal fun resolveChatHeaderStatus(
     transportStatus: TransportStatus,
-    hasError: Boolean,
+    waitingForUser: Boolean,
     active: Boolean,
 ): ChatHeaderStatus =
-    when (transportStatus) {
-        TransportStatus.CONNECTING,
-        TransportStatus.RECONNECTING,
-        -> ChatHeaderStatus.RECONNECTING
-        TransportStatus.CLOSED,
-        TransportStatus.ERROR,
-        -> ChatHeaderStatus.FAILED
-        TransportStatus.IDLE,
-        TransportStatus.OPEN,
-        ->
-            when {
-                hasError -> ChatHeaderStatus.FAILED
-                active -> ChatHeaderStatus.RUNNING
-                else -> ChatHeaderStatus.IDLE
-            }
+    when {
+        // 等待确认意味着页面上已经存在一个需要用户处理的 Activity。即使连接随后波动，
+        // 用户仍应先看到这个可操作状态，而不是被较低优先级的重连文案覆盖。
+        waitingForUser -> ChatHeaderStatus.WAITING_FOR_USER
+        transportStatus == TransportStatus.CONNECTING ||
+            transportStatus == TransportStatus.RECONNECTING -> ChatHeaderStatus.RECONNECTING
+        transportStatus == TransportStatus.CLOSED ||
+            transportStatus == TransportStatus.ERROR -> ChatHeaderStatus.DISCONNECTED
+        active -> ChatHeaderStatus.RUNNING
+        else -> ChatHeaderStatus.IDLE
     }
+
+/**
+ * 从当前会话消息中识别“等待用户确认”的真实 Activity。
+ *
+ * 服务端不同版本可能把等待态写在 tool phase、file phase 或 file pending 上，因此这里统一归一化。
+ * 只检查仍处于流式/活动回合的记录，防止历史中的旧确认步骤让顶部状态永久停留。
+ */
+internal fun hasWaitingForUserActivity(
+    messages: List<UiMessage>,
+    activeTurnId: String?,
+): Boolean {
+    if (activeTurnId == null) return false
+    return messages.asSequence()
+        .filter { message -> message.turnId == null || message.turnId == activeTurnId }
+        .any { message ->
+            message.toolEvents.orEmpty().any { event -> event.phase.isWaitingForUserPhase() } ||
+                message.fileEdits.orEmpty().any { edit ->
+                    edit.pending == true || edit.phase.isWaitingForUserPhase()
+                }
+        }
+}
+
+/** 等待态字符串在顶部状态与 Activity 中必须保持同一判断口径。 */
+private fun String?.isWaitingForUserPhase(): Boolean =
+    this?.lowercase() in setOf("waiting", "awaiting_user", "awaiting_confirmation", "needs_confirmation")
 
 /**
  * 附件入口的允许集合是产品边界的一部分。使用不可变常量并由测试锁定，避免模型、权限或

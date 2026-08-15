@@ -1,62 +1,40 @@
 package com.nanobotkt.feature.chat
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.UiMessage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * Right-side drawer modal for navigating between user prompts.
- * Mirrors the RN PromptNavigator component: slides in from the right
- * (92% width, max 384dp), search box filters by label + preview,
- * tapping a prompt closes the sheet and scrolls to the message.
+ * 当前会话的 Prompt 导航使用 Bottom Sheet，而不是占据几乎整屏的右侧 Drawer。
+ *
+ * 该列表是低频的“回看并定位”工具，只展示已进入历史的用户 Prompt 与 Automation 指令；第一阶段
+ * 不提供搜索、筛选和收藏。点击条目后先关闭 Sheet，再由上层滚动并短暂高亮目标消息。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PromptNavigatorSheet(
     messages: List<UiMessage>,
@@ -66,174 +44,54 @@ fun PromptNavigatorSheet(
 ) {
     if (!visible) return
 
-    var query by remember { mutableStateOf("") }
+    val prompts = remember(messages) { extractPromptAnchors(messages) }
+    val sourceByMessageId =
+        remember(messages) {
+            messages.associate { message -> message.id to message.source }
+        }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
-    // Reset search when sheet opens
-    LaunchedEffect(visible) {
-        if (visible) query = ""
-    }
-
-    val allPrompts = remember(messages) { extractPromptAnchors(messages) }
-    val filtered = remember(allPrompts, query) { filterPrompts(allPrompts, query) }
-
-    // Safe-area insets — mirrors RN useSafeAreaInsets() with min padding
-    val statusBarHeight: Dp = WindowInsets.statusBars.asPaddingValues()
-        .calculateTopPadding()
-    val navBarHeight: Dp = WindowInsets.navigationBars.asPaddingValues()
-        .calculateBottomPadding()
-
-    Dialog(
+    ModalBottomSheet(
         onDismissRequest = onClose,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-        ),
+        sheetState = sheetState,
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Scrim — tap to dismiss
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.28f))
-                    .clickable(onClick = onClose),
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.prompt_navigator_title),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
             )
 
-            // Sheet — right-aligned
-            Surface(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .widthIn(max = 384.dp)
-                    .fillMaxWidth(0.92f)
-                    .align(Alignment.CenterEnd),
-                // 右侧提示导航使用统一的大形状和 tonal elevation，避免弹层继续依赖旧阴影数值。
-                shape = MaterialTheme.shapes.large,
-                tonalElevation = 2.dp,
-                shadowElevation = 0.dp,
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = statusBarHeight.coerceAtLeast(16.dp))
-                        .padding(bottom = navBarHeight.coerceAtLeast(12.dp)),
-                ) {
-                    // Header
-                    Column(
-                        modifier = Modifier.padding(
-                            start = NanobotThemeDefaults.spacing.md,
-                            end = NanobotThemeDefaults.spacing.xs,
-                            top = 0.dp,
-                            bottom = NanobotThemeDefaults.spacing.sm,
-                        ),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.prompt_navigator_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(onClick = {
-                                query = ""
+            if (prompts.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.prompt_navigator_empty),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 28.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
+                    items(prompts, key = PromptNavigatorItem::stableId) { prompt ->
+                        val source = sourceByMessageId[prompt.messageId]
+                        PromptNavigatorRow(
+                            item = prompt,
+                            automationLabel =
+                                source?.takeIf { it.kind.equals("automation", ignoreCase = true) }
+                                    ?.label,
+                            onClick = {
+                                // 关闭动作必须先发生，避免 Sheet 退场动画继续拦截目标消息上的手势。
                                 onClose()
-                            }) {
-                                Icon(
-                                    Icons.Rounded.Close,
-                                    stringResource(R.string.cancel),
-                                )
-                            }
-                        }
-
-                        Spacer(Modifier.height(8.dp))
-
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = {
-                                Text(stringResource(R.string.prompt_navigator_search))
+                                onJumpToPrompt(prompt.messageId)
                             },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Rounded.Search,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            },
-                            trailingIcon = {
-                                if (query.isNotEmpty()) {
-                                    IconButton(onClick = { query = "" }) {
-                                        Icon(
-                                            Icons.Rounded.Close,
-                                            stringResource(R.string.cancel),
-                                            Modifier.size(16.dp),
-                                        )
-                                    }
-                                }
-                            },
-                            singleLine = true,
-                            shape = MaterialTheme.shapes.extraLarge,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.outline,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                            ),
                         )
-                    }
-
-                    HorizontalDivider()
-
-                    // List
-                    if (filtered.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.prompt_navigator_no_results),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(NanobotThemeDefaults.spacing.xs),
-                        ) {
-                            items(filtered, key = { it.stableId }) { item ->
-                                Surface(
-                                    onClick = {
-                                        query = ""
-                                        onClose()
-                                        onJumpToPrompt(item.messageId)
-                                    },
-                                    shape = MaterialTheme.shapes.medium,
-                                    color = MaterialTheme.colorScheme.surface,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                                ) {
-                                    Column(modifier = Modifier.padding(NanobotThemeDefaults.spacing.md)) {
-                                        Text(
-                                            text = item.preview,
-                                            maxLines = 4,
-                                            overflow = TextOverflow.Ellipsis,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                        )
-                                        if (item.createdAt > 0) {
-                                            Text(
-                                                text = formatPromptTimestamp(item.createdAt),
-                                                modifier = Modifier.padding(top = 5.dp),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 56.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                        )
                     }
                 }
             }
@@ -241,8 +99,53 @@ fun PromptNavigatorSheet(
     }
 }
 
-private val promptTimestampFormat =
-    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+@Composable
+private fun PromptNavigatorRow(
+    item: PromptNavigatorItem,
+    automationLabel: String?,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = (item.ordinal + 1).toString(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            automationLabel?.let { label ->
+                Text(
+                    text = stringResource(R.string.automation_source, label),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = item.label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (item.createdAt > 0L) {
+                Text(
+                    text = promptNavigatorTime(item.createdAt),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+    }
+}
 
-private fun formatPromptTimestamp(epochMs: Long): String =
-    promptTimestampFormat.format(Date(epochMs))
+/** 时间只辅助区分 Prompt，不显示秒级精度，避免列表产生无意义的视觉噪声。 */
+private fun promptNavigatorTime(createdAt: Long): String =
+    SimpleDateFormat("MMM d · HH:mm", Locale.getDefault()).format(Date(createdAt))
