@@ -1,4 +1,4 @@
-﻿package com.nanobotkt.feature.chat
+package com.nanobotkt.feature.chat
 
 import com.nanobotkt.core.model.UiMessage
 import org.junit.Assert.assertEquals
@@ -39,13 +39,42 @@ class MessageReconciliationTest {
     }
 
     @Test
-    fun `latest fallback prepends only unseen stable ids`() {
-        val result = mergeLatestMessages(
-            current = listOf(message("current", "Current")),
-            latest = listOf(message("new", "New"), message("current", "Server copy")),
+    fun `latest without overlap replaces the entire local window`() {
+        val current = listOf(
+            message("old-user", "Research xxx", role = "user"),
+            message("old-answer", "Old answer"),
+        )
+        val latest = listOf(
+            message("replay-user-1", "Research xxx", role = "user"),
+            message("replay-answer-1", "Canonical answer"),
         )
 
-        assertEquals(listOf("new", "current"), result.map(UiMessage::id))
+        // latest 请求代表服务端当前权威窗口。即使 replay ID 全部变化，也不能把完整窗口
+        // 追加到旧时间线前面，否则每次锁屏恢复都会再复制一份相同对话。
+        assertEquals(latest, mergeLatestMessages(current, latest))
+    }
+
+    @Test
+    fun `repeated replay refreshes never grow the message count`() {
+        val firstReplay = listOf(
+            message("replay-1-user", "Research xxx", role = "user"),
+            message("replay-1-answer", "Canonical answer"),
+        )
+        val secondReplay = listOf(
+            message("replay-2-user", "Research xxx", role = "user"),
+            message("replay-2-answer", "Canonical answer"),
+        )
+        val thirdReplay = listOf(
+            message("replay-3-user", "Research xxx", role = "user"),
+            message("replay-3-answer", "Canonical answer"),
+        )
+
+        val afterFirstResume = mergeLatestMessages(emptyList(), firstReplay)
+        val afterSecondResume = mergeLatestMessages(afterFirstResume, secondReplay)
+        val afterThirdResume = mergeLatestMessages(afterSecondResume, thirdReplay)
+
+        assertEquals(secondReplay.size, afterSecondResume.size)
+        assertEquals(thirdReplay, afterThirdResume)
     }
 
     @Test

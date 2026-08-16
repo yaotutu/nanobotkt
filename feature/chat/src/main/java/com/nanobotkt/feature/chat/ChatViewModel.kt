@@ -429,6 +429,16 @@ constructor(
     fun stopVoiceRecording(cancelled: Boolean = false, maxReached: Boolean = false) =
         voiceCoordinator.stop(cancelled, maxReached)
 
+    /**
+     * Activity 进入 STOPPED（锁屏、HOME 或切到其他应用）时立即取消正在录制的麦克风。
+     *
+     * ViewModel 与 Compose 树在后台通常仍然存活，不能等待 onCleared/dispose；同时不自动恢复录音，
+     * 避免用户解锁后在没有明确操作的情况下继续采集声音。
+     */
+    fun onAppBackgrounded() {
+        voiceCoordinator.stop(cancelled = true)
+    }
+
     fun stop() {
         val current = composerCoordinator.value
         queueCoordinator.onStop(hasQueuedPrompts = current.queuedPrompts.isNotEmpty())

@@ -14,6 +14,8 @@ internal data class ChatTimelineInput(
     val optimistic: List<UiMessage>,
     val failedMessageIds: Set<String>,
     val transient: List<UiMessage>,
+    /** 只有服务端明确完成的 turn 才允许 canonical 永久覆盖 WebSocket 临时投影。 */
+    val canonicalCompletedTurnIds: Set<String> = emptySet(),
 )
 
 internal data class ChatTimelineProjection(
@@ -33,18 +35,26 @@ internal data class ChatTimelineMetadata(
 /**
  * 把规范历史、本地乐观消息和流式临时消息投影成唯一 UI 时间线。
  *
- * 服务端规范消息按 turnId 淘汰同 turn 的乐观气泡；规范 assistant 消息同样淘汰流式快照，
- * 防止 canonical refresh 与 WebSocket 结束事件交错时出现重复回答。
+ * 服务端规范消息按 turnId 淘汰同 turn 的乐观气泡。对于仍 active 的 assistant turn，如果本地
+ * 已有更先进的 WebSocket transient，则暂时用 transient 替换可能滞后的 HTTP partial；只有
+ * completedTurnIds 明确完成后，canonical 才永久淘汰同 turn transient。
  */
 internal fun projectChatTimeline(input: ChatTimelineInput): ChatTimelineProjection {
     val canonicalTurns = input.canonical.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
-    val canonicalAssistantTurns = canonicalAssistantTurnIds(input.canonical)
+    val transientTurns = input.transient.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
     val messages = buildList {
-        addAll(input.canonical)
+        addAll(
+            input.canonical.filterNot { message ->
+                message.role != "user" &&
+                    message.turnId != null &&
+                    message.turnId in transientTurns &&
+                    message.turnId !in input.canonicalCompletedTurnIds
+            },
+        )
         addAll(input.optimistic.filter { message -> message.turnId !in canonicalTurns })
         addAll(
             input.transient.filterNot { message ->
-                message.turnId != null && message.turnId in canonicalAssistantTurns
+                message.turnId != null && message.turnId in input.canonicalCompletedTurnIds
             },
         )
     }.sortedBy(UiMessage::createdAt)

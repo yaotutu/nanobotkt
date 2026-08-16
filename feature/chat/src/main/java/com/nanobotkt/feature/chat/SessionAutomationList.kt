@@ -1,9 +1,6 @@
 package com.nanobotkt.feature.chat
 
-import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
-import android.os.Bundle
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -43,13 +40,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.SessionAutomationJob
 import java.text.DateFormat
 import java.util.Locale
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 
 /**
@@ -70,6 +68,7 @@ internal fun SessionAutomationList(
     val state = remember { SessionAutomationState() }
     val currentLoadJobs by rememberUpdatedState(loadJobs)
     val renderer = remember(context) { SessionAutomationTextRenderer(context) }
+    val lifecycleOwner = LocalLifecycleOwner.current
     var retryEpoch by remember { mutableIntStateOf(0) }
 
     // Manual retry restarts the current generation and shows the loading card.
@@ -80,47 +79,24 @@ internal fun SessionAutomationList(
         state.request(currentLoadJobs, key, showLoading = true)
     }
 
-    // Initial load + 3-second polling while the sheet is visible.
-    LaunchedEffect(sessionKey, visible) {
+    // 初次加载与周期刷新都绑定 STARTED；锁屏时 Composition 仍存在，普通 LaunchedEffect 不会停。
+    LaunchedEffect(sessionKey, visible, lifecycleOwner) {
         val key = sessionKey
         if (!visible || key == null) return@LaunchedEffect
         state.beginLoad()
+        var firstForegroundEntry = true
         try {
-            state.request(currentLoadJobs, key, showLoading = true)
-            while (true) {
-                delay(AUTOMATIONS_REFRESH_MS)
-                if (!visible) return@LaunchedEffect
-                state.request(currentLoadJobs, key, showLoading = false)
-            }
-        } finally {
-            state.endGeneration()
-        }
-    }
-
-    // Refresh once when the app returns to the foreground, like RN AppState 'active'.
-    LaunchedEffect(sessionKey, visible) {
-        val key = sessionKey
-        if (!visible || key == null) return@LaunchedEffect
-        val activity = context.findActivity() ?: return@LaunchedEffect
-        val scope = this
-        val observer = object : android.app.Application.ActivityLifecycleCallbacks {
-            override fun onActivityResumed(activity: Activity) {
-                scope.launch {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // 首次进入显示 loading；锁屏恢复只静默刷新，避免已有健康列表闪回空白。
+                state.request(currentLoadJobs, key, showLoading = firstForegroundEntry)
+                firstForegroundEntry = false
+                while (true) {
+                    delay(AUTOMATIONS_REFRESH_MS)
                     state.request(currentLoadJobs, key, showLoading = false)
                 }
             }
-            override fun onActivityPaused(activity: Activity) {}
-            override fun onActivityStopped(activity: Activity) {}
-            override fun onActivityStarted(activity: Activity) {}
-            override fun onActivityDestroyed(activity: Activity) {}
-            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
-            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
-        }
-        activity.application.registerActivityLifecycleCallbacks(observer)
-        try {
-            awaitCancellation()
         } finally {
-            activity.application.unregisterActivityLifecycleCallbacks(observer)
+            state.endGeneration()
         }
     }
 
@@ -390,13 +366,4 @@ internal class SessionAutomationTextRenderer(context: Context) {
 
     private fun format(resId: Int, vararg args: Any): String =
         String.format(Locale.getDefault(), appContext.getString(resId), *args)
-}
-
-private fun Context.findActivity(): Activity? {
-    var current: Context = this
-    while (current is ContextWrapper) {
-        if (current is Activity) return current
-        current = current.baseContext
-    }
-    return null
 }

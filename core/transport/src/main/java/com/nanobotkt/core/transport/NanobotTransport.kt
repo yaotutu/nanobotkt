@@ -46,7 +46,21 @@ interface WebSocketCredentialProvider {
 }
 
 enum class TransportStatus { IDLE, CONNECTING, OPEN, RECONNECTING, CLOSED, ERROR }
-data class TransportState(val status: TransportStatus = TransportStatus.IDLE, val networkAvailable: Boolean = true, val lastOpenedAt: Long? = null, val lastActivityAt: Long? = null, val needsCanonicalRefresh: Boolean = false, val error: String? = null)
+data class TransportState(
+    val status: TransportStatus = TransportStatus.IDLE,
+    val networkAvailable: Boolean = true,
+    val lastOpenedAt: Long? = null,
+    val lastActivityAt: Long? = null,
+    val needsCanonicalRefresh: Boolean = false,
+    /**
+     * 每次可能丢失 WebSocket 事件的连接边界都会递增此代次。
+     *
+     * Repository 只能确认自己发起请求时看到的代次；如果请求期间又发生断线，旧请求即使成功
+     * 也不能清除新一轮 dirty 状态，否则后台完成的 turn 可能永远得不到 HTTP 规范快照补偿。
+     */
+    val canonicalRefreshGeneration: Long = 0L,
+    val error: String? = null,
+)
 sealed interface TransportError { data class MessageTooBig(val chatId: String? = null, val turnId: String? = null) : TransportError; data class DeliveryUnknown(val chatId: String, val turnId: String) : TransportError; data class TurnRejected(val chatId: String, val turnId: String, val detail: String?, val reason: String?) : TransportError; data class WorkspaceScopeRejected(val chatId: String?, val turnId: String?, val reason: String?) : TransportError }
 data class MessageSendResult(val turnId: String, val accepted: CompletableDeferred<Unit>)
 
@@ -198,10 +212,9 @@ class NanobotTransport @Inject constructor(
                 socket = null
                 rejectPendingOnDisconnect(messageTooBig = false)
                 active?.cancel()
-                mutableState.value = mutableState.value.copy(
-                    status = TransportStatus.CLOSED,
-                    needsCanonicalRefresh = true,
-                )
+                markCanonicalRefreshNeededLocked { current ->
+                    current.copy(status = TransportStatus.CLOSED)
+                }
             }
         }
     }
@@ -233,7 +246,9 @@ class NanobotTransport @Inject constructor(
             socket = null
             rejectPendingOnDisconnect(messageTooBig = false)
             active?.cancel()
-            mutableState.value = mutableState.value.copy(status = TransportStatus.CLOSED, needsCanonicalRefresh = true)
+            markCanonicalRefreshNeededLocked { current ->
+                current.copy(status = TransportStatus.CLOSED)
+            }
         } else {
             reconnectAttempt = 0
             connectIfEligible()
@@ -351,7 +366,33 @@ class NanobotTransport @Inject constructor(
     }
 
     fun setWorkspaceScope(chatId: String, scope: WorkspaceScope) { synchronized(this) { knownChats += chatId; enqueue("workspace:" + UUID.randomUUID(), OutboundFrame.SetWorkspaceScope(chatId, scope)) } }
-    fun clearCanonicalRefreshFlag() { mutableState.value = mutableState.value.copy(needsCanonicalRefresh = false) }
+    /**
+     * 仅确认指定代次的 canonical refresh。
+     *
+     * 该比较与清除都在 Transport 锁内完成，避免 read-copy-write 覆盖并发到达的新 dirty 代次、
+     * 连接状态或活动时间。返回 false 表示请求期间已经发生新的连接边界，调用方必须保留 dirty。
+     */
+    @Synchronized
+    fun acknowledgeCanonicalRefresh(expectedGeneration: Long): Boolean {
+        val current = mutableState.value
+        if (!current.needsCanonicalRefresh || current.canonicalRefreshGeneration != expectedGeneration) return false
+        mutableState.value = current.copy(needsCanonicalRefresh = false)
+        return true
+    }
+
+    /**
+     * 调用方必须位于 Transport 的同步边界内。每一次可能造成事件缺口的连接变化都创建新代次，
+     * 不能只把布尔值重复写成 true；否则旧 HTTP 请求无法识别“dirty 期间再次 dirty”的竞态。
+     */
+    private fun markCanonicalRefreshNeededLocked(
+        transform: (TransportState) -> TransportState,
+    ) {
+        val current = mutableState.value
+        mutableState.value = transform(current).copy(
+            needsCanonicalRefresh = true,
+            canonicalRefreshGeneration = current.canonicalRefreshGeneration + 1L,
+        )
+    }
 
     @Synchronized private fun open(url: String, reconnecting: Boolean) {
         mutableState.value = mutableState.value.copy(status = if (reconnecting) TransportStatus.RECONNECTING else TransportStatus.CONNECTING, error = null)
@@ -492,7 +533,9 @@ class NanobotTransport @Inject constructor(
         socket = null
         rejectPendingOnDisconnect(messageTooBig = false)
         active?.cancel()
-        mutableState.value = mutableState.value.copy(status = TransportStatus.RECONNECTING, needsCanonicalRefresh = true, error = reason)
+        markCanonicalRefreshNeededLocked { current ->
+            current.copy(status = TransportStatus.RECONNECTING, error = reason)
+        }
         scheduleReconnect()
     }
 
@@ -589,7 +632,12 @@ class NanobotTransport @Inject constructor(
         val tooBig = code == 1009
         rejectPendingOnDisconnect(tooBig)
         val canReconnect = sessionActive && backgroundAt == null && networkAvailable
-        mutableState.value = mutableState.value.copy(status = if (canReconnect) TransportStatus.RECONNECTING else TransportStatus.CLOSED, needsCanonicalRefresh = true, error = if (tooBig) "message_too_big" else cause?.message)
+        markCanonicalRefreshNeededLocked { current ->
+            current.copy(
+                status = if (canReconnect) TransportStatus.RECONNECTING else TransportStatus.CLOSED,
+                error = if (tooBig) "message_too_big" else cause?.message,
+            )
+        }
         if (canReconnect) scheduleReconnect()
     }
 

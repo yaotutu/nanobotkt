@@ -44,10 +44,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.nanobotkt.core.model.AutomationSchedule
 import com.nanobotkt.core.model.AutomationUpdatePayload
 import com.nanobotkt.core.model.SessionAutomationJob
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +60,7 @@ fun AutomationsScreen(
     viewModel: AutomationsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
     var filter by rememberSaveable { mutableStateOf("all") }
     var editJob by remember { mutableStateOf<SessionAutomationJob?>(null) }
     var deleteJob by remember { mutableStateOf<SessionAutomationJob?>(null) }
@@ -74,11 +79,15 @@ fun AutomationsScreen(
         "attention" to "Needs attention",
     )
 
-    // 页面离开后协程会自动取消，避免后台页面持续轮询；ViewModel 仍负责 action 后的短刷新。
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(5_000)
+    LaunchedEffect(lifecycleOwner, viewModel) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            // 锁屏时页面仍在 Composition 中，普通 LaunchedEffect 不会取消；轮询必须绑定 STARTED。
+            // 每次恢复前台先立即刷新一次，再进入周期刷新，避免展示整个后台期间的陈旧状态。
             viewModel.refresh()
+            while (true) {
+                delay(5_000L)
+                viewModel.refresh()
+            }
         }
     }
 

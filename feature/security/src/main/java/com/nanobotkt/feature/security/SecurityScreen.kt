@@ -24,7 +24,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -33,7 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.nanobotkt.core.model.PairingRequestInfo
 import kotlinx.coroutines.delay
 
@@ -65,20 +67,23 @@ fun SecurityScreen(
     viewModel: SecurityViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    // ViewModel 可能因导航复用而继续存活；轮询必须绑定页面可见生命周期，
-    // 不能只依赖 ViewModel.onCleared 才停止。
-    DisposableEffect(viewModel) {
-        viewModel.startPolling()
-        onDispose { viewModel.stopPolling() }
-    }
-
-    // 倒计时只影响本地文本，不触发 approve/deny 或任何服务端写操作。
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1_000L)
-            nowMs = System.currentTimeMillis()
+    LaunchedEffect(lifecycleOwner, viewModel) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            // Composition 在锁屏后通常仍存在，必须在 STARTED 边界内成对启动/停止服务端轮询。
+            // 本地倒计时也放在同一边界，避免后台每秒唤醒；它不触发任何 approve/deny 写操作。
+            viewModel.startPolling()
+            try {
+                nowMs = System.currentTimeMillis()
+                while (true) {
+                    delay(1_000L)
+                    nowMs = System.currentTimeMillis()
+                }
+            } finally {
+                viewModel.stopPolling()
+            }
         }
     }
 

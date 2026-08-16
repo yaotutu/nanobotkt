@@ -18,6 +18,11 @@ internal class ChatStreamFold(
 ) {
     private val messages = mutableListOf<UiMessage>()
     private val activeMessageByKey = mutableMapOf<String, String>()
+    /**
+     * 服务端重连或缓冲重放时可能重复投递同一 delta。按与 activeMessage 相同的流身份保存
+     * sequence 水位，确保重复或乱序的旧片段不会再次追加到正文/思考内容。
+     */
+    private val lastSequenceByKey = mutableMapOf<String, Int>()
     private val completedTurns = mutableSetOf<String>()
     private val mediaCompletedTurns = mutableSetOf<String>()
 
@@ -26,6 +31,7 @@ internal class ChatStreamFold(
     fun reset() {
         messages.clear()
         activeMessageByKey.clear()
+        lastSequenceByKey.clear()
         completedTurns.clear()
         mediaCompletedTurns.clear()
     }
@@ -39,6 +45,9 @@ internal class ChatStreamFold(
         messages.removeAll { it.turnId in turnIds }
         activeMessageByKey.entries.removeAll { entry ->
             entry.value in removedMessageIds || turnIds.any { turnId -> entry.key.startsWith("turn:$turnId") }
+        }
+        lastSequenceByKey.keys.removeAll { key ->
+            turnIds.any { turnId -> key.startsWith("turn:$turnId") }
         }
         mediaCompletedTurns.removeAll(turnIds)
     }
@@ -88,6 +97,8 @@ internal class ChatStreamFold(
         sequence: Int?,
     ) {
         if (turnId != null && (turnId in completedTurns || turnId in mediaCompletedTurns)) return
+        val key = streamKey(turnId, streamId)
+        if (!acceptSequence(key, sequence)) return
         updateOrCreate(turnId, streamId, phase, sequence) { current ->
             if (reasoning) {
                 current.copy(
@@ -173,6 +184,8 @@ internal class ChatStreamFold(
             completedTurns += turnId
             mediaCompletedTurns -= turnId
             activeMessageByKey.keys.removeAll { it.startsWith("turn:$turnId") }
+            // turn 已进入 completedTurns，后续事件会在入口被拒绝；水位可以同步释放，避免长会话泄漏。
+            lastSequenceByKey.keys.removeAll { it.startsWith("turn:$turnId") }
         }
         val completedAt = now()
         messages.replaceAll { message ->
@@ -225,6 +238,18 @@ internal class ChatStreamFold(
             messages += created
             activeMessageByKey[key] = created.id
         }
+    }
+
+    /**
+     * 旧协议没有 turn_seq 时保持兼容，不做猜测性去重；新协议只接受严格递增的序号。
+     * 水位与 [streamKey] 共用身份规则，避免用另一套 key 导致 reasoning/content 分叉失效。
+     */
+    private fun acceptSequence(key: String, sequence: Int?): Boolean {
+        if (sequence == null) return true
+        val previous = lastSequenceByKey[key]
+        if (previous != null && sequence <= previous) return false
+        lastSequenceByKey[key] = sequence
+        return true
     }
 
     private fun findTurnMessageIndex(turnId: String?, preferTrace: Boolean): Int {

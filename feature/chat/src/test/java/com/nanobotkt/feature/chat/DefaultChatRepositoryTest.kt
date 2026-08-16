@@ -545,6 +545,60 @@ class DefaultChatRepositoryTest {
     }
 
     @Test
+    fun `late loadOlder response is discarded after latest refresh in the same session`() = runBlocking {
+        val sessionKey = "webui:same-session-refresh"
+        val olderStarted = CountDownLatch(1)
+        val releaseOlderResponse = CountDownLatch(1)
+        val olderReturned = CountDownLatch(1)
+        val latestRequestCount = AtomicInteger(0)
+
+        server.dispatcher = threadDispatcher { request ->
+            if (request.requestUrl?.queryParameter("before") == "before-1") {
+                olderStarted.countDown()
+                releaseOlderResponse.await(2, TimeUnit.SECONDS)
+                olderReturned.countDown()
+                jsonResponse(
+                    threadPayload(sessionKey, messageId = "stale-older", before = null, hasMoreBefore = false),
+                )
+            } else if (latestRequestCount.incrementAndGet() == 1) {
+                jsonResponse(
+                    threadPayload(sessionKey, messageId = "initial-latest", before = "before-1", hasMoreBefore = true),
+                )
+            } else {
+                jsonResponse(
+                    threadPayload(sessionKey, messageId = "refreshed-latest", before = null, hasMoreBefore = false),
+                )
+            }
+        }
+
+        val repository = newRepository()
+        repository.openSession(sessionKey, "chat-same-session")
+        awaitState { it.sessionKey == sessionKey && !it.loading && it.hasMoreBefore }
+
+        repository.loadOlder()
+        assertTrue(olderStarted.await(2, TimeUnit.SECONDS))
+
+        // 锁屏恢复触发 latest refresh；它提交新 canonical 窗口时会推进 lineage，并主动结束
+        // 旧分页的 loading 状态。随后返回的旧 cursor 响应必须被完整丢弃。
+        repository.refresh()
+        awaitState {
+            !it.loading &&
+                !it.loadingOlder &&
+                it.messages.map { message -> message.id } == listOf("refreshed-latest")
+        }
+
+        releaseOlderResponse.countDown()
+        assertTrue(olderReturned.await(2, TimeUnit.SECONDS))
+        delay(250)
+
+        val finalState = repository.state.value
+        assertEquals(listOf("refreshed-latest"), finalState.messages.map { it.id })
+        assertFalse(finalState.loadingOlder)
+        assertFalse(finalState.hasMoreBefore)
+        assertNull(finalState.beforeCursor)
+    }
+
+    @Test
     fun `rejected send remains failed and retry preserves original payload without duplicates`() = runBlocking {
         val socketRef = AtomicReference<WebSocket>()
         val socketOpened = CountDownLatch(1)

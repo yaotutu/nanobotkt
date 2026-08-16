@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +62,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
 import com.nanobotkt.core.model.UiMediaAttachment
 import com.nanobotkt.core.model.UiMessage
@@ -273,6 +277,10 @@ private fun AudioAttachmentPlayer(
     var isPlaying by remember(player) { mutableStateOf(false) }
     var playbackFailed by remember(player) { mutableStateOf(false) }
     val isActive = playbackCoordinator.activeAttachmentId == attachmentId
+
+    PausePlayerOnLifecycleStop(player) {
+        playbackCoordinator.clearIfActive(attachmentId)
+    }
 
     DisposableEffect(player, attachmentId) {
         val listener =
@@ -537,6 +545,10 @@ private fun FullScreenVideoPlayer(
             }
         }
 
+    PausePlayerOnLifecycleStop(player) {
+        playbackCoordinator.clearIfActive(attachmentId)
+    }
+
     DisposableEffect(player, attachmentId) {
         onDispose {
             playbackCoordinator.clearIfActive(attachmentId)
@@ -570,6 +582,31 @@ private fun FullScreenVideoPlayer(
                 )
             }
         }
+    }
+}
+
+/**
+ * 页面进入 STOPPED 时暂停播放器，但不在 ON_START/ON_RESUME 自动继续。
+ *
+ * 锁屏不会销毁当前 Composition，单靠 onDispose 会让音频/视频在后台继续播放；恢复时保持暂停
+ * 则要求用户再次明确点击，避免突然出声。播放器资源仍由各自原有 DisposableEffect 释放。
+ */
+@Composable
+private fun PausePlayerOnLifecycleStop(
+    player: Player,
+    onStopped: () -> Unit,
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOnStopped by rememberUpdatedState(onStopped)
+    DisposableEffect(lifecycleOwner, player) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                player.pause()
+                currentOnStopped()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 }
 

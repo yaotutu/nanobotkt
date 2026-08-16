@@ -283,6 +283,25 @@ class NanobotTransportAcceptanceTest {
 
 
     @Test
+    fun `canonical refresh acknowledgement cannot clear a newer dirty generation`() {
+        transport.setNetworkAvailable(false)
+        val firstDirty = transport.state.value
+        assertTrue(firstDirty.needsCanonicalRefresh)
+
+        // 再经过一次独立网络边界，generation 必须推进。旧 HTTP 请求只持有 firstDirty 的代次，
+        // 即使随后成功返回也不能清除第二次断线产生的新 dirty 状态。
+        transport.setNetworkAvailable(true)
+        transport.setNetworkAvailable(false)
+        val latestDirty = transport.state.value
+        assertTrue(latestDirty.canonicalRefreshGeneration > firstDirty.canonicalRefreshGeneration)
+
+        assertFalse(transport.acknowledgeCanonicalRefresh(firstDirty.canonicalRefreshGeneration))
+        assertTrue(transport.state.value.needsCanonicalRefresh)
+        assertTrue(transport.acknowledgeCanonicalRefresh(latestDirty.canonicalRefreshGeneration))
+        assertFalse(transport.state.value.needsCanonicalRefresh)
+    }
+
+    @Test
     fun `closed authentication session is not reactivated by lifecycle or network events`() = runBlocking {
         connectWebSocket()
         transport.close()

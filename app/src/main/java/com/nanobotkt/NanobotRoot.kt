@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -30,6 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nanobotkt.core.designsystem.NanobotTheme
 import com.nanobotkt.core.model.ChatSummary
 import com.nanobotkt.core.persistence.DensityPreference
@@ -156,6 +160,19 @@ private fun ReadyRoot(
     val selectedKey = rootUiState.selectedKey
     val destination = rootUiState.destination
     val draftingNewTopic = rootUiState.draftingNewTopic
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, chatViewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                // ReadyRoot 不会因锁屏自动离开 Composition，Activity-scoped ChatViewModel 也不会
+                // onCleared；必须把 STOP 明确传入 Chat，确保后台不继续持有麦克风。
+                chatViewModel.onAppBackgrounded()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Root 只在离开聊天页时接管系统返回。具体返回目标由 SavedStateHandle 中持久化的
     // returnDestination 决定，保证 Settings 子页和进程恢复后的返回层级保持一致。

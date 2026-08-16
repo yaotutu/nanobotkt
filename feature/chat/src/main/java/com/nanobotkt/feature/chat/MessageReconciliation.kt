@@ -12,10 +12,11 @@ internal fun sameSemanticMessage(left: UiMessage, right: UiMessage): Boolean {
 }
 
 /**
- * Replaces an overlapping latest suffix with the canonical server page.
+ * 用服务端最新页替换本地规范时间线的重叠后缀。
  *
- * When the server page has no semantic overlap, preserve the current page and prepend only records
- * whose stable IDs are not already present. This deliberately mirrors the RN reconciliation order.
+ * HTTP transcript replay 生成的消息 ID 可能随每次请求变化，因此不能把“没有连续语义重叠”解释成
+ * “服务器返回了更早的一页”。latest 请求本身就是当前窗口的权威快照；此时若把 latest 再拼到
+ * current 前面，每经历一次后台恢复都会完整复制一次历史消息。
  */
 internal fun mergeLatestMessages(
     current: List<UiMessage>,
@@ -30,11 +31,9 @@ internal fun mergeLatestMessages(
         }
         if (matches) return current.subList(0, start) + latest
     }
-    val seenIds = current.mapNotNullTo(mutableSetOf()) { message ->
-        message.id.takeIf(String::isNotEmpty)
-    }
-    val extras = latest.filter { message -> message.id.isEmpty() || message.id !in seenIds }
-    return extras + current
+    // latest 没有任何连续边界时直接重置为服务端快照。旧 current 可能包含过期进度状态或
+    // 使用另一批 replay ID 的同一段历史，保留它没有可靠依据，只会造成重复和状态回退。
+    return latest
 }
 
 /** Prepends only messages before the current oldest semantic boundary. */

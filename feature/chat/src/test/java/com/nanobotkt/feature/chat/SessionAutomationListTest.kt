@@ -4,6 +4,7 @@ import com.nanobotkt.core.model.AutomationPayload
 import com.nanobotkt.core.model.AutomationSchedule
 import com.nanobotkt.core.model.AutomationState
 import com.nanobotkt.core.model.SessionAutomationJob
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -266,6 +267,49 @@ class SessionAutomationListTest {
         first.join()
 
         assertEquals(listOf("new"), state.jobs.map { it.id })
+        assertFalse(state.loading)
+    }
+
+    @Test
+    fun `latest request wins within the same generation`() = runTest {
+        val state = SessionAutomationState()
+        val slowOlderRequest = CompletableDeferred<List<SessionAutomationJob>>()
+
+        state.beginLoad()
+        val older = launch {
+            state.request({ slowOlderRequest.await() }, "key", showLoading = true)
+        }
+        kotlinx.coroutines.yield()
+        state.request({ listOf(job("new")) }, "key", showLoading = false)
+
+        slowOlderRequest.complete(listOf(job("old")))
+        older.join()
+
+        // manual retry 与轮询可能同代并发；较早请求迟到时不能覆盖最后发起请求的结果。
+        assertEquals(listOf("new"), state.jobs.map { it.id })
+        assertFalse(state.loadFailed)
+        assertFalse(state.loading)
+    }
+
+    @Test
+    fun `lifecycle cancellation is rethrown without becoming a load failure`() = runTest {
+        val state = SessionAutomationState()
+        state.beginLoad()
+        var cancellationObserved = false
+
+        try {
+            state.request(
+                loadJobs = { throw CancellationException("screen stopped") },
+                sessionKey = "key",
+                showLoading = true,
+            )
+        } catch (_: CancellationException) {
+            cancellationObserved = true
+        }
+
+        // STOP 取消属于正常生命周期，不应污染错误卡片；调用协程仍必须收到取消信号。
+        assertTrue(cancellationObserved)
+        assertFalse(state.loadFailed)
         assertFalse(state.loading)
     }
 

@@ -24,6 +24,7 @@ import com.nanobotkt.core.network.GatewayApiClient
 import com.nanobotkt.core.transport.MessageSendResult
 import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportError
+import com.nanobotkt.core.transport.TransportState
 import com.nanobotkt.core.transport.TransportStatus
 import com.nanobotkt.core.workspace.WorkspaceAccessProvider
 import java.util.concurrent.atomic.AtomicLong
@@ -40,8 +41,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 interface ChatRepository {
     val state: StateFlow<ChatUiState>
@@ -166,6 +171,13 @@ class DefaultChatRepository @Inject constructor(
      */
     private val timelineWriterLock = Any()
     private val canonical = mutableListOf<UiMessage>()
+    /** 服务端明确确认已完成的 turn；只有这些 turn 才能安全淘汰同 turn 的流式快照。 */
+    private val canonicalCompletedTurnIds = mutableSetOf<String>()
+    /**
+     * 同一 session/chat 内每次 latest 快照提交都会推进时间线代次。
+     * loadOlder 必须携带发起时的代次，避免旧 cursor 响应插入一次较新的 canonical reset。
+     */
+    private var canonicalLineageGeneration = 0L
     private val optimistic = linkedMapOf<String, LocalOutgoingMessage>()
     private val sideChannelTurnIds = mutableSetOf<String>()
     /**
@@ -197,6 +209,8 @@ class DefaultChatRepository @Inject constructor(
     private val composerCatalogLoader = ComposerCatalogLoader(api)
     private val sessionLoader = ChatSessionLoader(api)
     private val filePreviewLoader = ChatFilePreviewLoader(api)
+    /** 多个 TurnEnd、手动刷新和恢复 dirty 信号可能同时到达；HTTP latest 请求统一串行化。 */
+    private val canonicalRefreshMutex = Mutex()
 
     init {
         scope.launch {
@@ -218,14 +232,29 @@ class DefaultChatRepository @Inject constructor(
         scope.launch { transport.events.collect(::handleEvent) }
         scope.launch { transport.errors.collect(::handleTransportError) }
         scope.launch {
-            transport.state.collectLatest { transportState ->
-                publishModelSelection()
-                if (transportState.needsCanonicalRefresh && mutableState.value.sessionKey != null) {
-                    // 只有规范消息成功收敛后才能清除 dirty flag；HTTP 失败时保留
-                    // 标记，下一次网络恢复仍会触发 canonical refresh。
-                    if (refreshCanonical()) transport.clearCanonicalRefreshFlag()
+            // Model 的 enabled 状态仍需跟随连接状态更新，但不能把 canonical HTTP 请求放在这个
+            // 高频流中；每个 delta 都会更新 lastActivityAt，collectLatest 会因此反复取消请求。
+            transport.state.collect { publishModelSelection() }
+        }
+        scope.launch {
+            transport.state
+                .map(TransportState::toCanonicalRefreshTrigger)
+                .distinctUntilChanged()
+                .collectLatest { trigger ->
+                    if (!trigger.canRefresh || mutableState.value.sessionKey == null) return@collectLatest
+
+                    // active turn 在断线窗口内可能继续运行，而 reconnect attach 不会补发 TurnEnd。
+                    // 因此 active 快照只能暂时收敛 UI，不能确认 dirty；保持低频重试直到服务端明确
+                    // 返回 settled 快照。相关状态变化会取消本循环，但 lastActivityAt 不再会取消它。
+                    while (isCurrentCanonicalRefreshTrigger(trigger)) {
+                        val result = refreshCanonical()
+                        if (result.applied && result.settled) {
+                            transport.acknowledgeCanonicalRefresh(trigger.generation)
+                            break
+                        }
+                        delay(CANONICAL_RECOVERY_RETRY_MS)
+                    }
                 }
-            }
         }
     }
 
@@ -394,26 +423,43 @@ class DefaultChatRepository @Inject constructor(
     }
 
     override fun loadOlder() {
-        val current = mutableState.value
-        val sessionKey = current.sessionKey ?: return
-        val chatId = current.chatId
-        if (current.loadingOlder || !current.hasMoreBefore || current.beforeCursor == null) return
-        mutableState.value = current.copy(loadingOlder = true)
+        val request = synchronized(timelineWriterLock) {
+            val current = mutableState.value
+            val sessionKey = current.sessionKey ?: return@synchronized null
+            val beforeCursor = current.beforeCursor
+            if (current.loadingOlder || !current.hasMoreBefore || beforeCursor == null) return@synchronized null
+
+            // loadingOlder 与 lineage 必须在同一把时间线锁内捕获。否则 latest refresh 可能在
+            // “读 cursor”和“标记加载中”之间提交新快照，使请求从一开始就属于错误边界。
+            mutableState.value = current.copy(loadingOlder = true)
+            OlderPageRequest(
+                sessionKey = sessionKey,
+                chatId = current.chatId,
+                beforeCursor = beforeCursor,
+                lineageGeneration = canonicalLineageGeneration,
+            )
+        } ?: return
         scope.launch {
             try {
-                val page = sessionLoader.loadThread(sessionKey, before = current.beforeCursor, latest = false)
-                if (!mutableState.value.matchesSession(sessionKey, chatId)) return@launch
+                val page = sessionLoader.loadThread(request.sessionKey, before = request.beforeCursor, latest = false)
                 if (page == null) {
-                    mutableState.value = mutableState.value.copy(loadingOlder = false)
+                    synchronized(timelineWriterLock) {
+                        if (isCurrentOlderPageRequestLocked(request)) {
+                            mutableState.value = mutableState.value.copy(loadingOlder = false)
+                        }
+                    }
                     return@launch
                 }
                 synchronized(timelineWriterLock) {
-                    // session guard 必须在获得时间线写锁后再次核对，否则检查与写入之间仍可能切换会话。
-                    if (!mutableState.value.matchesSession(sessionKey, chatId)) return@synchronized
+                    // 除完整会话身份外还必须核对 latest lineage。同一会话在锁屏恢复后可能已经
+                    // 提交了新窗口，旧 cursor 响应此时只能丢弃，不能污染新窗口的分页边界。
+                    if (!isCurrentOlderPageRequestLocked(request)) return@synchronized
                     val merged = prependOlderMessages(canonical, page.messages)
                     canonical.clear()
                     canonical.addAll(merged)
-                    streamFold.markCompletedTurns(page.completedTurnIds.orEmpty().toSet())
+                    val completedTurns = page.completedTurnIds.orEmpty().toSet()
+                    canonicalCompletedTurnIds.addAll(completedTurns)
+                    streamFold.markCompletedTurns(completedTurns)
                     publishLocked(
                         loadingOlder = false,
                         hasMore = page.page?.hasMoreBefore == true,
@@ -422,16 +468,20 @@ class DefaultChatRepository @Inject constructor(
                     )
                 }
             } catch (error: CancellationException) {
-                if (mutableState.value.matchesSession(sessionKey, chatId)) {
-                    mutableState.value = mutableState.value.copy(loadingOlder = false)
+                synchronized(timelineWriterLock) {
+                    if (isCurrentOlderPageRequestLocked(request)) {
+                        mutableState.value = mutableState.value.copy(loadingOlder = false)
+                    }
                 }
                 throw error
             } catch (error: Exception) {
-                if (mutableState.value.matchesSession(sessionKey, chatId)) {
-                    mutableState.value = mutableState.value.copy(
-                        loadingOlder = false,
-                        error = error.message ?: "thread_load_older_failed",
-                    )
+                synchronized(timelineWriterLock) {
+                    if (isCurrentOlderPageRequestLocked(request)) {
+                        mutableState.value = mutableState.value.copy(
+                            loadingOlder = false,
+                            error = error.message ?: "thread_load_older_failed",
+                        )
+                    }
                 }
             }
         }
@@ -790,55 +840,85 @@ class DefaultChatRepository @Inject constructor(
         }
     }
 
-    private suspend fun refreshCanonical(): Boolean {
+    private suspend fun refreshCanonical(): CanonicalRefreshResult = canonicalRefreshMutex.withLock {
         val sessionState = mutableState.value
-        val session = sessionState.sessionKey ?: return false
+        val session = sessionState.sessionKey ?: return@withLock CanonicalRefreshResult.Ignored
         val chatId = sessionState.chatId
         try {
             val payload = sessionLoader.loadThread(session, before = null, latest = true)
-            // 会话在请求期间切换时，旧响应不能被视为当前会话的成功刷新。
-            if (!mutableState.value.matchesSession(session, chatId)) return false
-            if (payload == null) {
-                synchronized(timelineWriterLock) {
-                    if (!mutableState.value.matchesSession(session, chatId)) return@synchronized
-                    canonical.clear()
-                    publishLocked(
-                        loading = false,
-                        hasMore = false,
-                        before = null,
-                        activeTurnId = null,
-                        userMessageOffset = 0,
-                    )
-                }
-                return true
+            // 会话在请求期间切换时，旧响应既不能写回，也不能被恢复协调器当成成功确认。
+            if (!mutableState.value.matchesSession(session, chatId)) {
+                return@withLock CanonicalRefreshResult.Ignored
             }
-
-            synchronized(timelineWriterLock) {
-                if (!mutableState.value.matchesSession(session, chatId)) return@synchronized
-                val reconciled = mergeLatestMessages(canonical, payload.messages)
-                canonical.clear()
-                canonical.addAll(reconciled)
-
-                val canonicalTurns = payload.messages.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
-                val completedTurns = payload.completedTurnIds.orEmpty().toSet()
-                (canonicalTurns + completedTurns).forEach(optimistic::remove)
-                streamFold.discardTurns(canonicalAssistantTurnIds(payload.messages))
-                streamFold.markCompletedTurns(completedTurns)
-                payload.workspaceScope?.let { canonicalScope ->
-                    mutableState.update { current ->
-                        current.copy(workspaceScope = canonicalScope.normalized())
+            if (payload == null) {
+                var applied = false
+                synchronized(timelineWriterLock) {
+                    if (mutableState.value.matchesSession(session, chatId)) {
+                        canonicalLineageGeneration += 1L
+                        canonical.clear()
+                        canonicalCompletedTurnIds.clear()
+                        publishLocked(
+                            loading = false,
+                            loadingOlder = false,
+                            hasMore = false,
+                            before = null,
+                            activeTurnId = null,
+                            userMessageOffset = 0,
+                        )
+                        applied = true
                     }
                 }
-
-                publishLocked(
-                    loading = false,
-                    hasMore = payload.page?.hasMoreBefore == true,
-                    before = payload.page?.beforeCursor,
-                    activeTurnId = payload.activeTurnId,
-                    userMessageOffset = payload.page?.userMessageOffset ?: 0,
-                )
+                return@withLock if (applied) {
+                    CanonicalRefreshResult.AppliedSettled
+                } else {
+                    CanonicalRefreshResult.Ignored
+                }
             }
-            return true
+
+            var applied = false
+            synchronized(timelineWriterLock) {
+                if (mutableState.value.matchesSession(session, chatId)) {
+                    // latest 是新的权威窗口。先推进 lineage，让任何使用旧 cursor 的分页响应失效，
+                    // 再一次性提交规范消息、完成 turn 集合和分页元数据。
+                    canonicalLineageGeneration += 1L
+                    val reconciled = mergeLatestMessages(canonical, payload.messages)
+                    canonical.clear()
+                    canonical.addAll(reconciled)
+
+                    val canonicalTurns = payload.messages.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
+                    val completedTurns = payload.completedTurnIds.orEmpty().toSet()
+                    canonicalCompletedTurnIds.addAll(completedTurns)
+                    (canonicalTurns + completedTurns).forEach(optimistic::remove)
+
+                    // active/incomplete canonical 可能落后于已接收的 WebSocket delta，不能仅因 canonical
+                    // 中出现同 turn assistant 就丢弃 transient。只有服务端明确完成的 turn 才能淘汰。
+                    streamFold.markCompletedTurns(completedTurns)
+                    payload.workspaceScope?.let { canonicalScope ->
+                        mutableState.update { current ->
+                            current.copy(workspaceScope = canonicalScope.normalized())
+                        }
+                    }
+
+                    publishLocked(
+                        loading = false,
+                        loadingOlder = false,
+                        hasMore = payload.page?.hasMoreBefore == true,
+                        before = payload.page?.beforeCursor,
+                        activeTurnId = payload.activeTurnId,
+                        userMessageOffset = payload.page?.userMessageOffset ?: 0,
+                    )
+                    applied = true
+                }
+            }
+            if (!applied) return@withLock CanonicalRefreshResult.Ignored
+
+            // activeTurnId 非空表示快照只是运行中截面。断线恢复协调器必须保留 dirty 并重试，
+            // 直到 HTTP 明确返回 settled；普通手动/TurnEnd 刷新则可以忽略此返回值。
+            if (payload.activeTurnId == null) {
+                CanonicalRefreshResult.AppliedSettled
+            } else {
+                CanonicalRefreshResult.AppliedActive
+            }
         } catch (error: CancellationException) {
             if (mutableState.value.matchesSession(session, chatId)) {
                 mutableState.value = mutableState.value.copy(loading = false, loadingOlder = false)
@@ -849,10 +929,10 @@ class DefaultChatRepository @Inject constructor(
                 mutableState.value = mutableState.value.copy(
                     loading = false,
                     loadingOlder = false,
-                    error = error.message ?: "thread_refresh_failed",
+                    error = error.message ?: "thread_load_failed",
                 )
             }
-            return false
+            CanonicalRefreshResult.Failed
         }
     }
 
@@ -1077,6 +1157,7 @@ class DefaultChatRepository @Inject constructor(
                     .filter { outgoing -> outgoing.deliveryState == LocalDeliveryState.FAILED }
                     .mapTo(mutableSetOf()) { outgoing -> outgoing.message.id },
                 transient = streamFold.snapshot(),
+                canonicalCompletedTurnIds = canonicalCompletedTurnIds.toSet(),
             ),
         )
         mutableState.update { current ->
@@ -1156,11 +1237,63 @@ class DefaultChatRepository @Inject constructor(
 
     /** 调用方持有时间线写锁；会话切换必须一次性清空所有可变时间线结构。 */
     private fun clearTimelineLocked() {
+        // 会话切换/退出同样属于 lineage reset；在途分页即使 sessionKey 恰好复用，也不能写入。
+        canonicalLineageGeneration += 1L
         canonical.clear()
+        canonicalCompletedTurnIds.clear()
         optimistic.clear()
         sideChannelTurnIds.clear()
         locallyHandledAcceptanceFailures.clear()
         streamFold.reset()
+    }
+
+    /** 调用方持有 [timelineWriterLock]，用于分页响应提交前的最终身份与 lineage 核验。 */
+    private fun isCurrentOlderPageRequestLocked(request: OlderPageRequest): Boolean =
+        mutableState.value.matchesSession(request.sessionKey, request.chatId) &&
+            canonicalLineageGeneration == request.lineageGeneration
+
+    /** 只比较会影响恢复请求有效性的状态，过滤每个入站事件产生的 lastActivityAt 高频更新。 */
+    private fun isCurrentCanonicalRefreshTrigger(trigger: CanonicalRefreshTrigger): Boolean {
+        val current = transport.state.value.toCanonicalRefreshTrigger()
+        return current == trigger && trigger.canRefresh && mutableState.value.sessionKey != null
+    }
+}
+
+private data class OlderPageRequest(
+    val sessionKey: String,
+    val chatId: String?,
+    val beforeCursor: String,
+    val lineageGeneration: Long,
+)
+
+private data class CanonicalRefreshTrigger(
+    val needed: Boolean,
+    val generation: Long,
+    val status: TransportStatus,
+    val networkAvailable: Boolean,
+) {
+    /** 后台 CLOSED 状态不发 HTTP；等前台恢复并重新 OPEN 后再开始规范快照收敛。 */
+    val canRefresh: Boolean
+        get() = needed && networkAvailable && status == TransportStatus.OPEN
+}
+
+private fun TransportState.toCanonicalRefreshTrigger(): CanonicalRefreshTrigger =
+    CanonicalRefreshTrigger(
+        needed = needsCanonicalRefresh,
+        generation = canonicalRefreshGeneration,
+        status = status,
+        networkAvailable = networkAvailable,
+    )
+
+private data class CanonicalRefreshResult(
+    val applied: Boolean,
+    val settled: Boolean,
+) {
+    companion object {
+        val Ignored = CanonicalRefreshResult(applied = false, settled = false)
+        val Failed = CanonicalRefreshResult(applied = false, settled = false)
+        val AppliedActive = CanonicalRefreshResult(applied = true, settled = false)
+        val AppliedSettled = CanonicalRefreshResult(applied = true, settled = true)
     }
 }
 
@@ -1207,6 +1340,8 @@ private data class PendingLocalSend(
 )
 
 private const val MAX_HANDLED_ACCEPTANCE_FAILURES = 64
+/** active 恢复期间的低频 HTTP 补偿间隔，避免 busy loop，同时不依赖缺失的 reconnect TurnEnd。 */
+private const val CANONICAL_RECOVERY_RETRY_MS = 2_000L
 private fun InboundEvent.chatIdOrNull(): String? = when (this) {
     is InboundEvent.Ready -> chatId
     is InboundEvent.Attached -> chatId

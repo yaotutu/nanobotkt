@@ -26,6 +26,18 @@ class ChatStreamFoldTest {
     }
 
     @Test
+    fun `duplicate or lower delta sequence is ignored while a newer sequence appends`() {
+        val fold = fold()
+        fold.fold(InboundEvent.Delta("c1", "Hello", turnId = "t1", turnSeq = 1))
+        fold.fold(InboundEvent.Delta("c1", "Hello", turnId = "t1", turnSeq = 1))
+        fold.fold(InboundEvent.Delta("c1", "stale", turnId = "t1", turnSeq = 0))
+        fold.fold(InboundEvent.Delta("c1", " world", turnId = "t1", turnSeq = 2))
+
+        // WebSocket 重连或底层重放同一个序号时只能消费一次；严格递增的新 delta 才能推进文本。
+        assertEquals("Hello world", fold.snapshot().single().content)
+    }
+
+    @Test
     fun `canonical message replaces partial content`() {
         val fold = fold()
         fold.fold(InboundEvent.Delta("c1", "Part", turnId = "t1"))

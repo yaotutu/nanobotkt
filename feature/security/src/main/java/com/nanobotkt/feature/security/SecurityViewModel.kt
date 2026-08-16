@@ -21,9 +21,8 @@ class SecurityViewModel @Inject constructor(
      * 仅在 Security 页面处于组合树中时启动轮询。
      *
      * ViewModel 的生命周期可能长于一次导航页面；如果把永久轮询放在 init 中，
-     * 用户离开 Security 后仍会继续请求 pairing 接口。页面通过 DisposableEffect
-     * 在进入/离开时成对调用 startPolling/stopPolling，ViewModel 清理时仍由
-     * viewModelScope 负责兜底取消。
+     * 用户离开或锁屏后仍会继续请求 pairing 接口。页面通过 repeatOnLifecycle(STARTED)
+     * 成对调用 startPolling/stopPolling，ViewModel 清理时仍由 viewModelScope 兜底取消。
      */
     fun startPolling() {
         if (pollingJob?.isActive == true) return
