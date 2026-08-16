@@ -2,34 +2,24 @@ package com.nanobotkt.feature.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -71,21 +61,6 @@ internal fun SettingsUiState.restartPendingFor(vararg sections: String): Boolean
     val required = settings.restartRequiredSections.orEmpty().map(String::lowercase)
     return required.isEmpty() || sections.any { it.lowercase() in required }
 }
-
-internal val settingsDark: Boolean
-    @Composable get() = MaterialTheme.colorScheme.background.luminance() < 0.5f
-internal val PageBackground: Color
-    @Composable get() = if (settingsDark) Color(0xFF303030) else Color.White
-internal val CardBackground: Color
-    @Composable get() = if (settingsDark) Color(0xFF383838) else Color(0xFFF7F7F6)
-internal val SegmentBackground: Color
-    @Composable get() = if (settingsDark) Color(0xFF303030) else Color(0xFFF0F0EF)
-internal val PrimaryText: Color
-    @Composable get() = if (settingsDark) Color(0xFFF5F5F6) else Color(0xFF1D1D1F)
-internal val SecondaryText: Color
-    @Composable get() = if (settingsDark) Color(0xFFA6A6A6) else Color(0xFF737373)
-internal val DividerColor: Color
-    @Composable get() = if (settingsDark) Color(0xFF474747) else Color(0xFFE8E7E5)
 
 /**
  * Settings 统一控制中心。
@@ -148,19 +123,27 @@ fun SettingsScreen(
         }
     }
 
-    LazyColumn(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(PageBackground)
-                // Settings 顶栏和滚动内容共享同一列表；对整个滚动视口应用状态栏安全区，
-                // 可避免标题滚出屏幕后，下一行设置项继续绘制到系统时间和图标下方。
-                .statusBarsPadding(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-    ) {
-        item { SettingsHeader(title = settingsSectionTitle(section), onBack = onBack) }
-        item {
-            when (section) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.surface,
+        topBar = {
+            SettingsHeader(title = settingsSectionTitle(section), onBack = onBack)
+        },
+    ) { scaffoldPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            // Scaffold 统一处理状态栏和 TopAppBar inset；列表只负责内容边距，避免每个页面
+            // 自己复制 system bar 规则并产生双重 padding。
+            contentPadding =
+                PaddingValues(
+                    start = 16.dp,
+                    top = scaffoldPadding.calculateTopPadding() + 8.dp,
+                    end = 16.dp,
+                    bottom = scaffoldPadding.calculateBottomPadding() + 32.dp,
+                ),
+        ) {
+            item {
+                when (section) {
                 SETTINGS_SECTION_OVERVIEW ->
                     SettingsHomePage(
                         state = state,
@@ -215,6 +198,7 @@ fun SettingsScreen(
                     reconfigurationSuccessGeneration = gatewayReconfigurationSuccessGeneration,
                 )
                 SETTINGS_SECTION_SECURITY -> SecurityPage(state, viewModel)
+                }
             }
         }
     }
@@ -231,31 +215,21 @@ fun SettingsScreen(
     }
 }
 
-/** 统一 Settings 顶栏；不再用下拉菜单承载整棵信息架构。 */
+/** 使用 Material 3 TopAppBar 统一承载标题、返回语义和系统栏 inset。 */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsHeader(title: String, onBack: () -> Unit) {
-    Spacer(Modifier.height(10.dp))
-    Row(
-        modifier = Modifier.height(64.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Back",
-                tint = PrimaryText,
-            )
-        }
-        Spacer(Modifier.width(4.dp))
-        Text(
-            text = title,
-            color = PrimaryText,
-            fontSize = 24.sp,
-            lineHeight = 30.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-    Spacer(Modifier.height(8.dp))
+    TopAppBar(
+        title = { Text(text = title) },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Back",
+                )
+            }
+        },
+    )
 }
 
 internal fun settingsSectionTitle(section: String): String =

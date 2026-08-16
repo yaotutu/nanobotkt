@@ -1,6 +1,26 @@
 <resources>
     <string name="auth_title">Conectar ao nanobot</string>
     <string name="auth_description">Configure o endereço completo do Gateway e o segredo de inicialização. Ambos são validados e substituídos juntos.</string>
+    <string name="gateway_address">Endereço do Gateway</string>
     <string name="bootstrap_secret">Segredo de inicialização</string>
     <string name="connect">Conectar</string>
+    <string name="error_missing_secret">Informe o segredo de inicialização.</string>
+    <string name="error_configuration_rejected">O Gateway rejeitou esta combinação de endereço e segredo.</string>
+    <string name="error_gateway_timeout">O tempo limite do Gateway foi atingido. Verifique o endereço e a rede e tente novamente.</string>
+    <string name="error_gateway_network">Não foi possível acessar o Gateway. Verifique o endereço e a rede.</string>
+    <string name="error_gateway_html">O endereço retornou uma página HTML em vez de uma resposta do Gateway.</string>
+    <string name="error_gateway_non_json">O endereço não retornou uma resposta JSON válida do Gateway.</string>
+    <string name="error_gateway_invalid_response">A resposta do Gateway não contém os dados de conexão necessários.</string>
+    <string name="error_gateway_http">O Gateway retornou HTTP %1$d.</string>
+    <string name="error_gateway_storage">A configuração foi validada, mas não pôde ser salva. A configuração anterior continua ativa.</string>
+    <string name="error_gateway_cancelled">A configuração foi cancelada.</string>
+    <string name="error_gateway_unknown">A configuração do Gateway falhou inesperadamente.</string>
+    <string name="error_address_empty">Informe um endereço do Gateway.</string>
+    <string name="error_address_scheme">Inclua http:// ou https:// no endereço do Gateway.</string>
+    <string name="error_address_unsupported_scheme">Somente endereços de Gateway com http:// ou https:// são aceitos.</string>
+    <string name="error_address_invalid">Informe um endereço válido do Gateway.</string>
+    <string name="error_address_host">O endereço do Gateway deve incluir um host.</string>
+    <string name="error_address_credentials">Não inclua nome de usuário nem senha no endereço do Gateway.</string>
+    <string name="error_address_query">O endereço do Gateway não pode conter parâmetros de consulta.</string>
+    <string name="error_address_fragment">O endereço do Gateway não pode conter um fragmento.</string>
 </resources>

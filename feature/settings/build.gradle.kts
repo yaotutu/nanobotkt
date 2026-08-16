@@ -38,6 +38,11 @@ dependencies {
     testImplementation(libs.bundles.unit.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    // Settings 组件测试通过独立 Compose Host Activity 渲染真实 Material 3 控件；
+    // manifest 只进入 debug 变体，避免把测试宿主 Activity 打进正式 AAR。
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 

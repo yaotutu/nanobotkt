@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
@@ -41,6 +39,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -53,7 +53,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -136,10 +135,8 @@ fun ConversationListSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
-        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.48f),
-        tonalElevation = 2.dp,
+        // 使用 ModalBottomSheet 默认的 Material 3 形状、容器色、scrim 与 elevation，
+        // 避免会话 Sheet 维护一套与主题升级脱节的局部 token。
     ) {
         Column(
             modifier = Modifier
@@ -379,19 +376,34 @@ private fun ArchivedConversationsEntry(
     count: Int,
     onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Rounded.Archive, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Column(Modifier.padding(start = 12.dp)) {
-            Text(stringResource(R.string.conversation_archived_title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Text(count.toString(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+    // 归档入口本质上是标准导航列表项，交由 ListItem 提供高度、排版和状态层语义。
+    ListItem(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        headlineContent = {
+            Text(
+                stringResource(R.string.conversation_archived_title),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        },
+        supportingContent = {
+            Text(
+                count.toString(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        leadingContent = {
+            Icon(
+                Icons.Rounded.Archive,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        colors =
+            ListItemDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+    )
 }
 
 @Composable
@@ -419,33 +431,23 @@ private fun ConversationRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    // 选中态不用大面积圆角卡片，改成窄色条 + 字重变化；这样列表仍然保持连续，
-    // 视觉焦点也不会抢走聊天内容的优先级。右侧更多按钮单独消费点击事件，不会误触
-    // 会话切换，适合在小屏幕上完成低频的管理操作。
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Spacer(
-            modifier = Modifier
-                .width(3.dp)
-                .height(42.dp)
-                .background(
-                    if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                ),
-        )
-        Spacer(Modifier.width(10.dp))
-        Icon(
-            imageVector = if (item.pinned) Icons.Rounded.PushPin else Icons.Rounded.ChatBubbleOutline,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = if (item.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
+    /**
+     * 会话是典型的“标题 + 摘要 + leading icon + trailing action”列表语义，直接使用 Material 3
+     * ListItem。选中态使用 secondaryContainer，让状态层、文字对比和动态配色由主题统一管理；
+     * 尾部更多按钮仍单独消费点击，避免打开管理菜单时误触会话切换。
+     */
+    ListItem(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors =
+            ListItemDefaults.colors(
+                containerColor =
+                    if (selected) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+            ),
+        headlineContent = {
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.bodyLarge,
@@ -453,28 +455,51 @@ private fun ConversationRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (item.preview.isNotBlank()) {
-                Text(
-                    text = item.preview,
-                    modifier = Modifier.padding(top = 5.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        ConversationActionsMenu(
-            item = item,
-            expanded = menuOpen,
-            onExpand = { menuOpen = true },
-            onDismiss = { menuOpen = false },
-            onTogglePinned = onTogglePinned,
-            onRename = onRename,
-            onArchive = onArchive,
-            onDelete = onDelete,
-        )
-    }
+        },
+        supportingContent =
+            if (item.preview.isBlank()) {
+                null
+            } else {
+                {
+                    Text(
+                        text = item.preview,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            },
+        leadingContent = {
+            Icon(
+                imageVector =
+                    if (item.pinned) {
+                        Icons.Rounded.PushPin
+                    } else {
+                        Icons.Rounded.ChatBubbleOutline
+                    },
+                contentDescription = null,
+                tint =
+                    if (item.pinned) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+            )
+        },
+        trailingContent = {
+            ConversationActionsMenu(
+                item = item,
+                expanded = menuOpen,
+                onExpand = { menuOpen = true },
+                onDismiss = { menuOpen = false },
+                onTogglePinned = onTogglePinned,
+                onRename = onRename,
+                onArchive = onArchive,
+                onDelete = onDelete,
+            )
+        },
+    )
     HorizontalDivider(
         modifier = Modifier.padding(horizontal = 24.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
@@ -503,15 +528,10 @@ private fun ConversationActionsMenu(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        // 菜单使用 Material 3 默认形状、容器色与 elevation，和应用主题保持同步。
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = onDismiss,
-            // 管理菜单是功能性浮层，不使用默认的大圆角高亮容器，避免列表页重新变成
-            // 一块突兀的“卡片”；菜单只保留轻微圆角和普通 surface 色。
-            shape = RoundedCornerShape(8.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp,
-            shadowElevation = 4.dp,
         ) {
             DropdownMenuItem(
                 text = {

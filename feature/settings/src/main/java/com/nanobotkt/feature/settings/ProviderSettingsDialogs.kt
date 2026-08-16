@@ -35,11 +35,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.Json
 
 /** Provider 凭据、OAuth 与自定义 Provider 编辑弹窗。 */
@@ -235,19 +233,23 @@ internal fun ProviderEditDialog(
                         else ->
                             Text(
                                 "Unsupported advanced field: $field",
-                                color = SecondaryText,
-                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
                             )
                     }
                 }
                 if (provider.oauthLoginSupported == true) {
                     HorizontalDivider()
-                    Text("OAuth", fontWeight = FontWeight.SemiBold, color = PrimaryText)
+                    Text(
+                        "OAuth",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
                     if (!provider.oauthAccount.isNullOrBlank()) {
                         Text(
                             "Signed in as ${provider.oauthAccount}",
-                            color = SecondaryText,
-                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
                         )
                         TextButton(onClick = onOAuthLogout, enabled = !oauthPending) {
                             Text(if (oauthPending) "Signing out…" else "Sign out")
@@ -255,19 +257,23 @@ internal fun ProviderEditDialog(
                     } else {
                         Text(
                             "This provider uses an interactive OAuth flow.",
-                            color = SecondaryText,
-                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
                         )
                         TextButton(onClick = onOAuthLogin, enabled = !oauthPending) {
                             Text(if (oauthPending) "Starting…" else "Start OAuth login")
                         }
                     }
                     if (oauth?.authorizationUrl != null) {
-                        Text("Open this URL in a browser:", color = SecondaryText, fontSize = 12.sp)
+                        Text(
+                            "Open this URL in a browser:",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                         Text(
                             oauth.authorizationUrl.orEmpty(),
-                            color = PrimaryText,
-                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodySmall,
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -291,7 +297,11 @@ internal fun ProviderEditDialog(
                     }
                 }
                 if (!state.error.isNullOrBlank())
-                    Text(state.error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Text(
+                        state.error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
             }
         },
         confirmButton = {
@@ -408,7 +418,11 @@ internal fun CustomProviderDialog(
                     minLines = 2,
                 )
                 if (!error.isNullOrBlank())
-                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Text(
+                        error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
             }
         },
         confirmButton = {

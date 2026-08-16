@@ -1,7 +1,6 @@
 package com.nanobotkt.feature.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -24,9 +22,16 @@ import androidx.compose.material.icons.outlined.MicNone
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,8 +51,8 @@ import com.nanobotkt.core.persistence.DensityPreference
 import com.nanobotkt.core.persistence.FileEditDisplay
 import com.nanobotkt.core.persistence.ThemePreference
 import com.nanobotkt.core.persistence.UserPreferences
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 
 /** Overview 与 Appearance 页面；保持展示偏好和概览信息聚合在一起。 */
@@ -227,31 +232,59 @@ internal fun OverviewPage(
 
 @Composable
 internal fun TokenUsageHeatmapCard(usage: SettingsUsage?) {
-    val today = remember { LocalDate.now() }
-    val end = remember(today) { today.plusDays((6 - (today.dayOfWeek.value % 7)).toLong()) }
-    val dates = remember(end) { List(371) { index -> end.minusDays((370 - index).toLong()) } }
+    // java.time 在 minSdk 24 上需要额外 desugaring；热力图只需要本地自然日，使用 Calendar
+    // 可以直接覆盖所有受支持系统版本，并在生成 key 前统一归零时分秒，避免夏令时边界漂移。
+    val todayStart =
+        remember {
+            Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+        }
+    val endStart =
+        remember(todayStart) {
+            Calendar.getInstance().apply {
+                timeInMillis = todayStart
+                val daysUntilSaturday = (Calendar.SATURDAY - get(Calendar.DAY_OF_WEEK) + 7) % 7
+                add(Calendar.DAY_OF_YEAR, daysUntilSaturday)
+            }.timeInMillis
+        }
+    val dayKeyFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
+    val monthFormat = remember { SimpleDateFormat("MMM", Locale.ENGLISH) }
+    val days =
+        remember(endStart) {
+            List(371) { index ->
+                Calendar.getInstance().apply {
+                    timeInMillis = endStart
+                    add(Calendar.DAY_OF_YEAR, index - 370)
+                }.timeInMillis
+            }
+        }
     val totals =
         remember(usage?.days) { usage?.days.orEmpty().associate { it.date to it.totalTokens } }
     val maxTokens = remember(totals) { totals.values.maxOrNull()?.coerceAtLeast(0L) ?: 0L }
     val monthLabels =
-        remember(dates) {
-            dates
-                .filter { it.dayOfMonth == 1 }
-                .map { it.format(DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH)) }
+        remember(days) {
+            days.mapNotNull { day ->
+                Calendar.getInstance().apply { timeInMillis = day }
+                    .takeIf { it.get(Calendar.DAY_OF_MONTH) == 1 }
+                    ?.let { monthFormat.format(it.time) }
+            }
         }
 
-    Surface(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = CardBackground,
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
             Text(
                 text = "Token Usage",
                 modifier = Modifier.align(Alignment.End),
-                color = SecondaryText.copy(alpha = 0.64f),
-                fontSize = 11.sp,
-                lineHeight = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
             )
             Spacer(Modifier.height(8.dp))
             if (monthLabels.isNotEmpty()) {
@@ -263,10 +296,9 @@ internal fun TokenUsageHeatmapCard(usage: SettingsUsage?) {
                         .filterIndexed { index, _ -> index % 2 == 0 }
                         .forEach { month ->
                             Text(
-                                month,
-                                color = SecondaryText.copy(alpha = 0.62f),
-                                fontSize = 10.sp,
-                                lineHeight = 16.sp,
+                                text = month,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall,
                             )
                         }
                 }
@@ -282,11 +314,11 @@ internal fun TokenUsageHeatmapCard(usage: SettingsUsage?) {
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         repeat(7) { row ->
-                            val date = dates[column * 7 + row]
-                            val tokens = totals[date.toString()] ?: 0L
+                            val day = days[column * 7 + row]
+                            val tokens = totals[dayKeyFormat.format(day)] ?: 0L
                             val level =
                                 when {
-                                    date > today -> -1
+                                    day > todayStart -> -1
                                     tokens <= 0L || maxTokens <= 0L -> 0
                                     tokens.toDouble() / maxTokens >= 0.75 -> 4
                                     tokens.toDouble() / maxTokens >= 0.45 -> 3
@@ -296,21 +328,17 @@ internal fun TokenUsageHeatmapCard(usage: SettingsUsage?) {
                             val color =
                                 when (level) {
                                     -1 -> Color.Transparent
-                                    4 -> Color(0xFF7DD3FC)
-                                    3 -> Color(0xFF38BDF8).copy(alpha = 0.85f)
-                                    2 -> Color(0xFF0EA5E9).copy(alpha = 0.60f)
-                                    1 ->
-                                        if (settingsDark) Color(0xFF0C4A6E).copy(alpha = 0.80f)
-                                        else Color(0xFF0EA5E9).copy(alpha = 0.30f)
-                                    else ->
-                                        if (settingsDark) Color.White.copy(alpha = 0.08f)
-                                        else Color(0xFFD4D4D4).copy(alpha = 0.70f)
+                                    4 -> MaterialTheme.colorScheme.primary
+                                    3 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.78f)
+                                    2 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.52f)
+                                    1 -> MaterialTheme.colorScheme.primaryContainer
+                                    else -> MaterialTheme.colorScheme.surfaceContainerHighest
                                 }
                             Box(
                                 modifier =
                                     Modifier.fillMaxWidth()
                                         .aspectRatio(1f)
-                                        .clip(RoundedCornerShape(2.dp))
+                                        .clip(MaterialTheme.shapes.extraSmall)
                                         .background(color)
                             )
                         }
@@ -411,11 +439,12 @@ internal fun AppearancePage(preferences: UserPreferences, viewModel: SettingsVie
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun LanguagePreference(languageTag: String?, onChange: (String?) -> Unit) {
     /**
-     * null 代表跟随 Android 系统语言，而不是英文。 之前把 null 当成 English 展示并默认勾选英文，会让系统中文设备看起来像是
-     * “设置页英文、聊天页其他语言”的混杂状态；这里把系统默认作为显式选项， 让持久化值、界面展示和实际 Locale 行为保持一致。
+     * null 代表跟随 Android 系统语言，而不是英文。显式保留该选项，确保持久化值、界面展示
+     * 和实际 Locale 行为一致。
      */
     val languages =
         listOf(
@@ -434,42 +463,48 @@ internal fun LanguagePreference(languageTag: String?, onChange: (String?) -> Uni
     var expanded by remember { mutableStateOf(false) }
     val currentName = languages.firstOrNull { it.first == languageTag }?.second ?: "System default"
 
-    Box {
-        Column(
-            modifier =
-                Modifier.fillMaxWidth()
-                    .clickable { expanded = true }
-                    .padding(horizontal = 16.dp, vertical = 15.dp)
+    PreferenceBlock(
+        title = "Language",
+        description = "Choose the language used by the WebUI.",
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded },
         ) {
-            Text("Language", color = PrimaryText, fontSize = 15.sp)
-            Spacer(Modifier.height(4.dp))
-            Text("Choose the language used by the WebUI.", color = SecondaryText, fontSize = 13.sp)
-            Spacer(Modifier.height(15.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Outlined.Language,
-                    null,
-                    tint = SecondaryText,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(7.dp))
-                Text(currentName, color = SecondaryText, fontSize = 13.sp)
-            }
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            languages.forEach { (tag, label) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    trailingIcon = {
-                        if (tag == languageTag) {
-                            Icon(Icons.Rounded.Check, null, Modifier.size(17.dp))
-                        }
-                    },
-                    onClick = {
-                        expanded = false
-                        onChange(tag)
-                    },
-                )
+            OutlinedTextField(
+                value = currentName,
+                onValueChange = {},
+                readOnly = true,
+                singleLine = true,
+                modifier =
+                    Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                leadingIcon = {
+                    Icon(imageVector = Icons.Outlined.Language, contentDescription = null)
+                },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                languages.forEach { (tag, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        trailingIcon = {
+                            if (tag == languageTag) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = "Selected",
+                                )
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onChange(tag)
+                        },
+                    )
+                }
             }
         }
     }

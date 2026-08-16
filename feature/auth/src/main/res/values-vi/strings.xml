@@ -1,6 +1,26 @@
 <resources>
     <string name="auth_title">Kết nối với nanobot</string>
     <string name="auth_description">Cấu hình đầy đủ địa chỉ Gateway và bí mật khởi động. Cả hai được xác thực và thay thế cùng nhau.</string>
+    <string name="gateway_address">Địa chỉ Gateway</string>
     <string name="bootstrap_secret">Bí mật khởi động</string>
     <string name="connect">Kết nối</string>
+    <string name="error_missing_secret">Nhập bí mật khởi động.</string>
+    <string name="error_configuration_rejected">Gateway đã từ chối tổ hợp địa chỉ và bí mật này.</string>
+    <string name="error_gateway_timeout">Gateway đã hết thời gian chờ. Hãy kiểm tra địa chỉ và mạng rồi thử lại.</string>
+    <string name="error_gateway_network">Không thể kết nối tới Gateway. Hãy kiểm tra địa chỉ và mạng.</string>
+    <string name="error_gateway_html">Địa chỉ đã trả về một trang HTML thay vì phản hồi Gateway.</string>
+    <string name="error_gateway_non_json">Địa chỉ không trả về phản hồi JSON Gateway hợp lệ.</string>
+    <string name="error_gateway_invalid_response">Phản hồi Gateway thiếu dữ liệu kết nối bắt buộc.</string>
+    <string name="error_gateway_http">Gateway đã trả về HTTP %1$d.</string>
+    <string name="error_gateway_storage">Cấu hình đã được xác thực nhưng không thể lưu. Cấu hình trước đó vẫn đang hoạt động.</string>
+    <string name="error_gateway_cancelled">Đã hủy cấu hình.</string>
+    <string name="error_gateway_unknown">Cấu hình Gateway gặp lỗi không mong muốn.</string>
+    <string name="error_address_empty">Nhập địa chỉ Gateway.</string>
+    <string name="error_address_scheme">Thêm http:// hoặc https:// vào địa chỉ Gateway.</string>
+    <string name="error_address_unsupported_scheme">Chỉ hỗ trợ địa chỉ Gateway dùng http:// hoặc https://.</string>
+    <string name="error_address_invalid">Nhập địa chỉ Gateway hợp lệ.</string>
+    <string name="error_address_host">Địa chỉ Gateway phải bao gồm máy chủ.</string>
+    <string name="error_address_credentials">Không đưa tên người dùng hoặc mật khẩu vào địa chỉ Gateway.</string>
+    <string name="error_address_query">Địa chỉ Gateway không được chứa tham số truy vấn.</string>
+    <string name="error_address_fragment">Địa chỉ Gateway không được chứa phân mảnh.</string>
 </resources>

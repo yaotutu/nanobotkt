@@ -1,0 +1,26 @@
+<resources>
+    <string name="auth_title">Hubungkan ke nanobot</string>
+    <string name="auth_description">Konfigurasikan alamat gateway lengkap dan rahasia bootstrap. Keduanya divalidasi dan diganti bersama-sama.</string>
+    <string name="gateway_address">Alamat Gateway</string>
+    <string name="bootstrap_secret">Rahasia bootstrap</string>
+    <string name="connect">Hubungkan</string>
+    <string name="error_missing_secret">Masukkan rahasia bootstrap.</string>
+    <string name="error_configuration_rejected">Gateway menolak kombinasi alamat dan rahasia ini.</string>
+    <string name="error_gateway_timeout">Waktu tunggu Gateway habis. Periksa alamat dan jaringan, lalu coba lagi.</string>
+    <string name="error_gateway_network">Gateway tidak dapat dijangkau. Periksa alamat dan jaringan.</string>
+    <string name="error_gateway_html">Alamat mengembalikan halaman HTML, bukan respons Gateway.</string>
+    <string name="error_gateway_non_json">Alamat tidak mengembalikan respons JSON Gateway yang valid.</string>
+    <string name="error_gateway_invalid_response">Respons Gateway tidak memiliki data koneksi yang diperlukan.</string>
+    <string name="error_gateway_http">Gateway mengembalikan HTTP %1$d.</string>
+    <string name="error_gateway_storage">Konfigurasi berhasil divalidasi, tetapi tidak dapat disimpan. Konfigurasi sebelumnya tetap aktif.</string>
+    <string name="error_gateway_cancelled">Konfigurasi dibatalkan.</string>
+    <string name="error_gateway_unknown">Konfigurasi Gateway gagal secara tidak terduga.</string>
+    <string name="error_address_empty">Masukkan alamat Gateway.</string>
+    <string name="error_address_scheme">Sertakan http:// atau https:// dalam alamat Gateway.</string>
+    <string name="error_address_unsupported_scheme">Hanya alamat Gateway http:// dan https:// yang didukung.</string>
+    <string name="error_address_invalid">Masukkan alamat Gateway yang valid.</string>
+    <string name="error_address_host">Alamat Gateway harus menyertakan host.</string>
+    <string name="error_address_credentials">Jangan sertakan nama pengguna atau kata sandi dalam alamat Gateway.</string>
+    <string name="error_address_query">Alamat Gateway tidak boleh berisi parameter kueri.</string>
+    <string name="error_address_fragment">Alamat Gateway tidak boleh berisi fragmen.</string>
+</resources>

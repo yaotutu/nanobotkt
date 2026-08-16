@@ -1,6 +1,26 @@
 <resources>
     <string name="auth_title">nanobot に接続</string>
     <string name="auth_description">Gateway アドレスとブートストラップシークレットを完全に設定します。両方は一緒に検証・置換されます。</string>
+    <string name="gateway_address">Gateway アドレス</string>
     <string name="bootstrap_secret">ブートストラップシークレット</string>
     <string name="connect">接続</string>
+    <string name="error_missing_secret">ブートストラップシークレットを入力してください。</string>
+    <string name="error_configuration_rejected">Gateway がこのアドレスとシークレットの組み合わせを拒否しました。</string>
+    <string name="error_gateway_timeout">Gateway がタイムアウトしました。アドレスとネットワークを確認して、もう一度お試しください。</string>
+    <string name="error_gateway_network">Gateway に接続できませんでした。アドレスとネットワークを確認してください。</string>
+    <string name="error_gateway_html">このアドレスは Gateway の応答ではなく HTML ページを返しました。</string>
+    <string name="error_gateway_non_json">このアドレスは有効な Gateway JSON 応答を返しませんでした。</string>
+    <string name="error_gateway_invalid_response">Gateway の応答に必要な接続情報がありません。</string>
+    <string name="error_gateway_http">Gateway が HTTP %1$d を返しました。</string>
+    <string name="error_gateway_storage">設定は検証されましたが保存できませんでした。以前の設定が引き続き有効です。</string>
+    <string name="error_gateway_cancelled">設定がキャンセルされました。</string>
+    <string name="error_gateway_unknown">Gateway の設定中に予期しないエラーが発生しました。</string>
+    <string name="error_address_empty">Gateway アドレスを入力してください。</string>
+    <string name="error_address_scheme">Gateway アドレスに http:// または https:// を含めてください。</string>
+    <string name="error_address_unsupported_scheme">Gateway アドレスでは http:// と https:// のみ使用できます。</string>
+    <string name="error_address_invalid">有効な Gateway アドレスを入力してください。</string>
+    <string name="error_address_host">Gateway アドレスにはホストを含める必要があります。</string>
+    <string name="error_address_credentials">Gateway アドレスにユーザー名やパスワードを含めないでください。</string>
+    <string name="error_address_query">Gateway アドレスにクエリパラメータを含めることはできません。</string>
+    <string name="error_address_fragment">Gateway アドレスにフラグメントを含めることはできません。</string>
 </resources>

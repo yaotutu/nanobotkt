@@ -1,54 +1,41 @@
 package com.nanobotkt.feature.settings
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ArrowCircleUp
-import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Remove
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,19 +43,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 
 /** 版本检查、模型选择、密钥和数值输入组件。 */
 @Composable
@@ -79,41 +59,44 @@ internal fun VersionCheckRow(
     checking: Boolean,
     onCheckVersion: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
-        Text(
-            text = "Version",
-            color = PrimaryText,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            fontWeight = FontWeight.Medium,
-        )
-        Spacer(Modifier.height(2.dp))
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
+        Text(text = "Version", style = MaterialTheme.typography.titleSmall)
         Text(
             text = if (version == "nanobot") version else "v$version",
-            color = SecondaryText,
-            fontSize = 12.sp,
-            lineHeight = 20.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
         )
-        Spacer(Modifier.height(11.dp))
-        OutlinePillButton(
-            text = if (checking) "Checking..." else "Check for updates",
-            onClick = onCheckVersion,
-            enabled = !checking,
-            icon = Icons.Outlined.ArrowCircleUp,
-        )
+        Spacer(Modifier.size(12.dp))
+        OutlinedButton(onClick = onCheckVersion, enabled = !checking) {
+            Icon(imageVector = Icons.Outlined.ArrowCircleUp, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (checking) "Checking..." else "Check for updates")
+        }
         val status = updateText ?: if (checked) "You're up to date" else null
         if (status != null) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.size(8.dp))
             Text(
                 text = status,
-                color = if (updateText != null) Color(0xFF2997FF) else Color(0xFF2E9B59),
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
+                color =
+                    if (updateText != null) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }
 }
 
+/**
+ * 可搜索的模型选择器。
+ *
+ * 外层采用 Material 3 ExposedDropdownMenuBox 保留标准锚点、展开状态和菜单定位；菜单内的
+ * 搜索框仅过滤本地模型目录，不会触发网络请求。自定义模型 ID 仍通过明确菜单项提交，避免
+ * 输入过程误改已保存配置。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ModelIdPicker(
     provider: String,
@@ -134,17 +117,21 @@ internal fun ModelIdPicker(
     val showCustom =
         trimmedQuery.isNotBlank() && models.none { it == trimmedQuery } && trimmedQuery != value
 
-    Box(Modifier.width(224.dp)) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().height(38.dp).clickable { expanded = true },
-            shape = RoundedCornerShape(19.dp),
-            color = PageBackground,
-            border = BorderStroke(1.dp, DividerColor),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = Modifier.width(280.dp),
+    ) {
+        OutlinedTextField(
+            value = value.ifBlank { "Select image model" },
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            modifier =
+                Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            leadingIcon = {
                 ProviderMark(
                     provider = provider,
                     showBrandLogos = showProviderLogos,
@@ -152,66 +139,31 @@ internal fun ModelIdPicker(
                     fallbackIcon = Icons.Outlined.SmartToy,
                     unconfigured = !providerConfigured,
                 )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = value.ifBlank { "Select image model" },
-                    modifier = Modifier.weight(1f),
-                    color = if (value.isBlank()) SecondaryText else PrimaryText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Icon(
-                    imageVector = Icons.Rounded.ExpandMore,
-                    contentDescription = null,
-                    tint = SecondaryText,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-        DropdownMenu(
+            },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+        )
+        ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            modifier = Modifier.width(280.dp).heightIn(max = 330.dp).background(PageBackground),
+            modifier = Modifier.heightIn(max = 360.dp),
         ) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                modifier = Modifier.width(268.dp).padding(horizontal = 6.dp, vertical = 4.dp),
-                placeholder = {
-                    Text("Search or type model ID", color = SecondaryText, fontSize = 12.sp)
-                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                placeholder = { Text("Search or type model ID") },
                 leadingIcon = {
-                    Icon(
-                        Icons.Outlined.Search,
-                        null,
-                        tint = SecondaryText,
-                        modifier = Modifier.size(16.dp),
-                    )
+                    Icon(imageVector = Icons.Outlined.Search, contentDescription = null)
                 },
                 singleLine = true,
-                textStyle =
-                    MaterialTheme.typography.bodyMedium.copy(color = PrimaryText, fontSize = 12.sp),
-                shape = RoundedCornerShape(18.dp),
-                colors =
-                    OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = PrimaryText,
-                        unfocusedTextColor = PrimaryText,
-                        focusedContainerColor = PageBackground,
-                        unfocusedContainerColor = PageBackground,
-                        focusedBorderColor = PrimaryText.copy(alpha = 0.28f),
-                        unfocusedBorderColor = DividerColor,
-                        cursorColor = PrimaryText,
-                    ),
+                textStyle = MaterialTheme.typography.bodyMedium,
             )
             if (models.isEmpty() && trimmedQuery.isBlank()) {
                 Text(
                     text = "Type the model ID supported by this provider.",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                    color = SecondaryText,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
             visibleModels.forEach { modelId ->
@@ -227,9 +179,7 @@ internal fun ModelIdPicker(
                     },
                     text = {
                         Text(
-                            modelId,
-                            color = PrimaryText,
-                            fontSize = 12.sp,
+                            text = modelId,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -237,10 +187,9 @@ internal fun ModelIdPicker(
                     trailingIcon = {
                         if (modelId == value) {
                             Icon(
-                                Icons.Rounded.Check,
-                                null,
-                                tint = PrimaryText,
-                                modifier = Modifier.size(15.dp),
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.primary,
                             )
                         }
                     },
@@ -254,18 +203,11 @@ internal fun ModelIdPicker(
                 if (visibleModels.isNotEmpty()) CardDivider()
                 DropdownMenuItem(
                     leadingIcon = {
-                        Icon(
-                            Icons.Outlined.Edit,
-                            null,
-                            tint = SecondaryText,
-                            modifier = Modifier.size(15.dp),
-                        )
+                        Icon(imageVector = Icons.Outlined.Edit, contentDescription = null)
                     },
                     text = {
                         Text(
                             text = "Use “$trimmedQuery”",
-                            color = PrimaryText,
-                            fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -291,77 +233,42 @@ internal fun SecretPillTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = Modifier.width(280.dp).defaultMinSize(minHeight = 42.dp),
+        modifier = Modifier.width(280.dp),
         singleLine = true,
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = PrimaryText, fontSize = 13.sp),
+        textStyle = MaterialTheme.typography.bodyMedium,
         placeholder = {
-            Text(
-                placeholder,
-                color = SecondaryText,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Text(text = placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         trailingIcon = {
-            Icon(
-                imageVector =
-                    if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                contentDescription = if (visible) "Hide API key" else "Show API key",
-                tint = SecondaryText,
-                modifier =
-                    Modifier.size(28.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onToggleVisibility)
-                        .padding(6.dp),
-            )
+            IconButton(onClick = onToggleVisibility) {
+                Icon(
+                    imageVector =
+                        if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                    contentDescription = if (visible) "Hide API key" else "Show API key",
+                )
+            }
         },
         visualTransformation =
             if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        shape = RoundedCornerShape(21.dp),
-        colors =
-            OutlinedTextFieldDefaults.colors(
-                focusedTextColor = PrimaryText,
-                unfocusedTextColor = PrimaryText,
-                focusedContainerColor = PageBackground,
-                unfocusedContainerColor = PageBackground,
-                focusedBorderColor = PrimaryText.copy(alpha = 0.28f),
-                unfocusedBorderColor = DividerColor,
-                cursorColor = PrimaryText,
-            ),
     )
 }
 
 @Composable
 internal fun StoredSecretField(hint: String, onEdit: () -> Unit) {
-    Surface(
-        modifier = Modifier.width(280.dp).height(38.dp),
-        shape = RoundedCornerShape(19.dp),
-        color = PageBackground,
-        border = BorderStroke(1.dp, DividerColor),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 13.dp, end = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = hint,
-                modifier = Modifier.weight(1f),
-                color = SecondaryText,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Icon(
-                imageVector = Icons.Outlined.Edit,
-                contentDescription = "Edit API key",
-                tint = SecondaryText,
-                modifier =
-                    Modifier.size(28.dp).clip(CircleShape).clickable(onClick = onEdit).padding(7.dp),
-            )
-        }
-    }
+    OutlinedTextField(
+        value = hint,
+        onValueChange = {},
+        modifier = Modifier.width(280.dp),
+        readOnly = true,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium,
+        trailingIcon = {
+            IconButton(onClick = onEdit) {
+                Icon(imageVector = Icons.Outlined.Edit, contentDescription = "Edit API key")
+            }
+        },
+    )
 }
 
 @Composable
@@ -376,51 +283,37 @@ internal fun PillTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 42.dp),
+        modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = PrimaryText, fontSize = 13.sp),
+        textStyle = MaterialTheme.typography.bodyMedium,
         placeholder = {
-            Text(
-                text = placeholder,
-                color = SecondaryText,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Text(text = placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         trailingIcon =
             if (trailingLabel != null && onTrailingClick != null) {
                 {
-                    Text(
-                        text = trailingLabel,
-                        modifier =
-                            Modifier.clip(RoundedCornerShape(12.dp))
-                                .clickable(onClick = onTrailingClick)
-                                .padding(horizontal = 7.dp, vertical = 5.dp),
-                        color = SecondaryText,
-                        fontSize = 11.sp,
-                    )
+                    TextButton(onClick = onTrailingClick) {
+                        Text(text = trailingLabel)
+                    }
                 }
             } else {
                 null
             },
         visualTransformation =
             if (isSecret) PasswordVisualTransformation() else VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-        shape = RoundedCornerShape(21.dp),
-        colors =
-            OutlinedTextFieldDefaults.colors(
-                focusedTextColor = PrimaryText,
-                unfocusedTextColor = PrimaryText,
-                focusedContainerColor = PageBackground,
-                unfocusedContainerColor = PageBackground,
-                focusedBorderColor = PrimaryText.copy(alpha = 0.28f),
-                unfocusedBorderColor = DividerColor,
-                cursorColor = PrimaryText,
+        keyboardOptions =
+            KeyboardOptions(
+                keyboardType = if (isSecret) KeyboardType.Password else KeyboardType.Text,
             ),
     )
 }
 
+/**
+ * 原生图标按钮步进器。
+ *
+ * OutlinedIconButton 自带 48dp 触控语义和禁用状态；数值仍在 range 内收敛，防止快速连续点击
+ * 或调用方传入边界值时越界。
+ */
 @Composable
 internal fun NumberStepper(
     value: Int,
@@ -428,79 +321,60 @@ internal fun NumberStepper(
     suffix: String = "",
     onValueChange: (Int) -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(19.dp),
-        color = PageBackground,
-        border = BorderStroke(1.dp, DividerColor),
-    ) {
-        Row(modifier = Modifier.height(38.dp), verticalAlignment = Alignment.CenterVertically) {
-            val canDecrease = value > range.first
-            val canIncrease = value < range.last
-            Box(
-                modifier =
-                    Modifier.size(38.dp).clickable(enabled = canDecrease) {
-                        onValueChange((value - 1).coerceIn(range))
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Rounded.Remove,
-                    contentDescription = "Decrease",
-                    tint = if (canDecrease) PrimaryText else SecondaryText.copy(alpha = 0.35f),
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            Text(
-                text = if (suffix.isBlank()) value.toString() else "$value $suffix",
-                modifier = Modifier.defaultMinSize(minWidth = 68.dp),
-                color = PrimaryText,
-                fontSize = 13.sp,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-            Box(
-                modifier =
-                    Modifier.size(38.dp).clickable(enabled = canIncrease) {
-                        onValueChange((value + 1).coerceIn(range))
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Rounded.Add,
-                    contentDescription = "Increase",
-                    tint = if (canIncrease) PrimaryText else SecondaryText.copy(alpha = 0.35f),
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+    val canDecrease = value > range.first
+    val canIncrease = value < range.last
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedIconButton(
+            onClick = { onValueChange((value - 1).coerceIn(range)) },
+            enabled = canDecrease,
+        ) {
+            Icon(imageVector = Icons.Rounded.Remove, contentDescription = "Decrease")
+        }
+        Text(
+            text = if (suffix.isBlank()) value.toString() else "$value $suffix",
+            modifier = Modifier.defaultMinSize(minWidth = 88.dp).padding(horizontal = 12.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        OutlinedIconButton(
+            onClick = { onValueChange((value + 1).coerceIn(range)) },
+            enabled = canIncrease,
+        ) {
+            Icon(imageVector = Icons.Rounded.Add, contentDescription = "Increase")
         }
     }
 }
 
+/**
+ * 只读状态标签没有对应的可点击 Material chip 语义，因此保留 Material Surface 作为语义容器，
+ * 但颜色、形状和文字层级全部来自 MaterialTheme，避免维护第二套成功/中性色板。
+ */
 @Composable
 internal fun StatusPill(text: String, positive: Boolean) {
     Surface(
-        shape = RoundedCornerShape(50),
+        shape = MaterialTheme.shapes.small,
         color =
             if (positive) {
-                if (settingsDark) Color(0xFF234333) else Color(0xFFE4F4E9)
+                MaterialTheme.colorScheme.tertiaryContainer
             } else {
-                SegmentBackground
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            },
+        contentColor =
+            if (positive) {
+                MaterialTheme.colorScheme.onTertiaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
             },
     ) {
         Text(
             text = text,
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
-            color =
-                if (positive) {
-                    if (settingsDark) Color(0xFF8FD3A8) else Color(0xFF287A45)
-                } else {
-                    SecondaryText
-                },
-            fontSize = 12.sp,
-            lineHeight = 15.sp,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelMedium,
         )
     }
 }
 
+/** 兼容旧调用名的 Material 3 OutlinedButton；不再手工组合 Surface 和 clickable。 */
 @Composable
 internal fun OutlinePillButton(
     text: String,
@@ -509,27 +383,11 @@ internal fun OutlinePillButton(
     enabled: Boolean = true,
     icon: ImageVector? = null,
 ) {
-    Surface(
-        modifier =
-            modifier.clip(RoundedCornerShape(50)).clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(50),
-        color = Color.Transparent,
-        border = BorderStroke(1.dp, DividerColor),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (enabled) PrimaryText else SecondaryText,
-                    modifier = Modifier.size(14.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-            }
-            Text(text = text, color = if (enabled) PrimaryText else SecondaryText, fontSize = 12.sp)
+    OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled) {
+        if (icon != null) {
+            Icon(imageVector = icon, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
         }
+        Text(text = text)
     }
 }

@@ -29,6 +29,9 @@ import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,9 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * Settings Home 只承担状态摘要和分组导航，不直接复制各详情页的复杂表单。
@@ -263,11 +264,14 @@ private fun GatewaySummaryCard(
     val gateway = gatewayEndpointLabel(gatewayEndpoint)
     val connected = connectionStatus.equals("Connected", ignoreCase = true)
 
-    Surface(
+    ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = MaterialTheme.shapes.extraLarge,
+        colors =
+            CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -283,7 +287,6 @@ private fun GatewaySummaryCard(
                     Text(
                         text = "Gateway $connectionStatus",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = gateway,
@@ -309,11 +312,14 @@ private fun GatewaySummaryCard(
                     icon = Icons.Outlined.Sync,
                 )
             }
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+            Card(
                 onClick = onOpenModels,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+                    ),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -325,7 +331,10 @@ private fun GatewaySummaryCard(
                         modifier = Modifier.size(20.dp),
                     )
                     Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text("Current model", fontSize = 12.sp)
+                        Text(
+                            text = "Current model",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
                         Text(
                             text = model,
                             style = MaterialTheme.typography.titleSmall,

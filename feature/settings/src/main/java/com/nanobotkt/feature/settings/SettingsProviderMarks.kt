@@ -1,50 +1,12 @@
 package com.nanobotkt.feature.settings
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.ArrowCircleUp
-import androidx.compose.material.icons.outlined.Dns
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.SmartToy
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.Remove
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,22 +15,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
 /** Provider 品牌标记与远程 Logo 渲染。 */
@@ -77,6 +32,12 @@ internal enum class ProviderMarkSize {
     LIST,
 }
 
+/**
+ * 渲染 Provider 图标，并按“未配置、远程品牌图、通用图标”的顺序降级。
+ *
+ * 外层容器全部使用 MaterialTheme 的颜色与形状 token；Provider 自身的品牌色仅用于远程图片尚未
+ * 加载时的品牌占位，这是领域资产而不是页面色板，不能强行替换成应用主色。
+ */
 @Composable
 internal fun ProviderMark(
     provider: String?,
@@ -92,7 +53,8 @@ internal fun ProviderMark(
             Icon(
                 imageVector = Icons.Outlined.ErrorOutline,
                 contentDescription = null,
-                tint = if (settingsDark) Color(0xFFFDE68A) else Color(0xFFB45309),
+                // “未配置”是需要关注但不等同于保存失败的状态，使用 tertiary 避免滥用 error。
+                tint = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.size(if (size == ProviderMarkSize.LIST) 20.dp else 16.dp),
             )
         }
@@ -108,20 +70,31 @@ internal fun ProviderMark(
 
     Surface(
         modifier = Modifier.size(containerSize),
-        shape = RoundedCornerShape(if (size == ProviderMarkSize.LIST) 14.dp else 6.dp),
-        color = SegmentBackground,
+        shape =
+            if (size == ProviderMarkSize.LIST) {
+                MaterialTheme.shapes.medium
+            } else {
+                MaterialTheme.shapes.small
+            },
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = fallbackIcon,
                 contentDescription = null,
-                tint = PrimaryText.copy(alpha = 0.82f),
                 modifier = Modifier.size(if (size == ProviderMarkSize.LIST) 20.dp else 12.dp),
             )
         }
     }
 }
 
+/**
+ * 加载 Provider 远程 Logo，并在网络图片就绪前显示稳定的品牌首字母占位。
+ *
+ * 每次 URL 切换都先清除 loaded，避免上一张图片成功状态泄漏到下一候选 URL；加载失败时只前进到
+ * 服务端声明的下一候选地址，候选耗尽后继续保留品牌占位，不制造空白或无限重试。
+ */
 @Composable
 internal fun RemoteProviderBrandMark(brand: ProviderBrand, size: ProviderMarkSize) {
     var logoIndex by remember(brand.logoUrls) { mutableIntStateOf(0) }
@@ -129,22 +102,38 @@ internal fun RemoteProviderBrandMark(brand: ProviderBrand, size: ProviderMarkSiz
     val logoUrl = brand.logoUrls.getOrNull(logoIndex)
     val containerSize = if (size == ProviderMarkSize.LIST) 40.dp else 20.dp
     val imageSize = if (size == ProviderMarkSize.LIST) 24.dp else 14.dp
-    val cornerRadius = if (size == ProviderMarkSize.LIST) 14.dp else 6.dp
+    val shape =
+        if (size == ProviderMarkSize.LIST) {
+            MaterialTheme.shapes.medium
+        } else {
+            MaterialTheme.shapes.small
+        }
 
     LaunchedEffect(logoUrl) { loaded = false }
 
     Surface(
         modifier = Modifier.size(containerSize),
-        shape = RoundedCornerShape(cornerRadius),
-        color = if (loaded) PageBackground else Color(brand.color),
-        border = if (loaded) BorderStroke(1.dp, DividerColor.copy(alpha = 0.45f)) else null,
+        shape = shape,
+        color = if (loaded) MaterialTheme.colorScheme.surface else Color(brand.color),
+        border =
+            if (loaded) {
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            } else {
+                null
+            },
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (!loaded) {
                 Text(
                     text = brand.initials,
+                    // 品牌色来自外部资产，首字母使用固定白色以延续现有品牌徽记约定。
                     color = Color.White,
-                    fontSize = if (size == ProviderMarkSize.LIST) 11.sp else 7.5.sp,
+                    style =
+                        if (size == ProviderMarkSize.LIST) {
+                            MaterialTheme.typography.labelMedium
+                        } else {
+                            MaterialTheme.typography.labelSmall
+                        },
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )

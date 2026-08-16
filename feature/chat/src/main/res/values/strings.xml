@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <!--
+        非中文 locale 目前按产品翻译进度逐步补齐；尚未翻译的条目必须回退到默认英文，
+        而不是复制未经校对的机器翻译。这里仅抑制该已知的增量本地化提示，其他 lint 规则仍照常执行。
+    -->
     <string name="open_navigation">Open navigation</string>
     <string name="open_settings">Open settings</string>
     <string name="system_settings">System settings</string>

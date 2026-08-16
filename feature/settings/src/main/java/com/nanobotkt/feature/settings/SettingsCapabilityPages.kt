@@ -31,7 +31,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.nanobotkt.core.model.RuntimeSurface
 import com.nanobotkt.core.network.GatewayServerAddressError
@@ -270,9 +269,8 @@ internal fun SecurityPage(state: SettingsUiState, viewModel: SettingsViewModel) 
         text =
             "Web fetches always protect local, private, and metadata services. Core channel safety stays in config.json.",
         modifier = Modifier.padding(horizontal = 4.dp),
-        color = SecondaryText,
-        fontSize = 13.sp,
-        lineHeight = 20.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
     )
 }
 

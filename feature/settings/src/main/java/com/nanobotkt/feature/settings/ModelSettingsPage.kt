@@ -39,7 +39,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.Json
 
 /**
@@ -526,11 +525,15 @@ internal fun ModelConfigurationDialog(
                     Text(
                         "Numeric values are invalid. Check the allowed ranges.",
                         color = MaterialTheme.colorScheme.error,
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 if (!error.isNullOrBlank())
-                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Text(
+                        error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
             }
         },
         confirmButton = {
