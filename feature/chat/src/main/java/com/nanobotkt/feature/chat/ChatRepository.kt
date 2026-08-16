@@ -1,45 +1,39 @@
 package com.nanobotkt.feature.chat
 
-import com.nanobotkt.core.model.AutomationsPayload
 import com.nanobotkt.core.model.BootstrapSnapshotProvider
 import com.nanobotkt.core.model.CliAppInfo
-import com.nanobotkt.core.model.CliAppsPayload
 import com.nanobotkt.core.model.FilePreviewPayload
 import com.nanobotkt.core.model.InboundEvent
 import com.nanobotkt.core.model.IngressLimitsProvider
 import com.nanobotkt.core.model.McpPresetInfo
-import com.nanobotkt.core.model.McpPresetsPayload
 import com.nanobotkt.core.model.ModelPresetInfo
 import com.nanobotkt.core.model.OutboundMedia
 import com.nanobotkt.core.model.SessionAutomationJob
 import com.nanobotkt.core.model.SettingsPayload
 import com.nanobotkt.core.model.SkillSummary
-import com.nanobotkt.core.model.SkillsPayload
 import com.nanobotkt.core.model.SlashCommand
-import com.nanobotkt.core.model.SlashCommandsPayload
 import com.nanobotkt.core.model.UiCliAppAttachment
 import com.nanobotkt.core.model.UiMediaAttachment
 import com.nanobotkt.core.model.UiMcpPresetAttachment
 import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.model.WebUiIngressLimits
-import com.nanobotkt.core.model.WebUiThreadPayload
 import com.nanobotkt.core.model.WorkspaceScope
 import com.nanobotkt.core.model.WorkspacesPayload
 import com.nanobotkt.core.model.normalized
 import com.nanobotkt.core.network.GatewayApiClient
-import com.nanobotkt.core.network.GatewayException
 import com.nanobotkt.core.transport.MessageSendResult
 import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportError
 import com.nanobotkt.core.transport.TransportStatus
 import com.nanobotkt.core.workspace.WorkspaceAccessProvider
-import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +45,14 @@ import kotlinx.coroutines.launch
 
 interface ChatRepository {
     val state: StateFlow<ChatUiState>
+    /**
+     * 通知 Repository 一个认证会话已经建立。
+     *
+     * Composer 目录和 Workspace 都依赖认证 Token，不能在 Singleton 构造阶段抢跑。
+     * [sessionEpoch] 由认证层生成，同一登录会话内的 Token 续期不会重复加载已经成功的目录；
+     * 目录加载失败时，后续 Ready 通知仍可触发重试。
+     */
+    fun onAuthenticated(sessionEpoch: Long) = Unit
     /**
      * 清理当前登录会话留下的聊天状态，避免退出登录后旧会话内容继续显示。
      */
@@ -155,6 +157,14 @@ class DefaultChatRepository @Inject constructor(
 ) : ChatRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableState = MutableStateFlow(ChatUiState())
+    /**
+     * canonical、optimistic、stream fold 与其 StateFlow 投影必须作为一个事务串行修改。
+     *
+     * Repository 同时接收主线程操作、HTTP 回调和 WebSocket 事件；只依赖 session guard 不能阻止
+     * 同一会话内的 read-copy-write 交错。使用一把窄范围 JVM 锁即可建立单写入者，不引入 Actor 框架，
+     * 且普通 runBlocking 单元测试不需要安装 Dispatchers.Main。
+     */
+    private val timelineWriterLock = Any()
     private val canonical = mutableListOf<UiMessage>()
     private val optimistic = linkedMapOf<String, LocalOutgoingMessage>()
     private val sideChannelTurnIds = mutableSetOf<String>()
@@ -172,15 +182,23 @@ class DefaultChatRepository @Inject constructor(
     private var turnModelName: String? = null
     override val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
     /**
-     * 文件预览请求代次；同一会话内的新请求也必须淘汰旧响应。
+     * 认证生命周期只保护 Composer 目录请求，不取代聊天会话自身的 sessionKey/chatId guard。
      *
-     * 入口通常由主线程调用，HTTP 回调则运行在 IO 线程。这里必须使用原子计数器保证
-     * 自增和可见性，否则新请求的回调偶尔会读到旧代次，错误地丢弃当前文件预览。
+     * AppViewModel、logout 清理和 IO 回调可能位于不同线程，因此这里用锁协调 Job 引用与加载结果，
+     * 再用原子代次阻止已经无法及时取消的 HTTP 响应写回新账号状态。
      */
-    private val filePreviewGeneration = AtomicLong(0L)
+    private val authenticatedLifecycleLock = Any()
+    private val composerCatalogGeneration = AtomicLong(0L)
+    @Volatile
+    private var authenticatedSessionEpoch: Long? = null
+    private var composerCatalogLoaded = false
+    private var composerCatalogJob: Job? = null
+    /** 具体 HTTP 协议下沉到 feature 内部数据源，Repository 只保留认证与 UI 写回边界。 */
+    private val composerCatalogLoader = ComposerCatalogLoader(api)
+    private val sessionLoader = ChatSessionLoader(api)
+    private val filePreviewLoader = ChatFilePreviewLoader(api)
 
     init {
-        scope.launch { refreshComposerCatalogs() }
         scope.launch {
             workspaceAccessProvider.workspaces.collectLatest { payload ->
                 val current = mutableState.value
@@ -194,7 +212,6 @@ class DefaultChatRepository @Inject constructor(
                 )
             }
         }
-        scope.launch { workspaceAccessProvider.refresh() }
         scope.launch { transport.events.collect(::handleEvent) }
         scope.launch { transport.errors.collect(::handleTransportError) }
         scope.launch {
@@ -209,48 +226,86 @@ class DefaultChatRepository @Inject constructor(
         }
     }
 
+    override fun onAuthenticated(sessionEpoch: Long) {
+        val generation: Long
+        val job: Job
+        synchronized(authenticatedLifecycleLock) {
+            val sameSession = authenticatedSessionEpoch == sessionEpoch
+            if (sameSession && (composerCatalogLoaded || composerCatalogJob?.isActive == true)) return
+
+            // 新账号登录或上一轮目录加载失败时，提升代次并取消旧 Job。即使 OkHttp 仍返回旧响应，
+            // refreshComposerCatalogs 内的双重代次检查也会阻止其写入当前 StateFlow。
+            authenticatedSessionEpoch = sessionEpoch
+            composerCatalogLoaded = false
+            composerCatalogJob?.cancel()
+            generation = composerCatalogGeneration.incrementAndGet()
+            job = scope.launch(start = CoroutineStart.LAZY) {
+                var completed = false
+                try {
+                    completed = refreshComposerCatalogs(sessionEpoch, generation)
+                } finally {
+                    synchronized(authenticatedLifecycleLock) {
+                        if (isCurrentAuthenticatedSession(sessionEpoch, generation)) {
+                            composerCatalogLoaded = completed
+                            composerCatalogJob = null
+                        }
+                    }
+                }
+            }
+            composerCatalogJob = job
+        }
+
+        // Workspace 自身已经使用 session/refresh 双代次保护写回；这里只负责把首次认证刷新
+        // 从 Repository 构造阶段迁移到明确的 Ready 边界，避免无 Token 请求。
+        scope.launch { workspaceAccessProvider.refresh() }
+        job.start()
+    }
+
     override fun reset() {
         // 退出登录时必须同时清理服务端会话标识、规范化消息和所有乐观消息，
         // 同时淘汰所有在途文件预览响应，避免旧账号内容回写到新登录会话。
-        filePreviewGeneration.incrementAndGet()
+        filePreviewLoader.invalidate()
+        synchronized(authenticatedLifecycleLock) {
+            authenticatedSessionEpoch = null
+            composerCatalogLoaded = false
+            composerCatalogGeneration.incrementAndGet()
+            composerCatalogJob?.cancel()
+            composerCatalogJob = null
+        }
         // 否则下一次登录可能短暂复用上一个账号的聊天内容。
         activeSessionModelPreset = null
         localModelSelection = null
         runtimeModelName = null
         turnModelName = null
         modelSettings = null
-        canonical.clear()
-        optimistic.clear()
-        sideChannelTurnIds.clear()
-        clearHandledAcceptanceFailures()
-        streamFold.reset()
-        mutableState.value = ChatUiState()
+        synchronized(timelineWriterLock) {
+            clearTimelineLocked()
+            mutableState.value = ChatUiState()
+        }
     }
 
     override fun startNewTopic() {
-        filePreviewGeneration.incrementAndGet()
+        filePreviewLoader.invalidate()
         val catalogs = mutableState.value
         activeSessionModelPreset = null
         turnModelName = null
-        canonical.clear()
-        optimistic.clear()
-        sideChannelTurnIds.clear()
-        clearHandledAcceptanceFailures()
-        streamFold.reset()
-        mutableState.value = ChatUiState(
-            limits = limitsProvider.currentIngressLimits(),
-            slashCommands = catalogs.slashCommands,
-            skills = catalogs.skills,
-            cliApps = catalogs.cliApps,
-            mcpPresets = catalogs.mcpPresets,
-            workspaces = catalogs.workspaces,
-            workspaceScope = catalogs.workspaces?.defaultScope?.normalized(),
-            model = buildModelSelection(scopeKey = NEW_TOPIC_MODEL_SCOPE),
-        )
+        synchronized(timelineWriterLock) {
+            clearTimelineLocked()
+            mutableState.value = ChatUiState(
+                limits = limitsProvider.currentIngressLimits(),
+                slashCommands = catalogs.slashCommands,
+                skills = catalogs.skills,
+                cliApps = catalogs.cliApps,
+                mcpPresets = catalogs.mcpPresets,
+                workspaces = catalogs.workspaces,
+                workspaceScope = catalogs.workspaces?.defaultScope?.normalized(),
+                model = buildModelSelection(scopeKey = NEW_TOPIC_MODEL_SCOPE),
+            )
+        }
     }
 
     override fun openSession(sessionKey: String, chatId: String, workspaceScope: WorkspaceScope?, modelPreset: String?) {
-        filePreviewGeneration.incrementAndGet()
+        filePreviewLoader.invalidate()
         val current = mutableState.value
         if (current.sessionKey == sessionKey && current.chatId == chatId) {
             activeSessionModelPreset = modelPreset
@@ -265,24 +320,22 @@ class DefaultChatRepository @Inject constructor(
         val catalogs = mutableState.value
         activeSessionModelPreset = modelPreset
         turnModelName = null
-        canonical.clear()
-        optimistic.clear()
-        sideChannelTurnIds.clear()
-        clearHandledAcceptanceFailures()
-        streamFold.reset()
-        mutableState.value = ChatUiState(
-            sessionKey = sessionKey,
-            chatId = chatId,
-            loading = true,
-            limits = limitsProvider.currentIngressLimits(),
-            slashCommands = catalogs.slashCommands,
-            skills = catalogs.skills,
-            cliApps = catalogs.cliApps,
-            mcpPresets = catalogs.mcpPresets,
-            workspaces = catalogs.workspaces,
-            workspaceScope = workspaceScope?.normalized() ?: catalogs.workspaces?.defaultScope?.normalized(),
-            model = buildModelSelection(scopeKey = sessionKey),
-        )
+        synchronized(timelineWriterLock) {
+            clearTimelineLocked()
+            mutableState.value = ChatUiState(
+                sessionKey = sessionKey,
+                chatId = chatId,
+                loading = true,
+                limits = limitsProvider.currentIngressLimits(),
+                slashCommands = catalogs.slashCommands,
+                skills = catalogs.skills,
+                cliApps = catalogs.cliApps,
+                mcpPresets = catalogs.mcpPresets,
+                workspaces = catalogs.workspaces,
+                workspaceScope = workspaceScope?.normalized() ?: catalogs.workspaces?.defaultScope?.normalized(),
+                model = buildModelSelection(scopeKey = sessionKey),
+            )
+        }
         transport.attach(chatId)
         scope.launch { refreshCanonical() }
     }
@@ -345,22 +398,26 @@ class DefaultChatRepository @Inject constructor(
         mutableState.value = current.copy(loadingOlder = true)
         scope.launch {
             try {
-                val page = fetchThread(sessionKey, before = current.beforeCursor, latest = false)
+                val page = sessionLoader.loadThread(sessionKey, before = current.beforeCursor, latest = false)
                 if (!mutableState.value.matchesSession(sessionKey, chatId)) return@launch
                 if (page == null) {
                     mutableState.value = mutableState.value.copy(loadingOlder = false)
                     return@launch
                 }
-                val merged = prependOlderMessages(canonical, page.messages)
-                canonical.clear()
-                canonical.addAll(merged)
-                streamFold.markCompletedTurns(page.completedTurnIds.orEmpty().toSet())
-                publish(
-                    loadingOlder = false,
-                    hasMore = page.page?.hasMoreBefore == true,
-                    before = page.page?.beforeCursor,
-                    userMessageOffset = page.page?.userMessageOffset ?: 0,
-                )
+                synchronized(timelineWriterLock) {
+                    // session guard 必须在获得时间线写锁后再次核对，否则检查与写入之间仍可能切换会话。
+                    if (!mutableState.value.matchesSession(sessionKey, chatId)) return@synchronized
+                    val merged = prependOlderMessages(canonical, page.messages)
+                    canonical.clear()
+                    canonical.addAll(merged)
+                    streamFold.markCompletedTurns(page.completedTurnIds.orEmpty().toSet())
+                    publishLocked(
+                        loadingOlder = false,
+                        hasMore = page.page?.hasMoreBefore == true,
+                        before = page.page?.beforeCursor,
+                        userMessageOffset = page.page?.userMessageOffset ?: 0,
+                    )
+                }
             } catch (error: CancellationException) {
                 if (mutableState.value.matchesSession(sessionKey, chatId)) {
                     mutableState.value = mutableState.value.copy(loadingOlder = false)
@@ -407,18 +464,20 @@ class DefaultChatRepository @Inject constructor(
 
     override suspend fun retry(messageId: String): ChatSendOutcome {
         check(mutableState.value.activeTurnId == null) { "turn_active" }
-        val failedEntry = optimistic.entries.firstOrNull { (_, outgoing) ->
-            outgoing.message.id == messageId && outgoing.deliveryState == LocalDeliveryState.FAILED
-        } ?: error("message_not_found")
-        val failed = failedEntry.value
-        check(
-            failed.sessionKey == mutableState.value.sessionKey &&
-                failed.chatId == mutableState.value.chatId,
-        ) { "session_changed" }
-
-        // transport 会为重试生成新的 turnId。先移除旧 FAILED 气泡，新的 optimistic 消息立即接管；
-        // 若连 sendMessage 都未能创建请求，则恢复旧记录，避免用户失去唯一可重试副本。
-        optimistic.remove(failedEntry.key)
+        val failedEntry = synchronized(timelineWriterLock) {
+            val entry = optimistic.entries.firstOrNull { (_, outgoing) ->
+                outgoing.message.id == messageId && outgoing.deliveryState == LocalDeliveryState.FAILED
+            } ?: error("message_not_found")
+            check(
+                entry.value.sessionKey == mutableState.value.sessionKey &&
+                    entry.value.chatId == mutableState.value.chatId,
+            ) { "session_changed" }
+            // transport 会为重试生成新的 turnId。先移除旧 FAILED 气泡，新的 optimistic 消息立即接管；
+            // 若连 sendMessage 都未能创建请求，则恢复旧记录，避免用户失去唯一可重试副本。
+            optimistic.remove(entry.key)
+            entry.key to entry.value
+        }
+        val failed = failedEntry.second
         val pending =
             try {
                 enqueueMessage(
@@ -438,12 +497,16 @@ class DefaultChatRepository @Inject constructor(
             } catch (error: CancellationException) {
                 // 调用方取消不代表服务端拒绝。恢复原 FAILED 记录并继续传播取消，避免把协程
                 // 生命周期事件误报成新的发送失败，也不吞掉结构化并发的取消信号。
-                optimistic[failedEntry.key] = failed
-                publish()
+                synchronized(timelineWriterLock) {
+                    optimistic[failedEntry.first] = failed
+                    publishLocked()
+                }
                 throw error
             } catch (error: Exception) {
-                optimistic[failedEntry.key] = failed
-                publish()
+                synchronized(timelineWriterLock) {
+                    optimistic[failedEntry.first] = failed
+                    publishLocked()
+                }
                 throw error
             }
         return awaitAcceptance(pending)
@@ -468,36 +531,40 @@ class DefaultChatRepository @Inject constructor(
     ): PendingLocalSend? {
         val normalizedQuote = normalizeQuotedContext(quotedContext)
         val value = formatQuotedUserMessage(rawText, normalizedQuote)
-        val chatId = mutableState.value.chatId ?: return null
         if (value.isEmpty() && media.isEmpty()) return null
-        val limits = limitsProvider.currentIngressLimits()
-        limits?.message?.maxTextBytes?.let {
-            require(value.toByteArray(Charsets.UTF_8).size <= it) { "message_text_too_large" }
-        }
-        limits?.attachments?.let {
-            require(media.size <= it.maxCount) { "attachment_count_exceeded" }
-        }
-        val explicitPayloads = options.capabilityPayloadsResolved
-        val capabilityPayloads = if (explicitPayloads) {
-            CapabilityMentionPayloads(options.cliApps, options.mcpPresets)
-        } else {
-            activeCapabilityMentionPayloads(
-                value = rawText,
-                cliApps = mutableState.value.cliApps,
-                mcpPresets = mutableState.value.mcpPresets,
+        return synchronized(timelineWriterLock) {
+            val current = mutableState.value
+            val chatId = current.chatId ?: return@synchronized null
+            val limits = limitsProvider.currentIngressLimits()
+            limits?.message?.maxTextBytes?.let {
+                require(value.toByteArray(Charsets.UTF_8).size <= it) { "message_text_too_large" }
+            }
+            limits?.attachments?.let {
+                require(media.size <= it.maxCount) { "attachment_count_exceeded" }
+            }
+            val explicitPayloads = options.capabilityPayloadsResolved
+            val capabilityPayloads = if (explicitPayloads) {
+                CapabilityMentionPayloads(options.cliApps, options.mcpPresets)
+            } else {
+                activeCapabilityMentionPayloads(
+                    value = rawText,
+                    cliApps = current.cliApps,
+                    mcpPresets = current.mcpPresets,
+                )
+            }
+            // sendMessage 只构造并排队 WebSocket 帧，不执行阻塞 I/O；放在写锁内可以保证
+            // 捕获的会话身份、本地 optimistic 记录和 transport 请求属于同一个原子入口。
+            val result = transport.sendMessage(
+                chatId = chatId,
+                content = value,
+                media = media,
+                cliApps = capabilityPayloads.cliApps,
+                mcpPresets = capabilityPayloads.mcpPresets,
+                quotedContext = normalizedQuote.takeIf(String::isNotEmpty),
+                workspaceScope = (options.workspaceScope ?: current.workspaceScope)?.normalized(),
+                startsNewRun = !options.sideChannel && !options.continueActiveTurn,
             )
-        }
-        val result = transport.sendMessage(
-            chatId = chatId,
-            content = value,
-            media = media,
-            cliApps = capabilityPayloads.cliApps,
-            mcpPresets = capabilityPayloads.mcpPresets,
-            quotedContext = normalizedQuote.takeIf(String::isNotEmpty),
-            workspaceScope = (options.workspaceScope ?: mutableState.value.workspaceScope)?.normalized(),
-            startsNewRun = !options.sideChannel && !options.continueActiveTurn,
-        )
-        val local = UiMessage(
+            val local = UiMessage(
             id = "local:${result.turnId}",
             role = "user",
             content = value,
@@ -517,28 +584,29 @@ class DefaultChatRepository @Inject constructor(
                     )
                 }.ifEmpty { null },
         )
-        optimistic[result.turnId] =
-            LocalOutgoingMessage(
-                sessionKey = mutableState.value.sessionKey,
+            optimistic[result.turnId] =
+                LocalOutgoingMessage(
+                sessionKey = current.sessionKey,
                 chatId = chatId,
                 message = local,
                 rawText = rawText,
                 media = media,
                 quotedContext = normalizedQuote.takeIf(String::isNotEmpty),
                 options = options,
-            )
-        if (options.sideChannel) sideChannelTurnIds += result.turnId
-        mutableState.value = mutableState.value.copy(
-            sendingTurnIds = mutableState.value.sendingTurnIds + result.turnId,
+                )
+            if (options.sideChannel) sideChannelTurnIds += result.turnId
+            mutableState.value = current.copy(
+            sendingTurnIds = current.sendingTurnIds + result.turnId,
             activeTurnId = if (options.sideChannel || options.continueActiveTurn) {
-                mutableState.value.activeTurnId
+                current.activeTurnId
             } else {
                 result.turnId
             },
             error = null,
-        )
-        publish()
-        return PendingLocalSend(result = result)
+            )
+            publishLocked()
+            PendingLocalSend(result = result)
+        }
     }
 
     /**
@@ -549,35 +617,38 @@ class DefaultChatRepository @Inject constructor(
         val result = pending.result
         return try {
             result.accepted.await()
-            mutableState.value =
-                mutableState.value.copy(
-                    sendingTurnIds = mutableState.value.sendingTurnIds - result.turnId,
-                )
+            mutableState.update { current ->
+                current.copy(sendingTurnIds = current.sendingTurnIds - result.turnId)
+            }
             ChatSendOutcome.Accepted
         } catch (error: CancellationException) {
             // 等待者被取消时，WebSocket 请求可能仍在服务端处理中。这里不能擅自把消息标记为
             // FAILED；后续 acceptance/turn 事件仍由 Repository 的事件收集器继续归并。
             throw error
         } catch (error: Exception) {
-            val outgoing = optimistic[result.turnId]
-            rememberHandledAcceptanceFailure(result.turnId)
-            val retainFailure = outgoing?.options?.retainFailureInTimeline == true
-            if (outgoing != null && retainFailure) {
-                optimistic[result.turnId] = outgoing.copy(deliveryState = LocalDeliveryState.FAILED)
-            } else {
-                optimistic.remove(result.turnId)
-            }
-            sideChannelTurnIds.remove(result.turnId)
             val reason = error.message ?: "message_send_failed"
-            mutableState.value =
-                mutableState.value.copy(
-                    sendingTurnIds = mutableState.value.sendingTurnIds - result.turnId,
-                    activeTurnId = mutableState.value.activeTurnId.takeUnless { it == result.turnId },
+            val outgoing: LocalOutgoingMessage?
+            val retainFailure: Boolean
+            synchronized(timelineWriterLock) {
+                outgoing = optimistic[result.turnId]
+                rememberHandledAcceptanceFailureLocked(result.turnId)
+                retainFailure = outgoing?.options?.retainFailureInTimeline == true
+                if (outgoing != null && retainFailure) {
+                    optimistic[result.turnId] = outgoing.copy(deliveryState = LocalDeliveryState.FAILED)
+                } else {
+                    optimistic.remove(result.turnId)
+                }
+                sideChannelTurnIds.remove(result.turnId)
+                val current = mutableState.value
+                mutableState.value = current.copy(
+                    sendingTurnIds = current.sendingTurnIds - result.turnId,
+                    activeTurnId = current.activeTurnId.takeUnless { it == result.turnId },
                     // 普通发送已经通过 FAILED 气泡提供局部反馈，不再额外弹全局 Snackbar；
                     // Queue flush 不保留气泡，异常继续抛给 ViewModel 统一提示并重新入队。
                     error = if (retainFailure) null else reason,
                 )
-            publish()
+                publishLocked()
+            }
             if (retainFailure) {
                 ChatSendOutcome.FailedRetained(checkNotNull(outgoing).message.id, reason)
             } else {
@@ -593,10 +664,7 @@ class DefaultChatRepository @Inject constructor(
         transport.transcribeAudio(dataUrl, durationMs)
 
     override suspend fun loadSessionAutomations(sessionKey: String): List<SessionAutomationJob> =
-        api.request(
-            path = "/api/sessions/${sessionKey.pathEncoded()}/automations",
-            deserializer = AutomationsPayload.serializer(),
-        ).jobs
+        sessionLoader.loadAutomations(sessionKey)
 
     override fun loadFilePreview(path: String) {
         val requestSessionKey = mutableState.value.sessionKey
@@ -611,41 +679,45 @@ class DefaultChatRepository @Inject constructor(
 
         // 捕获请求发起时的完整身份和代次。用户切换会话、重新打开同一会话，
         // 或在同一会话中点击另一个文件后，迟到的旧响应都不能回写当前预览。
-        val requestGeneration = filePreviewGeneration.incrementAndGet()
-        mutableState.value = mutableState.value.copy(
-            filePreview = null,
-            filePreviewLoading = true,
-            filePreviewError = null,
-        )
+        val requestGeneration = filePreviewLoader.beginRequest()
+        mutableState.update { current ->
+            current.copy(
+                filePreview = null,
+                filePreviewLoading = true,
+                filePreviewError = null,
+            )
+        }
         scope.launch {
-            runCatching {
-                api.request(
-                    path = "/api/sessions/${requestSessionKey.pathEncoded()}/file-preview",
-                    deserializer = FilePreviewPayload.serializer(),
-                    query = mapOf("path" to path),
-                )
-            }.onSuccess { preview ->
-                if (filePreviewGeneration.get() == requestGeneration && mutableState.value.sessionKey == requestSessionKey) {
-                    mutableState.value = mutableState.value.copy(
-                        filePreview = preview,
-                        filePreviewLoading = false,
-                        filePreviewError = null,
-                    )
+            try {
+                val preview = filePreviewLoader.load(requestSessionKey, path)
+                if (filePreviewLoader.isCurrent(requestGeneration) && mutableState.value.sessionKey == requestSessionKey) {
+                    mutableState.update { current ->
+                        current.copy(
+                            filePreview = preview,
+                            filePreviewLoading = false,
+                            filePreviewError = null,
+                        )
+                    }
                 }
-            }.onFailure { error ->
-                if (filePreviewGeneration.get() == requestGeneration && mutableState.value.sessionKey == requestSessionKey) {
-                    mutableState.value = mutableState.value.copy(
-                        filePreview = null,
-                        filePreviewLoading = false,
-                        filePreviewError = error.message ?: "file_preview_failed",
-                    )
+            } catch (error: CancellationException) {
+                // Repository scope 被取消时必须传播取消，不能把它伪装成文件预览失败。
+                throw error
+            } catch (error: Exception) {
+                if (filePreviewLoader.isCurrent(requestGeneration) && mutableState.value.sessionKey == requestSessionKey) {
+                    mutableState.update { current ->
+                        current.copy(
+                            filePreview = null,
+                            filePreviewLoading = false,
+                            filePreviewError = error.message ?: "file_preview_failed",
+                        )
+                    }
                 }
             }
         }
     }
 
     override fun clearFilePreview() {
-        filePreviewGeneration.incrementAndGet()
+        filePreviewLoader.invalidate()
         mutableState.value = mutableState.value.copy(
             filePreview = null,
             filePreviewLoading = false,
@@ -714,41 +786,49 @@ class DefaultChatRepository @Inject constructor(
         val session = sessionState.sessionKey ?: return false
         val chatId = sessionState.chatId
         try {
-            val payload = fetchThread(session, before = null, latest = true)
+            val payload = sessionLoader.loadThread(session, before = null, latest = true)
             // 会话在请求期间切换时，旧响应不能被视为当前会话的成功刷新。
             if (!mutableState.value.matchesSession(session, chatId)) return false
             if (payload == null) {
-                canonical.clear()
-                publish(
-                    loading = false,
-                    hasMore = false,
-                    before = null,
-                    activeTurnId = null,
-                    userMessageOffset = 0,
-                )
+                synchronized(timelineWriterLock) {
+                    if (!mutableState.value.matchesSession(session, chatId)) return@synchronized
+                    canonical.clear()
+                    publishLocked(
+                        loading = false,
+                        hasMore = false,
+                        before = null,
+                        activeTurnId = null,
+                        userMessageOffset = 0,
+                    )
+                }
                 return true
             }
 
-            val reconciled = mergeLatestMessages(canonical, payload.messages)
-            canonical.clear()
-            canonical.addAll(reconciled)
+            synchronized(timelineWriterLock) {
+                if (!mutableState.value.matchesSession(session, chatId)) return@synchronized
+                val reconciled = mergeLatestMessages(canonical, payload.messages)
+                canonical.clear()
+                canonical.addAll(reconciled)
 
-            val canonicalTurns = payload.messages.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
-            val completedTurns = payload.completedTurnIds.orEmpty().toSet()
-            (canonicalTurns + completedTurns).forEach(optimistic::remove)
-            streamFold.discardTurns(canonicalAssistantTurnIds(payload.messages))
-            streamFold.markCompletedTurns(completedTurns)
-            payload.workspaceScope?.let { canonicalScope ->
-                mutableState.value = mutableState.value.copy(workspaceScope = canonicalScope.normalized())
+                val canonicalTurns = payload.messages.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
+                val completedTurns = payload.completedTurnIds.orEmpty().toSet()
+                (canonicalTurns + completedTurns).forEach(optimistic::remove)
+                streamFold.discardTurns(canonicalAssistantTurnIds(payload.messages))
+                streamFold.markCompletedTurns(completedTurns)
+                payload.workspaceScope?.let { canonicalScope ->
+                    mutableState.update { current ->
+                        current.copy(workspaceScope = canonicalScope.normalized())
+                    }
+                }
+
+                publishLocked(
+                    loading = false,
+                    hasMore = payload.page?.hasMoreBefore == true,
+                    before = payload.page?.beforeCursor,
+                    activeTurnId = payload.activeTurnId,
+                    userMessageOffset = payload.page?.userMessageOffset ?: 0,
+                )
             }
-
-            publish(
-                loading = false,
-                hasMore = payload.page?.hasMoreBefore == true,
-                before = payload.page?.beforeCursor,
-                activeTurnId = payload.activeTurnId,
-                userMessageOffset = payload.page?.userMessageOffset ?: 0,
-            )
             return true
         } catch (error: CancellationException) {
             if (mutableState.value.matchesSession(session, chatId)) {
@@ -767,84 +847,47 @@ class DefaultChatRepository @Inject constructor(
         }
     }
 
-    /**
-     * Composer 使用的技能目录必须复用 WebUI 的公开只读路由。
-     * 服务端没有注册 `/api/skills`，继续使用旧路径会让聊天页静默丢失技能候选。
-     */
-    internal companion object {
-        const val COMPOSER_SKILLS_PATH = "/api/webui/skills"
-    }
+    private suspend fun refreshComposerCatalogs(sessionEpoch: Long, generation: Long): Boolean {
+        val result = composerCatalogLoader.load()
+        if (!isCurrentAuthenticatedSession(sessionEpoch, generation)) return false
 
-    private suspend fun refreshComposerCatalogs() {
-        runCatching {
-            api.request(
-                path = "/api/commands",
-                deserializer = SlashCommandsPayload.serializer(),
-            )
-        }.onSuccess { payload ->
-            mutableState.value = mutableState.value.copy(
-                slashCommands = payload.commands.filter(SlashCommand::hasSupportedLifecycle),
+        // 目录允许部分成功：失败分区保留上一轮可用值，避免一个非关键接口抖动清空整个 Composer。
+        mutableState.update { current ->
+            current.copy(
+                slashCommands = result.slashCommands ?: current.slashCommands,
+                skills = result.skills ?: current.skills,
+                cliApps = result.cliApps ?: current.cliApps,
+                mcpPresets = result.mcpPresets ?: current.mcpPresets,
             )
         }
-        runCatching {
-            api.request(
-                path = COMPOSER_SKILLS_PATH,
-                deserializer = SkillsPayload.serializer(),
-            )
-        }.onSuccess { payload ->
-            mutableState.value = mutableState.value.copy(skills = payload.skills)
-        }
-        runCatching {
-            api.request(
-                path = "/api/settings/cli-apps",
-                deserializer = CliAppsPayload.serializer(),
-                query = mapOf("installed_only" to 1),
-            )
-        }.onSuccess { payload ->
-            mutableState.value = mutableState.value.copy(cliApps = payload.apps)
-        }
-        runCatching {
-            api.request(
-                path = "/api/settings/mcp-presets",
-                deserializer = McpPresetsPayload.serializer(),
-            )
-        }.onSuccess { payload ->
-            mutableState.value = mutableState.value.copy(mcpPresets = payload.presets)
-        }
-        refreshModelSettings()
-    }
-
-    private suspend fun refreshModelSettings() {
-        runCatching {
-            api.request(
-                path = "/api/settings",
-                deserializer = SettingsPayload.serializer(),
-            )
-        }.onSuccess { payload ->
-            modelSettings = payload
+        result.settings?.let { settings ->
+            modelSettings = settings
             publishModelSelection()
         }
+        return result.complete && isCurrentAuthenticatedSession(sessionEpoch, generation)
     }
 
-    private suspend fun fetchThread(
-        sessionKey: String,
-        before: String?,
-        latest: Boolean,
-    ): WebUiThreadPayload? {
-        val query = buildMap<String, Any?> {
-            put("limit", if (latest) 160 else 120)
-            if (latest) put("direction", "latest")
-            if (before != null) put("before", before)
-        }
-        return try {
-            api.request(
-                path = "/api/sessions/${sessionKey.pathEncoded()}/webui-thread",
-                deserializer = WebUiThreadPayload.serializer(),
-                query = query,
-            )
-        } catch (error: GatewayException.Http) {
-            if (error.status == 404) null else throw error
-        }
+    private suspend fun refreshModelSettings(sessionEpoch: Long, generation: Long): Boolean {
+        val payload = composerCatalogLoader.loadModelSettings() ?: return false
+        if (!isCurrentAuthenticatedSession(sessionEpoch, generation)) return false
+        modelSettings = payload
+        publishModelSelection()
+        return true
+    }
+
+    /**
+     * 同时核对认证 epoch 与请求代次：epoch 防止账号间串写，generation 防止同一账号的
+     * 失败重试或显式 reset 后旧响应覆盖更新的一轮目录结果。
+     */
+    private fun isCurrentAuthenticatedSession(sessionEpoch: Long, generation: Long): Boolean =
+        authenticatedSessionEpoch == sessionEpoch && composerCatalogGeneration.get() == generation
+
+    /** Runtime 模型变化后只允许在当前认证代次内重读 Settings，未登录时不发起请求。 */
+    private fun refreshModelSettingsForCurrentSession() {
+        val session = synchronized(authenticatedLifecycleLock) {
+            authenticatedSessionEpoch?.let { epoch -> epoch to composerCatalogGeneration.get() }
+        } ?: return
+        scope.launch { refreshModelSettings(session.first, session.second) }
     }
 
     private fun handleEvent(event: InboundEvent) {
@@ -852,7 +895,7 @@ class DefaultChatRepository @Inject constructor(
             is InboundEvent.RuntimeModelUpdated -> {
                 runtimeModelName = event.modelName.trim().takeIf(String::isNotEmpty)
                 publishModelSelection()
-                scope.launch { refreshModelSettings() }
+                refreshModelSettingsForCurrentSession()
                 return
             }
             is InboundEvent.TurnModelUpdated -> {
@@ -868,8 +911,9 @@ class DefaultChatRepository @Inject constructor(
         val eventChat = event.chatIdOrNull() ?: return
         if (eventChat != activeChat) return
 
-        val sideChannelTurnId = event.turnIdOrNull()
-            ?.takeIf(sideChannelTurnIds::contains)
+        val sideChannelTurnId = synchronized(timelineWriterLock) {
+            event.turnIdOrNull()?.takeIf { turnId -> turnId in sideChannelTurnIds }
+        }
         if (sideChannelTurnId != null) {
             handleSideChannelEvent(event, sideChannelTurnId)
             return
@@ -883,21 +927,26 @@ class DefaultChatRepository @Inject constructor(
             is InboundEvent.Message,
             is InboundEvent.StreamEnd,
             -> {
-                streamFold.fold(event)
-                publish()
+                synchronized(timelineWriterLock) {
+                    streamFold.fold(event)
+                    publishLocked()
+                }
             }
 
             is InboundEvent.TurnEnd -> {
-                streamFold.fold(event)
-                event.turnId?.let(optimistic::remove)
-                mutableState.value = mutableState.value.copy(
-                    activeTurnId = mutableState.value.activeTurnId.takeUnless { activeTurnId ->
-                        event.turnId == null || activeTurnId == event.turnId
-                    },
-                    sendingTurnIds = event.turnId?.let { mutableState.value.sendingTurnIds - it }
-                        ?: mutableState.value.sendingTurnIds,
-                )
-                publish()
+                synchronized(timelineWriterLock) {
+                    streamFold.fold(event)
+                    event.turnId?.let(optimistic::remove)
+                    val current = mutableState.value
+                    mutableState.value = current.copy(
+                        activeTurnId = current.activeTurnId.takeUnless { activeTurnId ->
+                            event.turnId == null || activeTurnId == event.turnId
+                        },
+                        sendingTurnIds = event.turnId?.let { current.sendingTurnIds - it }
+                            ?: current.sendingTurnIds,
+                    )
+                    publishLocked()
+                }
                 scope.launch {
                     delay(250)
                     refreshCanonical()
@@ -934,12 +983,14 @@ class DefaultChatRepository @Inject constructor(
     private fun handleSideChannelEvent(event: InboundEvent, turnId: String) {
         when (event) {
             is InboundEvent.Message -> {
-                streamFold.fold(event)
-                sideChannelTurnIds.remove(turnId)
-                mutableState.value = mutableState.value.copy(
-                    sendingTurnIds = mutableState.value.sendingTurnIds - turnId,
-                )
-                publish()
+                synchronized(timelineWriterLock) {
+                    streamFold.fold(event)
+                    sideChannelTurnIds.remove(turnId)
+                    mutableState.update { current ->
+                        current.copy(sendingTurnIds = current.sendingTurnIds - turnId)
+                    }
+                    publishLocked()
+                }
                 scope.launch {
                     delay(250)
                     refreshCanonical()
@@ -947,12 +998,14 @@ class DefaultChatRepository @Inject constructor(
             }
 
             is InboundEvent.TurnEnd -> {
-                sideChannelTurnIds.remove(turnId)
-                optimistic.remove(turnId)
-                mutableState.value = mutableState.value.copy(
-                    sendingTurnIds = mutableState.value.sendingTurnIds - turnId,
-                )
-                publish()
+                synchronized(timelineWriterLock) {
+                    sideChannelTurnIds.remove(turnId)
+                    optimistic.remove(turnId)
+                    mutableState.update { current ->
+                        current.copy(sendingTurnIds = current.sendingTurnIds - turnId)
+                    }
+                    publishLocked()
+                }
                 scope.launch {
                     delay(250)
                     refreshCanonical()
@@ -960,21 +1013,24 @@ class DefaultChatRepository @Inject constructor(
             }
 
             is InboundEvent.Error -> {
-                sideChannelTurnIds.remove(turnId)
-                val isAwaitingAcceptance = turnId in mutableState.value.sendingTurnIds
-                mutableState.value = mutableState.value.copy(
-                    // optimistic 必须保留到 awaitAcceptance 决定 FAILED 或删除；先删除会让普通
-                    // side-channel 失败丢失可重试气泡，也会破坏 Queue 失败的统一回滚路径。
-                    error =
-                        if (isAwaitingAcceptance) {
-                            mutableState.value.error
-                        } else {
-                            listOfNotNull(event.detail, event.reason)
-                                .joinToString(": ")
-                                .ifBlank { "turn_rejected" }
-                        },
-                )
-                publish()
+                synchronized(timelineWriterLock) {
+                    sideChannelTurnIds.remove(turnId)
+                    val current = mutableState.value
+                    val isAwaitingAcceptance = turnId in current.sendingTurnIds
+                    mutableState.value = current.copy(
+                        // optimistic 必须保留到 awaitAcceptance 决定 FAILED 或删除；先删除会让普通
+                        // side-channel 失败丢失可重试气泡，也会破坏 Queue 失败的统一回滚路径。
+                        error =
+                            if (isAwaitingAcceptance) {
+                                current.error
+                            } else {
+                                listOfNotNull(event.detail, event.reason)
+                                    .joinToString(": ")
+                                    .ifBlank { "turn_rejected" }
+                            },
+                    )
+                    publishLocked()
+                }
             }
 
             else -> Unit
@@ -988,36 +1044,44 @@ class DefaultChatRepository @Inject constructor(
         before: String? = mutableState.value.beforeCursor,
         activeTurnId: String? = mutableState.value.activeTurnId,
         userMessageOffset: Int = mutableState.value.userMessageOffset,
+    ) = synchronized(timelineWriterLock) {
+        publishLocked(loading, loadingOlder, hasMore, before, activeTurnId, userMessageOffset)
+    }
+
+    /** 调用方必须持有 [timelineWriterLock]，保证集合快照与 StateFlow 写入不可被另一事件插队。 */
+    private fun publishLocked(
+        loading: Boolean = mutableState.value.loading,
+        loadingOlder: Boolean = mutableState.value.loadingOlder,
+        hasMore: Boolean = mutableState.value.hasMoreBefore,
+        before: String? = mutableState.value.beforeCursor,
+        activeTurnId: String? = mutableState.value.activeTurnId,
+        userMessageOffset: Int = mutableState.value.userMessageOffset,
     ) {
-        val canonicalTurns = canonical.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
-        val canonicalAssistantTurns = canonicalAssistantTurnIds(canonical)
-        val merged = buildList {
-            addAll(canonical)
-            addAll(
-                optimistic.filterKeys { it !in canonicalTurns }
-                    .values
-                    .map(LocalOutgoingMessage::message),
-            )
-            addAll(
-                streamFold.snapshot().filterNot { transient ->
-                    transient.turnId != null && transient.turnId in canonicalAssistantTurns
-                },
-            )
-        }.sortedBy { it.createdAt }
-        mutableState.value = mutableState.value.copy(
-            messages = merged,
-            failedMessageIds =
-                optimistic.values
-                    .filter { it.deliveryState == LocalDeliveryState.FAILED }
-                    .mapTo(mutableSetOf()) { it.message.id },
-            loading = loading,
-            loadingOlder = loadingOlder,
-            hasMoreBefore = hasMore,
-            beforeCursor = before,
-            activeTurnId = activeTurnId,
-            userMessageOffset = userMessageOffset,
-            limits = limitsProvider.currentIngressLimits(),
+        val projection = projectChatTimeline(
+            ChatTimelineInput(
+                canonical = canonical.toList(),
+                optimistic = optimistic.values.map(LocalOutgoingMessage::message),
+                failedMessageIds = optimistic.values
+                    .filter { outgoing -> outgoing.deliveryState == LocalDeliveryState.FAILED }
+                    .mapTo(mutableSetOf()) { outgoing -> outgoing.message.id },
+                transient = streamFold.snapshot(),
+            ),
         )
+        mutableState.update { current ->
+            reduceChatTimeline(
+                current = current,
+                projection = projection,
+                metadata = ChatTimelineMetadata(
+                    loading = loading,
+                    loadingOlder = loadingOlder,
+                    hasMoreBefore = hasMore,
+                    beforeCursor = before,
+                    activeTurnId = activeTurnId,
+                    userMessageOffset = userMessageOffset,
+                ),
+                limits = limitsProvider.currentIngressLimits(),
+            )
+        }
     }
 
     private fun handleTransportError(error: TransportError) {
@@ -1062,28 +1126,29 @@ class DefaultChatRepository @Inject constructor(
      * 集合只承担跨异步链路的短期去重，不是消息历史。限制为最近 64 个失败 turn，防止长时间
      * 运行时无界增长；会话切换、退出登录和新主题都会整体清空。
      */
-    private fun rememberHandledAcceptanceFailure(turnId: String) {
-        synchronized(locallyHandledAcceptanceFailures) {
-            locallyHandledAcceptanceFailures += turnId
-            while (locallyHandledAcceptanceFailures.size > MAX_HANDLED_ACCEPTANCE_FAILURES) {
-                val oldest = locallyHandledAcceptanceFailures.iterator()
-                if (oldest.hasNext()) {
-                    oldest.next()
-                    oldest.remove()
-                }
+    private fun rememberHandledAcceptanceFailureLocked(turnId: String) {
+        locallyHandledAcceptanceFailures += turnId
+        while (locallyHandledAcceptanceFailures.size > MAX_HANDLED_ACCEPTANCE_FAILURES) {
+            val oldest = locallyHandledAcceptanceFailures.iterator()
+            if (oldest.hasNext()) {
+                oldest.next()
+                oldest.remove()
             }
         }
     }
 
     private fun isHandledAcceptanceFailure(turnId: String): Boolean =
-        synchronized(locallyHandledAcceptanceFailures) {
+        synchronized(timelineWriterLock) {
             turnId in locallyHandledAcceptanceFailures
         }
 
-    private fun clearHandledAcceptanceFailures() {
-        synchronized(locallyHandledAcceptanceFailures) {
-            locallyHandledAcceptanceFailures.clear()
-        }
+    /** 调用方持有时间线写锁；会话切换必须一次性清空所有可变时间线结构。 */
+    private fun clearTimelineLocked() {
+        canonical.clear()
+        optimistic.clear()
+        sideChannelTurnIds.clear()
+        locallyHandledAcceptanceFailures.clear()
+        streamFold.reset()
     }
 }
 
@@ -1104,13 +1169,6 @@ internal fun ChatUiState.syncReopenedWorkspaceScope(workspaceScope: WorkspaceSco
 internal fun ChatUiState.matchesSession(sessionKey: String?, chatId: String?): Boolean =
     this.sessionKey == sessionKey && this.chatId == chatId
 
-private fun canonicalAssistantTurnIds(messages: List<UiMessage>): Set<String> = messages
-    .asSequence()
-    .filter { it.role != "user" }
-    .mapNotNull(UiMessage::turnId)
-    .toSet()
-
-private fun String.pathEncoded(): String = URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")
 
 /**
  * 失败消息必须保留重新发送所需的原始载荷，不能只依赖 [UiMessage.content]：后者已经拼入引用文本，

@@ -32,6 +32,16 @@ class SessionCleanup @Inject constructor(
     private val settingsRepository: SettingsRepository,
 ) {
     /**
+     * 在认证状态进入 Ready 后启动需要 Token 的会话级加载。
+     *
+     * 当前只有 Chat 的 Composer 目录需要显式入口；其他 feature 仍由各自页面触发刷新。
+     * 把调用保留在 app 组合根，避免 feature:auth 反向依赖 feature:chat。
+     */
+    fun onAuthenticated(sessionEpoch: Long) {
+        chatRepository.onAuthenticated(sessionEpoch)
+    }
+
+    /**
      * 同步使旧会话的全部业务状态失效。
      *
      * reset() 不能被异步调度：认证注销开始前必须先提升所有 Repository 的会话代次，

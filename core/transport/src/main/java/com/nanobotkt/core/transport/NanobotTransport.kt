@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,7 +30,6 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.min
@@ -56,10 +57,8 @@ class NanobotTransport @Inject constructor(
     private val mutableErrors = MutableSharedFlow<TransportError>(extraBufferCapacity = 32)
     private val knownChats = linkedSetOf<String>()
     private val outbound = ArrayDeque<QueuedFrame>()
-    private val pendingMessages = ConcurrentHashMap<String, PendingMessage>()
-    private val pendingTranscriptions = ConcurrentHashMap<String, CompletableDeferred<String>>()
-    private val pendingSystemCommands = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
-    private var pendingNewChat: CompletableDeferred<String>? = null
+    /** pending 请求统一由关联表管理，避免协议路由、超时和断线各自维护一份清理规则。 */
+    private val requests = TransportRequestRegistry()
     private var socket: WebSocket? = null
     private var reconnectAttempt = 0
     private var reconnectJob: Job? = null
@@ -159,12 +158,11 @@ class NanobotTransport @Inject constructor(
     suspend fun newChat(scope: WorkspaceScope? = null, timeoutMs: Long = 20_000): String {
         check(networkAvailable) { "network_unavailable" }
         val request = CompletableDeferred<String>()
-        synchronized(this) {
-            check(pendingNewChat == null) { "new_chat_pending" }
-            pendingNewChat = request
-            enqueue("new-chat", OutboundFrame.NewChat(scope))
+        requests.registerNewChat(request)
+        synchronized(this) { enqueue("new-chat", OutboundFrame.NewChat(scope)) }
+        return awaitWithTimeout(request, timeoutMs, "new chat timeout") {
+            if (requests.removeNewChat(request)) removeQueued("new-chat")
         }
-        return awaitWithTimeout(request, timeoutMs, "new chat timeout") { synchronized(this) { if (pendingNewChat === request) pendingNewChat = null; removeQueued("new-chat") } }
     }
 
     suspend fun forkChat(
@@ -176,9 +174,8 @@ class NanobotTransport @Inject constructor(
         check(networkAvailable) { "network_unavailable" }
         require(sourceChatId.isNotBlank() && beforeUserIndex >= 0) { "invalid_fork_position" }
         val request = CompletableDeferred<String>()
+        requests.registerNewChat(request)
         synchronized(this) {
-            check(pendingNewChat == null) { "new_chat_pending" }
-            pendingNewChat = request
             enqueue(
                 "new-chat",
                 OutboundFrame.ForkChat(
@@ -189,10 +186,7 @@ class NanobotTransport @Inject constructor(
             )
         }
         return awaitWithTimeout(request, timeoutMs, "fork timeout") {
-            synchronized(this) {
-                if (pendingNewChat === request) pendingNewChat = null
-                removeQueued("new-chat")
-            }
+            if (requests.removeNewChat(request)) removeQueued("new-chat")
         }
     }
 
@@ -218,13 +212,25 @@ class NanobotTransport @Inject constructor(
             return MessageSendResult(turnId, accepted)
         }
         val key = messageKey(chatId, turnId)
-        pendingMessages[key] = PendingMessage(chatId, turnId, accepted, startsNewRun)
+        val pending = PendingTransportMessage(chatId, turnId, accepted, startsNewRun)
+        requests.registerMessage(key, pending)
         synchronized(this) { knownChats += chatId; enqueue("message:$key", frame) }
         scope.launch {
-            delay(acceptanceTimeoutMs)
-            val pending = pendingMessages.remove(key) ?: return@launch
-            removeQueued("message:$key")
-            pending.accepted.completeExceptionally(IllegalStateException("message_accept_timeout"))
+            try {
+                // 等待 acceptance 本身，成功后计时协程立即结束；不再让每条消息都保留一个完整时长的 delay Job。
+                withTimeout(acceptanceTimeoutMs) { accepted.await() }
+            } catch (_: TimeoutCancellationException) {
+                if (requests.removeMessage(key, pending)) {
+                    removeQueued("message:$key")
+                    accepted.completeExceptionally(IllegalStateException("message_accept_timeout"))
+                }
+            } catch (_: CancellationException) {
+                // Transport scope 停止时由连接关闭路径统一拒绝 pending，避免重复改写错误原因。
+            } catch (_: Throwable) {
+                // 该协程只负责 acceptance 超时计时。服务端拒绝等业务异常由调用方持有的
+                // accepted Deferred 负责传播；计时协程必须就地结束，不能把同一异常再次作为
+                // 未捕获异常泄漏到 Transport scope 或后续测试/生命周期。
+            }
         }
         return MessageSendResult(turnId, accepted)
     }
@@ -233,9 +239,11 @@ class NanobotTransport @Inject constructor(
         check(networkAvailable) { "network_unavailable" }
         val turnId = SYSTEM_TURN_PREFIX + UUID.randomUUID()
         val pending = CompletableDeferred<Unit>()
-        pendingSystemCommands[turnId] = pending
+        requests.registerSystemCommand(turnId, pending)
         synchronized(this) { enqueue("system:$turnId", OutboundFrame.Message(chatId, command.trim(), turnId = turnId, webui = true)) }
-        awaitWithTimeout(pending, timeoutMs, "system command timeout") { pendingSystemCommands.remove(turnId); removeQueued("system:$turnId") }
+        awaitWithTimeout(pending, timeoutMs, "system command timeout") {
+            if (requests.removeSystemCommand(turnId, pending)) removeQueued("system:$turnId")
+        }
     }
 
     fun stopTurn(chatId: String) { scope.launch { runCatching { sendSystemCommand(chatId, "/stop", 5_000) } } }
@@ -244,9 +252,11 @@ class NanobotTransport @Inject constructor(
         check(networkAvailable) { "network_unavailable" }
         val requestId = UUID.randomUUID().toString()
         val pending = CompletableDeferred<String>()
-        pendingTranscriptions[requestId] = pending
+        requests.registerTranscription(requestId, pending)
         synchronized(this) { enqueue("transcription:$requestId", OutboundFrame.TranscribeAudio(requestId, dataUrl, durationMs)) }
-        return awaitWithTimeout(pending, timeoutMs, "transcription_timeout") { pendingTranscriptions.remove(requestId); removeQueued("transcription:$requestId") }
+        return awaitWithTimeout(pending, timeoutMs, "transcription_timeout") {
+            if (requests.removeTranscription(requestId, pending)) removeQueued("transcription:$requestId")
+        }
     }
 
     fun setWorkspaceScope(chatId: String, scope: WorkspaceScope) { synchronized(this) { knownChats += chatId; enqueue("workspace:" + UUID.randomUUID(), OutboundFrame.SetWorkspaceScope(chatId, scope)) } }
@@ -276,7 +286,7 @@ class NanobotTransport @Inject constructor(
         val active = socket ?: return false
         val encoded = json.encodeToString(OutboundFrame.serializer(), frame)
         val sent = active.send(encoded)
-        if (sent && frame is OutboundFrame.Message && !frame.turnId.startsWith(SYSTEM_TURN_PREFIX)) pendingMessages[messageKey(frame.chatId, frame.turnId)]?.sent = true
+        if (sent && frame is OutboundFrame.Message && !frame.turnId.startsWith(SYSTEM_TURN_PREFIX)) requests.markMessageSent(messageKey(frame.chatId, frame.turnId))
         if (sent && pendingQueueId != null) removeQueued(pendingQueueId)
         return sent
     }
@@ -289,7 +299,7 @@ class NanobotTransport @Inject constructor(
             ?.takeIf { it.startsWith(SYSTEM_TURN_PREFIX) }
         if (systemTurnId != null) {
             when (event) {
-                is InboundEvent.Error -> pendingSystemCommands.remove(systemTurnId)
+                is InboundEvent.Error -> requests.takeSystemCommand(systemTurnId)
                     ?.completeExceptionally(
                         IllegalStateException(
                             listOfNotNull(event.detail, event.reason)
@@ -299,17 +309,17 @@ class NanobotTransport @Inject constructor(
                     )
                 is InboundEvent.Message,
                 is InboundEvent.TurnEnd,
-                -> pendingSystemCommands.remove(systemTurnId)?.complete(Unit)
+                -> requests.takeSystemCommand(systemTurnId)?.complete(Unit)
                 else -> Unit
             }
             return
         }
 
         when (event) {
-            is InboundEvent.TranscriptionResult -> pendingTranscriptions.remove(event.requestId)?.complete(event.text)
+            is InboundEvent.TranscriptionResult -> requests.takeTranscription(event.requestId)?.complete(event.text)
             is InboundEvent.TranscriptionError -> {
                 val error = IllegalStateException(event.detail ?: "transcription_failed")
-                if (event.requestId == null) pendingTranscriptions.values.forEach { it.completeExceptionally(error) } else pendingTranscriptions.remove(event.requestId)?.completeExceptionally(error)
+                requests.rejectTranscriptions(error, event.requestId)
             }
             is InboundEvent.MessageAccepted -> acceptMessage(event.chatId, event.turnId)
             // `ready` 表示 WebSocket 握手完成，并携带服务端分配的默认会话；
@@ -321,7 +331,7 @@ class NanobotTransport @Inject constructor(
                 val chatId = event.chatId
                 val turnId = event.turnId
                 if (chatId != null && turnId != null) {
-                    pendingMessages.remove(messageKey(chatId, turnId))?.accepted?.completeExceptionally(IllegalStateException(event.detail ?: event.reason ?: "turn_rejected"))
+                    requests.takeMessage(messageKey(chatId, turnId))?.accepted?.completeExceptionally(IllegalStateException(event.detail ?: event.reason ?: "turn_rejected"))
                     if (event.detail == "workspace_scope_rejected") mutableErrors.tryEmit(TransportError.WorkspaceScopeRejected(chatId, turnId, event.reason))
                     else mutableErrors.tryEmit(TransportError.TurnRejected(chatId, turnId, event.detail, event.reason))
                 }
@@ -360,25 +370,22 @@ class NanobotTransport @Inject constructor(
             // 普通 attach 的回执也使用 attached 事件。若当前正在等待 new_chat/fork_chat，
             // 已知会话的回执只能属于普通 attach，不能误完成“创建新会话”的 deferred；
             // 否则真正的新会话回执到达时，调用方已经停止等待并丢失新 chat id。
-            if (pendingNewChat != null && chatId in knownChats) return
+            if (requests.hasPendingNewChat() && chatId in knownChats) return
             knownChats += chatId
-            pendingNewChat?.complete(chatId)
-            pendingNewChat = null
-            removeQueued("new-chat")
+            if (requests.completeNewChat(chatId)) removeQueued("new-chat")
         }
     }
-    private fun acceptMessage(chatId: String, turnId: String) { pendingMessages.remove(messageKey(chatId, turnId))?.accepted?.complete(Unit); removeQueued("message:" + messageKey(chatId, turnId)) }
+    private fun acceptMessage(chatId: String, turnId: String) {
+        val key = messageKey(chatId, turnId)
+        requests.takeMessage(key)?.accepted?.complete(Unit) ?: return
+        removeQueued("message:$key")
+    }
     private fun acceptUnambiguousForChat(chatId: String, startsNewRun: Boolean? = null) {
-        val candidates = pendingMessages.entries.filter {
-            it.value.chatId == chatId && (startsNewRun == null || it.value.startsNewRun == startsNewRun)
-        }
         // 没有 turn_id 且同时存在多个候选时，宁可等待带 turn_id 的事件，
         // 也不能把服务端状态错误归属给另一条消息。
-        if (candidates.size == 1) {
-            candidates.single().let {
-                pendingMessages.remove(it.key)?.accepted?.complete(Unit)
-                removeQueued("message:" + it.key)
-            }
+        requests.takeUnambiguousMessage(chatId, startsNewRun)?.let { (key, pending) ->
+            pending.accepted.complete(Unit)
+            removeQueued("message:$key")
         }
     }
 
@@ -436,26 +443,13 @@ class NanobotTransport @Inject constructor(
     }
 
     private fun rejectPendingOnDisconnect(messageTooBig: Boolean) {
-        // 断线时 pending deferred 会立即向调用方报告失败；对应的非幂等 frame
-        // 不能留在 outbound 队列，否则重连 flushQueue() 会把“已经失败且无人再等待”
-        // 的 new_chat/message/system/transcription 重新发送到服务端，造成无主副作用。
-        val queuedPendingIds = buildSet {
-            if (pendingNewChat != null) add("new-chat")
-            pendingMessages.keys.forEach { add("message:$it") }
-            pendingSystemCommands.keys.forEach { add("system:$it") }
-            pendingTranscriptions.keys.forEach { add("transcription:$it") }
+        // 关联表先领取并拒绝所有 pending，再用其快照清理对应的非幂等队列帧。
+        // 这样断线与服务端响应竞态时，只有真正仍在 pending 的请求会被标记失败。
+        val rejected = requests.rejectAll(messageTooBig)
+        outbound.removeAll { queued -> queued.id in rejected.queueIds }
+        rejected.deliveryUnknown.forEach { pending ->
+            mutableErrors.tryEmit(TransportError.DeliveryUnknown(pending.chatId, pending.turnId))
         }
-        outbound.removeAll { it.id in queuedPendingIds }
-
-        pendingNewChat?.completeExceptionally(IllegalStateException(if (messageTooBig) "message_too_big" else "connection_closed")); pendingNewChat = null
-        pendingMessages.values.forEach { pending ->
-            val message = if (messageTooBig) "message_too_big" else if (pending.sent) "socket_delivery_unknown" else "connection_closed"
-            pending.accepted.completeExceptionally(IllegalStateException(message))
-            if (pending.sent) mutableErrors.tryEmit(TransportError.DeliveryUnknown(pending.chatId, pending.turnId))
-        }
-        pendingMessages.clear()
-        pendingSystemCommands.values.forEach { it.completeExceptionally(IllegalStateException("connection_closed")) }; pendingSystemCommands.clear()
-        pendingTranscriptions.values.forEach { it.completeExceptionally(IllegalStateException("connection_closed")) }; pendingTranscriptions.clear()
         if (messageTooBig) mutableErrors.tryEmit(TransportError.MessageTooBig())
     }
 
@@ -490,7 +484,6 @@ class NanobotTransport @Inject constructor(
     }
 
     private data class QueuedFrame(val id: String, val frame: OutboundFrame)
-    private data class PendingMessage(val chatId: String, val turnId: String, val accepted: CompletableDeferred<Unit>, val startsNewRun: Boolean, @Volatile var sent: Boolean = false)
     private fun messageKey(chatId: String, turnId: String) = "$chatId::$turnId"
 }
 
@@ -510,9 +503,22 @@ private fun InboundEvent.turnIdOrNull(): String? = when (this) {
     else -> null
 }
 
-private suspend fun <T> awaitWithTimeout(deferred: CompletableDeferred<T>, timeoutMs: Long, message: String, cleanup: () -> Unit): T {
-    val timeout = CoroutineScope(Dispatchers.Default).launch { delay(timeoutMs); if (deferred.completeExceptionally(IllegalStateException(message))) cleanup() }
-    return try { deferred.await() } finally { timeout.cancel(); cleanup() }
+/**
+ * 在调用方协程内等待请求，不再为每次调用创建脱离父 Job 的 CoroutineScope。
+ * finally 对成功、协议失败、超时和调用方取消执行同一清理；cleanup 必须使用 compare-remove，
+ * 因而迟到响应和并发断线不会删除后来登记的请求。
+ */
+private suspend fun <T> awaitWithTimeout(
+    deferred: CompletableDeferred<T>,
+    timeoutMs: Long,
+    message: String,
+    cleanup: () -> Unit,
+): T = try {
+    withTimeout(timeoutMs) { deferred.await() }
+} catch (_: TimeoutCancellationException) {
+    throw IllegalStateException(message)
+} finally {
+    cleanup()
 }
 
 

@@ -152,7 +152,14 @@ class AppViewModel @Inject constructor(
         authRepository.start()
         viewModelScope.launch {
             authRepository.state.collectLatest { state ->
-                if (state is AuthState.Ready) transport.resume() else transport.close()
+                if (state is AuthState.Ready) {
+                    // 必须先发布认证会话边界，再恢复实时连接。Composer/Workspace 的 HTTP
+                    // 加载依赖当前 Token；Repository 会按 sessionEpoch 去重周期性 Token 续期。
+                    sessionCleanup.onAuthenticated(state.sessionEpoch)
+                    transport.resume()
+                } else {
+                    transport.close()
+                }
             }
         }
         viewModelScope.launch {
