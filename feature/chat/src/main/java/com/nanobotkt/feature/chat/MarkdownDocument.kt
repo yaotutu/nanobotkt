@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,8 +51,10 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
@@ -208,10 +211,15 @@ internal fun MarkdownDocument(
     modifier: Modifier = Modifier,
 ) {
     val blocks = remember(markdown) { parseMarkdownBlocks(markdown) }
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         blocks.forEachIndexed { index, block ->
             when (block) {
-                is MarkdownBlock.Heading -> MarkdownHeading(block)
+                is MarkdownBlock.Heading ->
+                    MarkdownHeading(
+                        block = block,
+                        // 标题与上一段之间需要额外留白；首块标题不增加无意义的顶部空白。
+                        modifier = Modifier.padding(top = if (index == 0) 0.dp else 8.dp),
+                    )
                 is MarkdownBlock.Paragraph -> MarkdownText(block.text)
                 is MarkdownBlock.Quote -> MarkdownQuote(block.text)
                 is MarkdownBlock.ListItem -> MarkdownListItem(block)
@@ -220,8 +228,8 @@ internal fun MarkdownDocument(
                 is MarkdownBlock.Image -> MarkdownImage(block, resolveUrl(block.url))
                 MarkdownBlock.Divider ->
                     androidx.compose.material3.HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+                        modifier = Modifier.padding(vertical = 6.dp),
                     )
             }
         }
@@ -229,28 +237,40 @@ internal fun MarkdownDocument(
 }
 
 @Composable
-private fun MarkdownHeading(block: MarkdownBlock.Heading) {
+private fun MarkdownHeading(block: MarkdownBlock.Heading, modifier: Modifier = Modifier) {
+    // Material 默认 headline 对聊天正文偏大。这里保留清晰层级，但把尺寸收敛到移动端
+    // 文档阅读更舒适的 18–24sp，并移除不适合中英文混排的额外字距。
     val style =
         when (block.level) {
-            1 -> MaterialTheme.typography.headlineMedium
-            2 -> MaterialTheme.typography.headlineSmall
-            3 -> MaterialTheme.typography.titleLarge
-            else -> MaterialTheme.typography.titleMedium
-        }
+            1 -> MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp, lineHeight = 32.sp)
+            2 -> MaterialTheme.typography.titleLarge.copy(fontSize = 21.sp, lineHeight = 29.sp)
+            3 -> MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 26.sp)
+            else -> MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
+        }.copy(letterSpacing = 0.sp)
     Text(
         text = inlineMarkdown(block.text),
+        modifier = modifier,
         color = MaterialTheme.colorScheme.onSurface,
         style = style,
         fontWeight = FontWeight.SemiBold,
     )
 }
 
+/** Assistant 正文专用排版：略小于通用 bodyLarge，并取消对中文显得松散的 0.5sp 字距。 */
+@Composable
+private fun markdownBodyTextStyle() =
+    MaterialTheme.typography.bodyLarge.copy(
+        fontSize = 15.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp,
+    )
+
 @Composable
 private fun MarkdownText(text: String) {
     Text(
         text = inlineMarkdown(text),
         color = MaterialTheme.colorScheme.onSurface,
-        style = MaterialTheme.typography.bodyLarge,
+        style = markdownBodyTextStyle(),
     )
 }
 
@@ -267,7 +287,7 @@ private fun MarkdownQuote(text: String) {
             text = inlineMarkdown(text),
             modifier = Modifier.weight(1f),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
+            style = markdownBodyTextStyle(),
             fontStyle = FontStyle.Italic,
         )
     }
@@ -275,33 +295,43 @@ private fun MarkdownQuote(text: String) {
 
 @Composable
 private fun MarkdownListItem(block: MarkdownBlock.ListItem) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
-        when {
-            block.checked != null ->
-                Icon(
-                    imageVector = if (block.checked) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            block.orderedIndex != null ->
-                Text(
-                    text = "${block.orderedIndex}.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            else ->
-                Text(
-                    text = "•",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        // 使用固定宽度的标记列，让无序、序号和任务列表的正文起点一致；长列表会比旧版
+        // 每行标记自然宽度不同的排法更整齐。
+        Box(modifier = Modifier.width(22.dp), contentAlignment = Alignment.TopStart) {
+            when {
+                block.checked != null ->
+                    Icon(
+                        imageVector =
+                            if (block.checked) Icons.Rounded.CheckBox
+                            else Icons.Rounded.CheckBoxOutlineBlank,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                block.orderedIndex != null ->
+                    Text(
+                        text = "${block.orderedIndex}.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = markdownBodyTextStyle(),
+                    )
+                else ->
+                    Text(
+                        text = "•",
+                        color = MaterialTheme.colorScheme.outline,
+                        style = markdownBodyTextStyle(),
+                    )
+            }
         }
         Text(
             text = inlineMarkdown(block.text),
             modifier = Modifier.weight(1f),
             color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyLarge,
+            style = markdownBodyTextStyle(),
         )
     }
 }
@@ -315,7 +345,15 @@ private fun MarkdownCodeBlock(block: MarkdownBlock.Code) {
     var expanded by rememberSaveable(block.content) { mutableStateOf(lines.size <= 18) }
     var menuOpen by rememberSaveable(block.content) { mutableStateOf(false) }
     var detailOpen by rememberSaveable(block.content) { mutableStateOf(false) }
-    val visibleContent = if (expanded) block.content else lines.take(18).joinToString("\n")
+    val visibleLines = if (expanded) lines else lines.take(18)
+    val visibleContent = visibleLines.joinToString("\n")
+    val codeTextStyle =
+        MaterialTheme.typography.bodyMedium.copy(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.5.sp,
+            lineHeight = 20.sp,
+            letterSpacing = 0.sp,
+        )
 
     Box {
         Surface(
@@ -329,7 +367,7 @@ private fun MarkdownCodeBlock(block: MarkdownBlock.Code) {
         ) {
             Column {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -338,24 +376,60 @@ private fun MarkdownCodeBlock(block: MarkdownBlock.Code) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium,
                     )
-                    if (!block.closed) {
-                        Text(
-                            text = stringResource(R.string.markdown_streaming_code),
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!block.closed) {
+                            Text(
+                                text = stringResource(R.string.markdown_streaming_code),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                        // 长按菜单适合高级操作，但复制代码是高频动作；显式按钮提升可发现性，
+                        // 且仍复用系统剪贴板，不引入新的消息状态或业务副作用。
+                        IconButton(
+                            onClick = {
+                                runCatching {
+                                    clipboard?.setPrimaryClip(
+                                        ClipData.newPlainText("code", block.content)
+                                    )
+                                }
+                            },
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ContentCopy,
+                                contentDescription = stringResource(R.string.copy),
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
-                Text(
-                    text = visibleContent,
+                Row(
                     modifier =
                         Modifier.fillMaxWidth()
                             .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 12.dp, vertical = 10.dp),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                )
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    // 行号和代码共用同一字体与行高，保证滚动、展开和流式追加时逐行对齐。
+                    // 行号只承担扫描定位，不参与复制，因此使用低对比色并与正文分列渲染。
+                    Text(
+                        text = visibleLines.indices.joinToString("\n") { index -> "${index + 1}" },
+                        modifier = Modifier.width(28.dp),
+                        color = MaterialTheme.colorScheme.outline,
+                        style = codeTextStyle,
+                        textAlign = TextAlign.End,
+                        softWrap = false,
+                    )
+                    Text(
+                        text = visibleContent,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = codeTextStyle,
+                        softWrap = false,
+                    )
+                }
                 if (lines.size > 18) {
                     TextButton(onClick = { expanded = !expanded }) {
                         Text(

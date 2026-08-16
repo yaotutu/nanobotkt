@@ -25,7 +25,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AttachFile
-import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -51,10 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nanobotkt.core.model.CliAppInfo
@@ -62,8 +59,7 @@ import com.nanobotkt.core.model.McpPresetInfo
 import com.nanobotkt.core.model.SkillSummary
 import com.nanobotkt.core.model.SlashCommand
 
-/** Composer 输入、附件、引用、Queue 和语音入口布局。 */
-/** Composer 只编排输入、附件、引用和发送状态；副作用仍由 ViewModel/Repository 承担。 */
+/** Composer 只编排输入、附件、引用和发送状态；网络、文件与会话副作用仍由 ViewModel/Repository 承担。 */
 @Composable
 internal fun HeroComposer(
     state: ComposerUiState,
@@ -81,7 +77,6 @@ internal fun HeroComposer(
     onRemoveAttachment: (Int) -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onOpenConversationList: () -> Unit,
 ) {
     ComposerLayout(
         state = state,
@@ -100,7 +95,6 @@ internal fun HeroComposer(
         onRemoveAttachment = onRemoveAttachment,
         onPickImages = onPickImages,
         onPickFiles = onPickFiles,
-        onOpenConversationList = onOpenConversationList,
     )
 }
 
@@ -122,7 +116,6 @@ internal fun ConversationComposer(
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onOpenConversationList: () -> Unit,
 ) {
     ComposerLayout(
         state = state,
@@ -142,7 +135,6 @@ internal fun ConversationComposer(
         onClearQuote = onClearQuote,
         onPickImages = onPickImages,
         onPickFiles = onPickFiles,
-        onOpenConversationList = onOpenConversationList,
     )
 }
 
@@ -172,7 +164,6 @@ internal fun ComposerLayout(
     onClearQuote: () -> Unit = {},
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onOpenConversationList: () -> Unit,
 ) {
     val hasDraft =
         state.text.isNotBlank() ||
@@ -201,11 +192,8 @@ internal fun ComposerLayout(
                 cliApps,
                 mcpPresets,
             )
-    // 先在组合阶段解析无障碍文案，避免在 semantics 的非 Composable 接收器中读取资源。
-    val openConversationDescription = stringResource(R.string.open_conversation_list)
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val inputContainerColor = MaterialTheme.colorScheme.surfaceContainer
-    val conversationContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val inputContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
     val actionColor =
         if (stopButton || (sendEnabled && hasDraft)) {
             MaterialTheme.colorScheme.primary
@@ -226,12 +214,12 @@ internal fun ComposerLayout(
                 .navigationBarsPadding()
                 .imePadding(),
         // 底栏自身不再绘制整块色带，让时间轴的页面背景自然延伸到底部；真正需要边界的
-        // 只有会话入口和输入胶囊，避免动态配色下出现一整条厚重的浅紫色区域。
+        // 只有输入容器，避免动态配色下出现一整条厚重色带。
         color = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when {
@@ -311,93 +299,58 @@ internal fun ComposerLayout(
                 }
             }
 
-            Row(
+            // 会话列表属于页面导航而不是消息草稿，因此入口已经迁移到顶部栏。底部只保留一个
+            // 完整宽度的输入容器，避免“Chats 胶囊 + 输入胶囊”把有限横向空间切成两块。
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = inputContainerColor,
+                border =
+                    BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f),
+                    ),
+                tonalElevation = 1.dp,
+                shadowElevation = 0.dp,
             ) {
-                // 高频会话入口继续独立于输入框，但用“会话组图标 + 短标签”明确表达用途。
-                // 胶囊维持 48dp 高度以满足触控要求，同时避免单气泡图标被误解为发送消息。
-                Surface(
-                    onClick = onOpenConversationList,
-                    modifier =
-                        Modifier.height(48.dp).semantics {
-                            contentDescription = openConversationDescription
-                        },
-                    shape = CircleShape,
-                    color = conversationContainerColor,
+                Row(
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.Bottom,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            Icons.Rounded.Forum,
-                            contentDescription = null,
-                            modifier = Modifier.size(19.dp),
-                            tint = mutedColor,
-                        )
-                        Text(
-                            text = stringResource(R.string.conversation_button_label),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-
-                // 附件、文本和发送始终属于同一输入胶囊。细描边负责从页面背景中分离输入区，
-                // 不再依赖额外的底栏色带；内部不加纵向 padding，静止态总高保持为 48dp。
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = inputContainerColor,
-                    border =
-                        BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
-                        ),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 2.dp),
-                        verticalAlignment = Alignment.Bottom,
-                    ) {
-                        AttachmentMenuButton(
-                            enabled =
-                                !state.sending &&
-                                    !state.voice.isRecording &&
-                                    !state.voice.isTranscribing,
-                            onPickImages = onPickImages,
-                            onPickFiles = onPickFiles,
-                        )
-                        ComposerTextField(
-                            state = state,
-                            modifier = Modifier.weight(1f),
-                            placeholder =
-                                if (active && !hasDraft) {
-                                    stringResource(R.string.composer_placeholder_streaming)
-                                } else {
-                                    placeholder
-                                },
-                            textColor = MaterialTheme.colorScheme.onSurface,
-                            mutedColor = mutedColor,
-                            onTextChange = onTextChange,
-                            onSend = onSend,
-                        )
-                        ComposerPrimaryActionButton(
-                            showSendAction = hasDraft,
-                            stopButton = stopButton,
-                            sendEnabled = sendEnabled,
-                            sending = state.sending,
-                            // 空草稿时只保留弱化的发送图标，避免右侧出现第二个常驻实心圆。
-                            controlColor = Color.Transparent,
-                            sendColor = actionColor,
-                            sendContentColor = actionContentColor,
-                            onSend = onSend,
-                            onStop = onStop,
-                        )
-                    }
+                    AttachmentMenuButton(
+                        enabled =
+                            !state.sending &&
+                                !state.voice.isRecording &&
+                                !state.voice.isTranscribing,
+                        onPickImages = onPickImages,
+                        onPickFiles = onPickFiles,
+                    )
+                    ComposerTextField(
+                        state = state,
+                        modifier = Modifier.weight(1f),
+                        placeholder =
+                            if (active && !hasDraft) {
+                                stringResource(R.string.composer_placeholder_streaming)
+                            } else {
+                                placeholder
+                            },
+                        textColor = MaterialTheme.colorScheme.onSurface,
+                        mutedColor = mutedColor,
+                        onTextChange = onTextChange,
+                        onSend = onSend,
+                    )
+                    ComposerPrimaryActionButton(
+                        showSendAction = hasDraft,
+                        stopButton = stopButton,
+                        sendEnabled = sendEnabled,
+                        sending = state.sending,
+                        // 空草稿时只保留弱化的发送图标；有草稿或运行中才形成高强调主操作。
+                        controlColor = Color.Transparent,
+                        sendColor = actionColor,
+                        sendContentColor = actionContentColor,
+                        onSend = onSend,
+                        onStop = onStop,
+                    )
                 }
             }
         }
@@ -406,7 +359,7 @@ internal fun ComposerLayout(
 
 @Composable
 internal fun ComposerContextStrip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -458,7 +411,6 @@ internal fun Composer(
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onOpenConversationList: () -> Unit,
 ) {
     if (isHero) {
         HeroComposer(
@@ -477,7 +429,6 @@ internal fun Composer(
             onRemoveAttachment = onRemoveAttachment,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
-            onOpenConversationList = onOpenConversationList,
         )
     } else {
         ConversationComposer(
@@ -497,7 +448,6 @@ internal fun Composer(
             onClearQuote = onClearQuote,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
-            onOpenConversationList = onOpenConversationList,
         )
     }
 }

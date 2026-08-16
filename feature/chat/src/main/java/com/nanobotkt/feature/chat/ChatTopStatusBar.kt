@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.DropdownMenu
@@ -38,10 +39,9 @@ import androidx.compose.ui.unit.dp
 /**
  * 聊天页唯一的顶部常驻区域。
  *
- * 顶部承载“会话标题、运行/连接状态、队列状态、系统设置、当前会话菜单”。左侧不放置全局操作，避免
- * 系统设置被误解成返回、抽屉或产品标识；系统设置与当前会话菜单在右侧保持两个独立入口，既形成统一的
- * 操作区，又不混淆应用级和会话级状态。空闲时不渲染任何状态文案；出现运行、等待、连接或队列状态时
- * 才增加第二行。
+ * 顶部承载“会话导航、标题、运行/连接状态、系统设置、当前会话菜单”。会话列表属于页面导航，
+ * 固定放在标题左侧；系统设置与当前会话菜单仍保持右侧独立入口，避免把应用级和会话级操作混在
+ * 同一个菜单中。空闲时不渲染状态文案；出现运行、等待、连接或队列状态时才增加第二行。
  */
 @Composable
 internal fun ChatTopStatusBar(
@@ -53,6 +53,7 @@ internal fun ChatTopStatusBar(
     hasPromptNavigator: Boolean,
     hasSessionInfo: Boolean,
     hasAccessSettings: Boolean,
+    onOpenConversationList: () -> Unit,
     onOpenSettings: () -> Unit,
     onStatusClick: () -> Unit,
     onQueueOpenChange: (Boolean) -> Unit,
@@ -71,18 +72,29 @@ internal fun ChatTopStatusBar(
             Modifier.fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
                 .statusBarsPadding()
-                .heightIn(min = 64.dp)
-                .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 会话导航从 Composer 迁移到顶部，既符合 Android 的页面层级习惯，也把底部横向空间
+        // 完整留给输入内容；按钮仍保留 48dp 触控目标，视觉图标保持轻量。
+        IconButton(onClick = onOpenConversationList) {
+            Icon(
+                imageVector = Icons.Rounded.Menu,
+                contentDescription = stringResource(R.string.open_conversation_list),
+                modifier = Modifier.size(22.dp),
+                tint = muted,
+            )
+        }
+
         Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).padding(start = 4.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = title.ifBlank { stringResource(R.string.conversation_list_title) },
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

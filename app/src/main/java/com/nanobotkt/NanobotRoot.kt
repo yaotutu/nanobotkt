@@ -238,9 +238,6 @@ private fun ReadyRoot(
                 viewModel = chatViewModel,
                 title = selected?.displayTitle(sidebar) ?: stringResource(R.string.new_topic),
                 onOpenSettings = appViewModel::openSettings,
-                // 会话入口只打开 ChatScreen 内的 Sheet；此处不再切换 AppDestination，
-                // 避免聊天消息树在打开列表时被销毁重建。
-                onOpenConversationList = {},
                 conversationItems = conversationItems,
                 archivedConversationItems = archivedConversationItems,
                 selectedConversationKey = selectedKey,
