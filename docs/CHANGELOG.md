@@ -1,9 +1,16 @@
-# NanobotKT 0.1.11
+# NanobotKT 0.1.12
 
-> 自动构建发布，提交：`dd1b767`。
+> 自动构建发布，提交：`d26ce4d`。
 
 ## 变更
 
+- fix(settings): resolve Material 3 integration conflicts (`d26ce4d`)
+- fix: stabilize app background resume (`f0cd147`)
+- merge: integrate dev before Material 3 UI (`b432619`)
+- refactor(ui): adopt native Material 3 components (`e337d89`)
+- chore: separate concurrent settings changes (`91ab4b1`)
+- feat(chat): polish conversation visual hierarchy (`2eb89ff`)
+- chore(dev): prepare v0.1.11 (`b88ccce`)
 - fix: complete gateway reconfiguration translations (`dd1b767`)
 - chore(dev): prepare v0.1.10 (`f62805d`)
 - refactor: unify gateway configuration and settings entry (`a8a2ec4`)
