@@ -30,15 +30,37 @@ class SettingsNavigationTest {
         // 不允许在空值时偷偷回退到 payload.runtime 的内部监听地址。
         assertEquals(
             "http://192.168.55.147:8765",
-            gatewayEndpointLabel("  http://192.168.55.147:8765/  "),
+            gatewayEndpointLabel(
+                gatewayEndpoint = "  http://192.168.55.147:8765/  ",
+                emptyLabel = "Gateway endpoint unavailable",
+            ),
         )
-        assertEquals("Gateway endpoint unavailable", gatewayEndpointLabel("   "))
+        // Compose 展示层必须传入当前 Locale 的空值资源；纯函数原样使用调用方文案，
+        // 不允许再通过默认参数把英文哨兵值泄漏回中文界面。
+        assertEquals("Gateway 地址不可用", gatewayEndpointLabel("   ", "Gateway 地址不可用"))
+    }
+
+
+    @Test
+    fun shortPathUsesCallerProvidedLocalizedEmptyLabel() {
+        // 路径格式化函数不得内置英文回退；空值文案必须由当前 Locale 的展示边界传入。
+        assertEquals("未选择工作区", shortPath(null, "未选择工作区"))
+        assertEquals("/tmp/workspace", shortPath("/tmp/workspace", "未选择工作区"))
     }
 
     @Test
-    fun sectionTitlesMatchUnifiedInformationArchitecture() {
-        assertEquals("Settings", settingsSectionTitle(SETTINGS_SECTION_OVERVIEW))
-        assertEquals("Models & Providers", settingsSectionTitle(SETTINGS_SECTION_MODELS))
-        assertEquals("Gateway & System", settingsSectionTitle(SETTINGS_SECTION_SYSTEM))
+    fun sectionTitlesUseTheExpectedLocalizedResources() {
+        // 导航 wire value 只映射到资源 ID，不再维护一份重复的硬编码英文标题表。
+        // 具体显示文本由 Android 依据当前应用 Locale 解析，测试只锁定稳定的资源语义。
+        assertEquals(R.string.settings_title, settingsSectionTitleResource(SETTINGS_SECTION_OVERVIEW))
+        assertEquals(
+            R.string.settings_models_providers,
+            settingsSectionTitleResource(SETTINGS_SECTION_MODELS),
+        )
+        assertEquals(
+            R.string.settings_gateway_system,
+            settingsSectionTitleResource(SETTINGS_SECTION_SYSTEM),
+        )
+        assertEquals(R.string.settings_title, settingsSectionTitleResource("unknown"))
     }
 }

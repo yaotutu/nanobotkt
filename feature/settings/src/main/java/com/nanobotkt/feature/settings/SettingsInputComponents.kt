@@ -373,21 +373,3 @@ internal fun StatusPill(text: String, positive: Boolean) {
         )
     }
 }
-
-/** 兼容旧调用名的 Material 3 OutlinedButton；不再手工组合 Surface 和 clickable。 */
-@Composable
-internal fun OutlinePillButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    icon: ImageVector? = null,
-) {
-    OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled) {
-        if (icon != null) {
-            Icon(imageVector = icon, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-        }
-        Text(text = text)
-    }
-}

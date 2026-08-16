@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 /** 保存状态、分段选择、开关与通用间距组件。 */
@@ -39,9 +40,10 @@ internal fun SettingsSaveFooter(
             error
                 ?: disabledMessage
                 ?: when {
-                    pendingRestart && !dirty -> "Saved. Restart when ready."
-                    dirty -> "Save changes, then restart when ready."
-                    else -> "Settings are up to date."
+                    pendingRestart && !dirty ->
+                        stringResource(R.string.settings_saved_restart_ready)
+                    dirty -> stringResource(R.string.settings_save_restart_ready)
+                    else -> stringResource(R.string.settings_up_to_date)
                 }
         Text(
             text = message,
@@ -69,7 +71,14 @@ internal fun SettingsSaveFooter(
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            Text(if (saving) "Saving" else "Save")
+            Text(
+                text =
+                    if (saving) {
+                        stringResource(R.string.settings_saving)
+                    } else {
+                        stringResource(R.string.settings_save)
+                    }
+            )
         }
     }
 }
@@ -126,8 +135,17 @@ internal fun GroupSpacer(height: androidx.compose.ui.unit.Dp = 24.dp) {
     Spacer(Modifier.height(height))
 }
 
-internal fun shortPath(path: String?): String {
-    if (path.isNullOrBlank()) return "No workspace selected"
+/**
+ * 缩短工作区路径时由调用方显式提供空值文案，避免纯格式化函数隐式回退到英文。
+ *
+ * 该函数不读取 Compose Locale，也不持有 Android Context；本地化边界由调用方负责，因而可以保持
+ * 纯函数、便于单元测试，并避免非 Compose 调用在不同语言下得到不一致结果。
+ */
+internal fun shortPath(
+    path: String?,
+    emptyLabel: String,
+): String {
+    if (path.isNullOrBlank()) return emptyLabel
     if (path.length <= 30) return path
     return "…${path.takeLast(28)}"
 }

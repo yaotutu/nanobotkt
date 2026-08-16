@@ -15,7 +15,9 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -107,7 +110,11 @@ internal fun SystemPage(
             title = "Current Gateway",
             subtitle = connectionStatus,
             // 这里展示 Android 客户端真实使用的入口，不读取服务端内部监听地址。
-            value = gatewayEndpointLabel(gatewayEndpoint),
+            value =
+                gatewayEndpointLabel(
+                    gatewayEndpoint = gatewayEndpoint,
+                    emptyLabel = stringResource(R.string.settings_gateway_endpoint_unavailable),
+                ),
             showChevron = false,
         )
         CardDivider()
@@ -175,13 +182,15 @@ internal fun SystemPage(
                     }
                     Text(if (reconfigurationInProgress) "Validating..." else "Validate and reconfigure")
                 }
-                OutlinePillButton(
-                    text = "Reconnect current",
+                OutlinedButton(
                     onClick = onReconnect,
                     enabled = !reconfigurationInProgress,
-                    icon = Icons.Outlined.Sync,
                     modifier = Modifier.fillMaxWidth(),
-                )
+                ) {
+                    Icon(imageVector = Icons.Outlined.Sync, contentDescription = null)
+                    Spacer(Modifier.size(8.dp))
+                    Text(stringResource(R.string.settings_reconnect_current))
+                }
             }
         }
     }
@@ -191,7 +200,11 @@ internal fun SystemPage(
         SettingsRow(
             icon = Icons.Outlined.FolderOpen,
             title = "Workspace",
-            subtitle = shortPath(payload?.runtime?.workspacePath),
+            subtitle =
+                shortPath(
+                    path = payload?.runtime?.workspacePath,
+                    emptyLabel = stringResource(R.string.settings_no_workspace_selected),
+                ),
             value = "Default workspace",
             showChevron = false,
         )
@@ -350,7 +363,9 @@ internal fun ImageGenerationPage(
             )
             if (!providerConfigured) {
                 Spacer(Modifier.height(9.dp))
-                OutlinePillButton("Configure provider", onOpenProviders)
+                OutlinedButton(onClick = onOpenProviders) {
+                    Text(stringResource(R.string.settings_configure_provider))
+                }
             }
         }
         CardDivider()
@@ -493,7 +508,9 @@ internal fun TranscriptionPage(
             )
             if (!providerConfigured) {
                 Spacer(Modifier.height(9.dp))
-                OutlinePillButton("Configure provider", onOpenProviders)
+                OutlinedButton(onClick = onOpenProviders) {
+                    Text(stringResource(R.string.settings_configure_provider))
+                }
             }
         }
         CardDivider()
