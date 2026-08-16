@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,13 +56,43 @@ internal fun ComposerTextField(
             state.attachments.isNotEmpty() ||
             !state.quotedContext.isNullOrBlank()
 
-    BasicTextField(
-        value =
+    // TextFieldValue 除了可见文本和光标，还携带由输入法拥有的 composition 区间。搜狗等输入法
+    // 即使输入英文，也会用 composition 维护当前单词的联想、纠错和候选状态。如果每次重组都只
+    // 根据 ViewModel 中的 String 重建 TextFieldValue，composition 会被置空；Compose 会把这
+    // 解释为“接受并结束当前组合文本”，从而导致输入连接反复同步，表现为快速输入时偶发丢字。
+    // 因此编辑期间必须由输入框本地立即保存输入法返回的完整值，业务层继续只持有可持久化的
+    // 文本和光标，避免把短生命周期的 IME 状态放进 ViewModel。
+    var localValue by remember {
+        mutableStateOf(
             TextFieldValue(
                 text = state.text,
                 selection = TextRange(state.cursorPosition.coerceIn(0, state.text.length)),
-            ),
-        onValueChange = { value -> onTextChange(value.text, value.selection.end) },
+            )
+        )
+    }
+    val fieldValue =
+        reconcileComposerFieldValue(
+            localValue = localValue,
+            externalText = state.text,
+            externalCursorPosition = state.cursorPosition,
+        )
+
+    // 外部动作（发送后清空、选择 Slash Command、插入 Mention、语音转写或切换会话）可能直接
+    // 修改 ViewModel 文本。把协调后的值回存到本地，确保下一次输入事件基于最新编辑缓冲区；
+    // 普通按键的外部状态只是本地值的回声，此时协调函数会原样返回 localValue，不会清除
+    // composition 或折叠输入法维护的选择范围。
+    SideEffect {
+        if (localValue != fieldValue) localValue = fieldValue
+    }
+
+    BasicTextField(
+        value = fieldValue,
+        onValueChange = { value ->
+            // 必须先同步保存完整 TextFieldValue，再把业务需要的字段上报。这样即使 ViewModel
+            // 更新触发整页重组，下一帧仍能把同一个 composition 返回给输入法。
+            localValue = value
+            onTextChange(value.text, value.selection.end)
+        },
         modifier =
             modifier.heightIn(min = 48.dp, max = 128.dp).semantics {
                 contentDescription = placeholder
@@ -87,6 +118,32 @@ internal fun ComposerTextField(
             }
         },
     )
+}
+
+/**
+ * 协调输入框本地编辑状态与 ViewModel 的业务状态。
+ *
+ * 文本和光标都一致时，外部状态只是 [BasicTextField] 回调的回声，必须返回原对象以保留 IME
+ * composition 以及完整 selection。只有外部确实改变了文本或光标时，才创建新的编辑值并主动
+ * 结束旧 composition；此类变化来自发送清空、命令插入或会话切换，继续沿用旧组合区间反而会
+ * 让输入法把后续字符写入已经失效的文本位置。
+ */
+internal fun reconcileComposerFieldValue(
+    localValue: TextFieldValue,
+    externalText: String,
+    externalCursorPosition: Int,
+): TextFieldValue {
+    val externalCursor = externalCursorPosition.coerceIn(0, externalText.length)
+    return if (
+        localValue.text == externalText && localValue.selection.end == externalCursor
+    ) {
+        localValue
+    } else {
+        TextFieldValue(
+            text = externalText,
+            selection = TextRange(externalCursor),
+        )
+    }
 }
 
 /**
