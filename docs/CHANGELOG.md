@@ -1,9 +1,12 @@
-# NanobotKT 0.1.8
+# NanobotKT 0.1.9
 
-> 自动构建发布，提交：`17aa54c`。
+> 自动构建发布，提交：`e88d9ff`。
 
 ## 变更
 
+- chore(release): push prepared versions automatically (`e88d9ff`)
+- fix(chat): prevent stale state from overwriting sessions (`bdbb671`)
+- chore(dev): prepare v0.1.8 (`00a646d`)
 - refactor: harden chat lifecycle and state ownership (`17aa54c`)
 - chore(dev): prepare v0.1.7 (`8db4260`)
 - chore(release): simplify local release workflow (`bf8cfe5`)
