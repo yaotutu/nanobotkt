@@ -9,7 +9,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
@@ -46,7 +45,6 @@ class ChatComposerUiTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val composerState = mutableStateOf(ComposerUiState())
         val darkTheme = mutableStateOf(false)
-        val conversationOpenCount = AtomicInteger(0)
         val imagePickCount = AtomicInteger(0)
 
         composeRule.setContent {
@@ -80,25 +78,16 @@ class ChatComposerUiTest {
                         onRemoveAttachment = {},
                         onPickImages = { imagePickCount.incrementAndGet() },
                         onPickFiles = {},
-                        onOpenConversationList = { conversationOpenCount.incrementAndGet() },
                     )
                 }
             }
         }
 
-        val conversationDescription = context.getString(R.string.open_conversation_list)
         val attachmentDescription = context.getString(R.string.add_attachment)
         val sendDescription = context.getString(R.string.send)
         val placeholder = context.getString(R.string.composer_placeholder)
 
         composeRule.onNode(hasTestTag(COMPOSER_TEST_ROOT)).assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.conversation_button_label))
-            .assertIsDisplayed()
-        composeRule.onNodeWithContentDescription(conversationDescription)
-            .assertHasClickAction()
-            .performClick()
-        composeRule.runOnIdle { assertEquals(1, conversationOpenCount.get()) }
-
         // 空草稿时发送动作保持可见但不可用；输入文字后应立即变为可发送状态。
         composeRule.onNodeWithContentDescription(sendDescription).assertIsNotEnabled()
         saveRootScreenshot(SCREENSHOT_LIGHT_EMPTY)

@@ -207,8 +207,15 @@ internal fun GroupSpacer(height: androidx.compose.ui.unit.Dp = 27.dp) {
     Spacer(Modifier.height(height))
 }
 
-internal fun shortPath(path: String?): String {
-    if (path.isNullOrBlank()) return "No workspace selected"
+/**
+ * 缩短工作区路径时由调用方提供空值文案，避免这个纯格式化函数把英文写死到所有 Locale。
+ * 默认参数保留既有单元测试和非 Compose 调用的兼容性，设置界面会传入当前语言的资源值。
+ */
+internal fun shortPath(
+    path: String?,
+    emptyLabel: String = "No workspace selected",
+): String {
+    if (path.isNullOrBlank()) return emptyLabel
     if (path.length <= 30) return path
     return "…${path.takeLast(28)}"
 }

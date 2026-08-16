@@ -33,6 +33,9 @@ class SettingsNavigationTest {
             gatewayEndpointLabel("  http://192.168.55.147:8765/  "),
         )
         assertEquals("Gateway endpoint unavailable", gatewayEndpointLabel("   "))
+        // Compose 展示层会传入当前 Locale 的空值资源；纯函数必须原样使用调用方文案，
+        // 不能再把英文哨兵值泄漏回中文界面。
+        assertEquals("Gateway 地址不可用", gatewayEndpointLabel("   ", "Gateway 地址不可用"))
     }
 
     @Test

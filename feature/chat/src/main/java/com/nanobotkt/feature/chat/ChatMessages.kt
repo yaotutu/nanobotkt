@@ -69,9 +69,11 @@ internal fun MessageList(
         modifier = modifier,
         contentPadding =
             PaddingValues(
-                start = NanobotThemeDefaults.spacing.sm,
-                top = NanobotThemeDefaults.spacing.md,
-                end = NanobotThemeDefaults.spacing.sm,
+                // 文档式 Assistant 正文需要稳定页边距。20dp 比旧的 12dp 更接近阅读页面，
+                // 同时仍为用户气泡和长代码保留足够宽度。
+                start = 20.dp,
+                top = NanobotThemeDefaults.spacing.sm,
+                end = 20.dp,
                 // Composer 是独立底部区域，这里只保留消息与输入框之间的呼吸空间。
                 bottom = NanobotThemeDefaults.spacing.md,
             ),

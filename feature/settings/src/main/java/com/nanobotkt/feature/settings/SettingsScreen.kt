@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -158,7 +159,7 @@ fun SettingsScreen(
                 .statusBarsPadding(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
     ) {
-        item { SettingsHeader(title = settingsSectionTitle(section), onBack = onBack) }
+        item { SettingsHeader(title = localizedSettingsSectionTitle(section), onBack = onBack) }
         item {
             when (section) {
                 SETTINGS_SECTION_OVERVIEW ->
@@ -242,7 +243,7 @@ internal fun SettingsHeader(title: String, onBack: () -> Unit) {
         IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.settings_back),
                 tint = PrimaryText,
             )
         }
@@ -257,6 +258,28 @@ internal fun SettingsHeader(title: String, onBack: () -> Unit) {
     }
     Spacer(Modifier.height(8.dp))
 }
+
+/**
+ * 将稳定的内部 section wire value 映射为当前应用 Locale 下的标题。
+ *
+ * section 常量仍保持英文 wire value，避免破坏 SavedStateHandle 恢复和 app 组合根导航；
+ * 只有进入 Compose 展示边界后才读取字符串资源，因此切换应用语言会触发重组并立即刷新标题。
+ */
+@Composable
+private fun localizedSettingsSectionTitle(section: String): String =
+    stringResource(
+        when (section) {
+            SETTINGS_SECTION_OVERVIEW -> R.string.settings_title
+            SETTINGS_SECTION_APPEARANCE -> R.string.settings_appearance
+            SETTINGS_SECTION_MODELS -> R.string.settings_models_providers
+            SETTINGS_SECTION_IMAGE -> R.string.settings_image_generation
+            SETTINGS_SECTION_VOICE -> R.string.settings_voice
+            SETTINGS_SECTION_WEB -> R.string.settings_web_search
+            SETTINGS_SECTION_SYSTEM -> R.string.settings_gateway_system
+            SETTINGS_SECTION_SECURITY -> R.string.settings_app_safety
+            else -> R.string.settings_title
+        }
+    )
 
 internal fun settingsSectionTitle(section: String): String =
     when (section) {

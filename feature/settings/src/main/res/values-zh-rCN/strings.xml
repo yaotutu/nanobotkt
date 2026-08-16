@@ -1,0 +1,116 @@
+<resources>
+    <!-- 设置页外壳与一级导航。 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_back">返回</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_models_providers">模型与提供商</string>
+    <string name="settings_image_generation">图像生成</string>
+    <string name="settings_voice">语音</string>
+    <string name="settings_web_search">网页搜索</string>
+    <string name="settings_gateway_system">Gateway 与系统</string>
+    <string name="settings_app_safety">应用安全</string>
+
+    <!-- 设置首页分组和入口。 -->
+    <string name="settings_group_general">常规</string>
+    <string name="settings_group_ai_capabilities">AI 与能力</string>
+    <string name="settings_group_integrations_automation">集成与自动化</string>
+    <string name="settings_group_system_security">系统与安全</string>
+    <string name="settings_group_account">账户</string>
+    <string name="settings_appearance_summary">主题、语言、密度与显示</string>
+    <string name="settings_models_summary">提供商、凭据与模型调用顺序</string>
+    <string name="settings_apps">应用</string>
+    <string name="settings_apps_summary">安装和管理助手应用</string>
+    <string name="settings_skills">技能</string>
+    <string name="settings_skills_summary">管理助手能力</string>
+    <string name="settings_image_generation_summary">提供商、模型与输出默认值</string>
+    <string name="settings_voice_summary">音频转写提供商与模型</string>
+    <string name="settings_web_search_summary">搜索提供商与凭据</string>
+    <string name="settings_channels">渠道</string>
+    <string name="settings_channels_summary">将消息渠道连接到你的助手</string>
+    <string name="settings_automations">自动化</string>
+    <string name="settings_automations_summary">创建和管理定时任务</string>
+    <string name="settings_workspaces">工作区</string>
+    <string name="settings_workspaces_summary">默认工作区与访问模式</string>
+    <string name="settings_gateway_system_summary">运行时、API 服务与连接详情</string>
+    <string name="settings_app_safety_summary">本地服务与默认访问规则</string>
+    <string name="settings_security_pairing">安全与配对</string>
+    <string name="settings_security_pairing_summary">查看设备配对请求</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_about_summary">版本信息与 Gateway 更新检查</string>
+    <string name="settings_check_app_update">检查 App 更新</string>
+    <string name="settings_current_app_version">当前版本 %1$s（%2$s）</string>
+    <string name="settings_log_out">退出登录</string>
+
+    <!-- Gateway 和状态摘要。 -->
+    <string name="settings_gateway_status">Gateway %1$s</string>
+    <string name="settings_connection_connected">已连接</string>
+    <string name="settings_connection_connecting">连接中</string>
+    <string name="settings_connection_disconnected">已断开</string>
+    <string name="settings_connection_unknown">状态未知</string>
+    <string name="settings_gateway_endpoint_unavailable">Gateway 地址不可用</string>
+    <string name="settings_manage">管理</string>
+    <string name="settings_reconnect">重新连接</string>
+    <string name="settings_current_model">当前模型</string>
+    <string name="settings_not_configured">未配置</string>
+    <string name="settings_configured">已配置</string>
+    <string name="settings_no_configured_providers">没有已配置的提供商</string>
+    <string name="settings_no_key_required">无需密钥</string>
+    <string name="settings_enabled">已启用</string>
+    <string name="settings_disabled">已停用</string>
+    <string name="settings_unavailable">不可用</string>
+    <string name="settings_ready">就绪</string>
+    <string name="settings_not_connected">未连接</string>
+    <string name="settings_restart_pending">等待重启</string>
+    <string name="settings_default_workspace">默认工作区</string>
+    <string name="settings_no_workspace_selected">未选择工作区</string>
+    <string name="settings_update_available_version">可更新至 v%1$s</string>
+    <string name="settings_token_usage">Token 用量</string>
+
+    <!-- 外观页。 -->
+    <string name="settings_group_interface">界面</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_theme_summary">在浅色与深色外观之间切换。</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_language_summary">选择应用界面使用的语言。</string>
+    <string name="settings_language_system_default">跟随系统</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_simplified_chinese">简体中文</string>
+    <string name="settings_language_traditional_chinese">繁體中文</string>
+    <string name="settings_language_japanese">日本語</string>
+    <string name="settings_language_korean">한국어</string>
+    <string name="settings_language_spanish">Español</string>
+    <string name="settings_language_french">Français</string>
+    <string name="settings_language_portuguese">Português</string>
+    <string name="settings_language_vietnamese">Tiếng Việt</string>
+    <string name="settings_language_indonesian">Bahasa Indonesia</string>
+    <string name="settings_group_local_preferences">本地偏好</string>
+    <string name="settings_density">显示密度</string>
+    <string name="settings_density_summary">仅保存在此设备上。</string>
+    <string name="settings_density_comfortable">舒适</string>
+    <string name="settings_density_compact">紧凑</string>
+    <string name="settings_activity_detail">活动详情</string>
+    <string name="settings_activity_detail_summary">选择默认显示多少助手活动详情。</string>
+    <string name="settings_activity_auto">自动</string>
+    <string name="settings_activity_expanded">展开</string>
+    <string name="settings_file_edit_display">文件编辑显示</string>
+    <string name="settings_file_edit_display_summary">选择文件编辑活动默认显示行数摘要还是差异内容。</string>
+    <string name="settings_file_edit_summary">摘要</string>
+    <string name="settings_file_edit_diff">差异</string>
+    <string name="settings_file_edit_collapsed_diff">折叠差异</string>
+    <string name="settings_code_wrapping">代码换行</string>
+    <string name="settings_code_wrapping_summary">长代码行自动换行，而不是水平滚动。</string>
+    <string name="settings_brand_logos">品牌图标</string>
+    <string name="settings_brand_logos_summary">在可用位置显示提供商图标。</string>
+
+    <!-- 设置首页展示的 App 更新状态。 -->
+    <string name="settings_update_checking">检查中</string>
+    <string name="settings_update_up_to_date">已是最新</string>
+    <string name="settings_update_found">发现 %1$s</string>
+    <string name="settings_update_downloading_percent">下载 %1$d%%</string>
+    <string name="settings_update_downloading">下载中</string>
+    <string name="settings_update_waiting_install">等待安装</string>
+    <string name="settings_update_installing">安装中</string>
+    <string name="settings_update_retry_available">可重试</string>
+</resources>

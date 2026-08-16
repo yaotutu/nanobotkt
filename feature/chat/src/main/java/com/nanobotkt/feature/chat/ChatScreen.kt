@@ -67,7 +67,6 @@ fun ChatScreen(
     onOpenModelSettings: () -> Unit,
     onToggleTheme: () -> Unit = {},
     transportStatus: TransportStatus,
-    onOpenConversationList: () -> Unit = {},
     conversationItems: List<ConversationListItem> = emptyList(),
     archivedConversationItems: List<ConversationListItem> = emptyList(),
     selectedConversationKey: String? = null,
@@ -296,11 +295,6 @@ fun ChatScreen(
                 )
             },
             onPickFiles = { filePicker.launch(arrayOf("*/*")) },
-            onOpenConversationList = {
-                // 会话入口现在始终打开同一聊天页内的 Sheet；不再根据数据是否为空切换
-                // destination，避免“还没有会话”时错误地回到旧独立页面。
-                conversationSheetOpen = true
-            },
         )
     }
 
@@ -331,6 +325,10 @@ fun ChatScreen(
             hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
             hasSessionInfo = state.sessionKey != null,
             hasAccessSettings = activeWorkspaceScope != null,
+            onOpenConversationList = {
+                // 会话列表继续使用同一 ChatScreen 内的 Sheet，打开导航不会销毁消息树或重建会话。
+                conversationSheetOpen = true
+            },
             onOpenSettings = onOpenSettings,
             onStatusClick = {
                 // 运行/等待状态指向当前时间轴中最后一段可见 Activity；连接状态没有对应

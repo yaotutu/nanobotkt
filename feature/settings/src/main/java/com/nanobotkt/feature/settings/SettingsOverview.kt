@@ -35,6 +35,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -74,9 +76,9 @@ internal fun OverviewPage(
         activeProviderRow?.label?.takeIf { it.isNotBlank() } ?: activeProvider.orEmpty()
     val modelName =
         if (activeProviderConfigured) {
-            agent?.model?.takeIf { it.isNotBlank() } ?: "Not configured"
+            agent?.model?.takeIf { it.isNotBlank() } ?: stringResource(R.string.settings_not_configured)
         } else {
-            "Not configured"
+            stringResource(R.string.settings_not_configured)
         }
     val modelCaption =
         if (activeProviderConfigured) {
@@ -88,7 +90,7 @@ internal fun OverviewPage(
                     agent?.model?.takeIf { it.isNotBlank() },
                 )
                 .joinToString(" · ")
-                .ifBlank { "No configured providers" }
+                .ifBlank { stringResource(R.string.settings_no_configured_providers) }
         }
 
     TokenUsageHeatmapCard(payload?.usage)
@@ -97,7 +99,7 @@ internal fun OverviewPage(
     SettingsGroup("AI") {
         SettingsRow(
             icon = Icons.Outlined.SmartToy,
-            title = "Current model",
+            title = stringResource(R.string.settings_current_model),
             subtitle = modelCaption,
             value = modelName,
             valueLogoProvider = activeProvider,
@@ -114,11 +116,25 @@ internal fun OverviewPage(
         webProvider?.label?.takeIf { it.isNotBlank() } ?: webSearch?.provider.orEmpty()
     val webCredentialStatus =
         when (webProvider?.credential) {
-            "none" -> "No key required"
+            "none" -> stringResource(R.string.settings_no_key_required)
             "optional_api_key" ->
-                if (webSearch?.apiKeyHint.isNullOrBlank()) "No key required" else "Configured"
-            "base_url" -> if (webSearch?.baseUrl.isNullOrBlank()) "Not configured" else "Configured"
-            else -> if (webSearch?.apiKeyHint.isNullOrBlank()) "Not configured" else "Configured"
+                if (webSearch?.apiKeyHint.isNullOrBlank()) {
+                    stringResource(R.string.settings_no_key_required)
+                } else {
+                    stringResource(R.string.settings_configured)
+                }
+            "base_url" ->
+                if (webSearch?.baseUrl.isNullOrBlank()) {
+                    stringResource(R.string.settings_not_configured)
+                } else {
+                    stringResource(R.string.settings_configured)
+                }
+            else ->
+                if (webSearch?.apiKeyHint.isNullOrBlank()) {
+                    stringResource(R.string.settings_not_configured)
+                } else {
+                    stringResource(R.string.settings_configured)
+                }
         }
     val image = payload?.imageGeneration
     val imageProviderLabel =
@@ -136,15 +152,20 @@ internal fun OverviewPage(
             ?.takeIf { it.isNotBlank() } ?: voice?.provider.orEmpty()
 
     GroupSpacer()
-    SettingsGroup("Capabilities") {
+    SettingsGroup(stringResource(R.string.settings_group_ai_capabilities)) {
         SettingsRow(
             icon = Icons.Outlined.Public,
-            title = "Web search",
+            title = stringResource(R.string.settings_web_search),
             subtitle =
                 listOf(webProviderLabel, webCredentialStatus)
                     .filter { it.isNotBlank() }
                     .joinToString(" · "),
-            value = if (payload?.web?.enable == true) "Enabled" else "Disabled",
+            value =
+                if (payload?.web?.enable == true) {
+                    stringResource(R.string.settings_enabled)
+                } else {
+                    stringResource(R.string.settings_disabled)
+                },
             valueLogoProvider = webSearch?.provider,
             showBrandLogos = showBrandLogos,
             onClick = { onSectionChange("Web") },
@@ -152,15 +173,24 @@ internal fun OverviewPage(
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.Image,
-            title = "Image generation",
+            title = stringResource(R.string.settings_image_generation),
             subtitle =
                 listOf(
                         imageProviderLabel,
-                        if (image?.providerConfigured == true) "Configured" else "Not configured",
+                        if (image?.providerConfigured == true) {
+                            stringResource(R.string.settings_configured)
+                        } else {
+                            stringResource(R.string.settings_not_configured)
+                        },
                     )
                     .filter { it.isNotBlank() }
                     .joinToString(" · "),
-            value = if (image?.enabled == true) "Enabled" else "Disabled",
+            value =
+                if (image?.enabled == true) {
+                    stringResource(R.string.settings_enabled)
+                } else {
+                    stringResource(R.string.settings_disabled)
+                },
             valueLogoProvider = image?.provider,
             showBrandLogos = showBrandLogos,
             onClick = { onSectionChange("Image") },
@@ -168,15 +198,24 @@ internal fun OverviewPage(
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.MicNone,
-            title = "Voice input",
+            title = stringResource(R.string.settings_voice),
             subtitle =
                 listOf(
                         voiceProviderLabel,
-                        if (voice?.providerConfigured == true) "Configured" else "Not configured",
+                        if (voice?.providerConfigured == true) {
+                            stringResource(R.string.settings_configured)
+                        } else {
+                            stringResource(R.string.settings_not_configured)
+                        },
                     )
                     .filter { it.isNotBlank() }
                     .joinToString(" · "),
-            value = if (voice?.enabled == true) "Enabled" else "Disabled",
+            value =
+                if (voice?.enabled == true) {
+                    stringResource(R.string.settings_enabled)
+                } else {
+                    stringResource(R.string.settings_disabled)
+                },
             valueLogoProvider = voice?.provider,
             showBrandLogos = showBrandLogos,
             onClick = { onSectionChange("Voice") },
@@ -184,37 +223,49 @@ internal fun OverviewPage(
     }
 
     GroupSpacer()
-    SettingsGroup("System") {
+    SettingsGroup(stringResource(R.string.settings_group_system_security)) {
         val host = payload?.runtime?.gatewayHost.orEmpty()
         val port = payload?.runtime?.gatewayPort ?: 0
         SettingsRow(
             icon = Icons.Outlined.Dns,
             title = "Gateway",
             subtitle =
-                if (payload?.requiresRestart == true) "Restart pending"
-                else if (payload != null) "Ready" else "Not connected",
-            value = if (host.isNotBlank() && port > 0) "$host:$port" else "Unavailable",
+                if (payload?.requiresRestart == true) stringResource(R.string.settings_restart_pending)
+                else if (payload != null) {
+                    stringResource(R.string.settings_ready)
+                } else {
+                    stringResource(R.string.settings_not_connected)
+                },
+            value =
+                if (host.isNotBlank() && port > 0) "$host:$port"
+                else stringResource(R.string.settings_unavailable),
             onClick = { onSectionChange("System") },
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.FolderOpen,
-            title = "Workspace",
-            subtitle = shortPath(payload?.runtime?.workspacePath),
-            value = "Default workspace",
+            title = stringResource(R.string.settings_workspaces),
+            subtitle =
+                shortPath(
+                    payload?.runtime?.workspacePath,
+                    stringResource(R.string.settings_no_workspace_selected),
+                ),
+            value = stringResource(R.string.settings_default_workspace),
             onClick = { onSectionChange("System") },
         )
     }
 
     GroupSpacer()
-    SettingsGroup("About") {
+    SettingsGroup(stringResource(R.string.settings_about)) {
         val checkedVersion = state.versionCheck?.updateAvailable
         val version =
             checkedVersion?.currentVersion
                 ?: payload?.version?.get("current")
                 ?: payload?.version?.values?.firstOrNull()
                 ?: "nanobot"
-        val updateText = checkedVersion?.latestVersion?.let { "Update available v$it" }
+        val updateText = checkedVersion?.latestVersion?.let {
+                stringResource(R.string.settings_update_available_version, it)
+            }
         VersionCheckRow(
             version = version,
             updateText = updateText,
@@ -233,11 +284,12 @@ internal fun TokenUsageHeatmapCard(usage: SettingsUsage?) {
     val totals =
         remember(usage?.days) { usage?.days.orEmpty().associate { it.date to it.totalTokens } }
     val maxTokens = remember(totals) { totals.values.maxOrNull()?.coerceAtLeast(0L) ?: 0L }
+    val configuration = LocalConfiguration.current
+    val displayLocale = configuration.locales[0] ?: Locale.getDefault()
     val monthLabels =
-        remember(dates) {
-            dates
-                .filter { it.dayOfMonth == 1 }
-                .map { it.format(DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH)) }
+        remember(dates, displayLocale) {
+            val formatter = DateTimeFormatter.ofPattern("MMM", displayLocale)
+            dates.filter { it.dayOfMonth == 1 }.map { it.format(formatter) }
         }
 
     Surface(
@@ -247,7 +299,7 @@ internal fun TokenUsageHeatmapCard(usage: SettingsUsage?) {
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
             Text(
-                text = "Token Usage",
+                text = stringResource(R.string.settings_token_usage),
                 modifier = Modifier.align(Alignment.End),
                 color = SecondaryText.copy(alpha = 0.64f),
                 fontSize = 11.sp,
@@ -323,10 +375,10 @@ internal fun TokenUsageHeatmapCard(usage: SettingsUsage?) {
 
 @Composable
 internal fun AppearancePage(preferences: UserPreferences, viewModel: SettingsViewModel) {
-    SettingsGroup("Interface") {
+    SettingsGroup(stringResource(R.string.settings_group_interface)) {
         PreferenceBlock(
-            title = "Theme",
-            description = "Switch between light and dark appearance.",
+            title = stringResource(R.string.settings_theme),
+            description = stringResource(R.string.settings_theme_summary),
         ) {
             val darkSelected =
                 when (preferences.theme) {
@@ -335,7 +387,11 @@ internal fun AppearancePage(preferences: UserPreferences, viewModel: SettingsVie
                     ThemePreference.SYSTEM -> isSystemInDarkTheme()
                 }
             SegmentedSetting(
-                options = listOf("Light", "Dark"),
+                options =
+                    listOf(
+                        stringResource(R.string.settings_theme_light),
+                        stringResource(R.string.settings_theme_dark),
+                    ),
                 selectedIndex = if (darkSelected) 1 else 0,
                 onSelected = {
                     viewModel.setTheme(if (it == 0) ThemePreference.LIGHT else ThemePreference.DARK)
@@ -347,10 +403,17 @@ internal fun AppearancePage(preferences: UserPreferences, viewModel: SettingsVie
     }
 
     GroupSpacer(27.dp)
-    SettingsGroup("Local preferences") {
-        PreferenceBlock(title = "Density", description = "Stored only in this browser.") {
+    SettingsGroup(stringResource(R.string.settings_group_local_preferences)) {
+        PreferenceBlock(
+            title = stringResource(R.string.settings_density),
+            description = stringResource(R.string.settings_density_summary),
+        ) {
             SegmentedSetting(
-                options = listOf("Comfortable", "Compact"),
+                options =
+                    listOf(
+                        stringResource(R.string.settings_density_comfortable),
+                        stringResource(R.string.settings_density_compact),
+                    ),
                 selectedIndex = if (preferences.density == DensityPreference.COMPACT) 1 else 0,
                 onSelected = {
                     viewModel.setDensity(
@@ -361,22 +424,31 @@ internal fun AppearancePage(preferences: UserPreferences, viewModel: SettingsVie
         }
         CardDivider()
         PreferenceBlock(
-            title = "Activity detail",
-            description = "Choose how much agent activity chrome to show by default.",
+            title = stringResource(R.string.settings_activity_detail),
+            description = stringResource(R.string.settings_activity_detail_summary),
         ) {
             SegmentedSetting(
-                options = listOf("Auto", "Expanded"),
+                options =
+                    listOf(
+                        stringResource(R.string.settings_activity_auto),
+                        stringResource(R.string.settings_activity_expanded),
+                    ),
                 selectedIndex = if (preferences.showActivityDetails) 1 else 0,
                 onSelected = { viewModel.activity(it == 1) },
             )
         }
         CardDivider()
         PreferenceBlock(
-            title = "File edit display",
-            description = "Choose whether file edit activity opens as line counts or a diff.",
+            title = stringResource(R.string.settings_file_edit_display),
+            description = stringResource(R.string.settings_file_edit_display_summary),
         ) {
             SegmentedSetting(
-                options = listOf("Summary", "Diff", "Collapsed diff"),
+                options =
+                    listOf(
+                        stringResource(R.string.settings_file_edit_summary),
+                        stringResource(R.string.settings_file_edit_diff),
+                        stringResource(R.string.settings_file_edit_collapsed_diff),
+                    ),
                 selectedIndex =
                     when (preferences.fileEditDisplay) {
                         FileEditDisplay.SUMMARY -> 0
@@ -396,15 +468,15 @@ internal fun AppearancePage(preferences: UserPreferences, viewModel: SettingsVie
         }
         CardDivider()
         PreferenceBlock(
-            title = "Code wrapping",
-            description = "Wrap long code lines instead of scrolling horizontally.",
+            title = stringResource(R.string.settings_code_wrapping),
+            description = stringResource(R.string.settings_code_wrapping_summary),
         ) {
             ToggleSetting(checked = preferences.wrapCode, onCheckedChange = viewModel::wrap)
         }
         CardDivider()
         PreferenceBlock(
-            title = "Brand logos",
-            description = "Show provider logos where they are available.",
+            title = stringResource(R.string.settings_brand_logos),
+            description = stringResource(R.string.settings_brand_logos_summary),
         ) {
             ToggleSetting(checked = preferences.showBrandLogos, onCheckedChange = viewModel::logos)
         }
@@ -419,20 +491,22 @@ internal fun LanguagePreference(languageTag: String?, onChange: (String?) -> Uni
      */
     val languages =
         listOf(
-            null to "System default",
-            "en" to "English",
-            "zh-CN" to "简体中文",
-            "zh-TW" to "繁體中文",
-            "ja" to "日本語",
-            "ko" to "한국어",
-            "es" to "Español",
-            "fr" to "Français",
-            "pt-BR" to "Português",
-            "vi" to "Tiếng Việt",
-            "id" to "Indonesia",
+            null to stringResource(R.string.settings_language_system_default),
+            "en" to stringResource(R.string.settings_language_english),
+            "zh-CN" to stringResource(R.string.settings_language_simplified_chinese),
+            "zh-TW" to stringResource(R.string.settings_language_traditional_chinese),
+            "ja" to stringResource(R.string.settings_language_japanese),
+            "ko" to stringResource(R.string.settings_language_korean),
+            "es" to stringResource(R.string.settings_language_spanish),
+            "fr" to stringResource(R.string.settings_language_french),
+            "pt-BR" to stringResource(R.string.settings_language_portuguese),
+            "vi" to stringResource(R.string.settings_language_vietnamese),
+            "id" to stringResource(R.string.settings_language_indonesian),
         )
     var expanded by remember { mutableStateOf(false) }
-    val currentName = languages.firstOrNull { it.first == languageTag }?.second ?: "System default"
+    val currentName =
+        languages.firstOrNull { it.first == languageTag }?.second
+            ?: stringResource(R.string.settings_language_system_default)
 
     Box {
         Column(
@@ -441,9 +515,13 @@ internal fun LanguagePreference(languageTag: String?, onChange: (String?) -> Uni
                     .clickable { expanded = true }
                     .padding(horizontal = 16.dp, vertical = 15.dp)
         ) {
-            Text("Language", color = PrimaryText, fontSize = 15.sp)
+            Text(stringResource(R.string.settings_language), color = PrimaryText, fontSize = 15.sp)
             Spacer(Modifier.height(4.dp))
-            Text("Choose the language used by the WebUI.", color = SecondaryText, fontSize = 13.sp)
+            Text(
+                stringResource(R.string.settings_language_summary),
+                color = SecondaryText,
+                fontSize = 13.sp,
+            )
             Spacer(Modifier.height(15.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
