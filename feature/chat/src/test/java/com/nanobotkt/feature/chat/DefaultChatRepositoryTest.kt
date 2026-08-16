@@ -114,6 +114,40 @@ class DefaultChatRepositoryTest {
     }
 
     @Test
+    fun `background model projection cannot overwrite a concurrently opened session`() = runBlocking<Unit> {
+        val sessionKey = "webui:atomic-model"
+        val bootstrapProvider = BlockingBootstrapProvider()
+        server.dispatcher = threadDispatcher {
+            jsonResponse(threadPayload(sessionKey, messageId = "atomic-message", before = null))
+        }
+
+        val repository = newRepository(bootstrapProvider = bootstrapProvider)
+        try {
+            // 先让 Transport 状态 collector 读取旧的空会话，并阻塞在模型信息读取中。
+            // 随后打开真实会话，稳定复现旧实现“后台 copy 回灌旧 ChatUiState”的竞态窗口。
+            assertTrue(bootstrapProvider.firstReadStarted.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+            repository.openSession(sessionKey, "atomic-chat")
+            assertEquals(sessionKey, repository.state.value.sessionKey)
+
+            bootstrapProvider.releaseFirstRead.countDown()
+            val projected = awaitState {
+                it.model.displayLabel == BlockingBootstrapProvider.CURRENT_MODEL ||
+                    it.model.displayLabel == BlockingBootstrapProvider.STALE_MODEL
+            }
+
+            // 原子 update 在 CAS 冲突后必须基于新会话重新计算模型，因此只能得到 CURRENT_MODEL；
+            // 如果仍使用 value = stale.copy(...)，这里会得到 STALE_MODEL 且 sessionKey 被清空。
+            assertEquals(BlockingBootstrapProvider.CURRENT_MODEL, projected.model.displayLabel)
+            assertEquals(sessionKey, projected.sessionKey)
+            assertEquals("atomic-chat", projected.chatId)
+            awaitState { it.sessionKey == sessionKey && !it.loading }
+        } finally {
+            // 前置断言失败时也释放后台 collector，避免阻塞线程污染后续测试。
+            bootstrapProvider.releaseFirstRead.countDown()
+        }
+    }
+
+    @Test
     fun `loadFilePreview uses encoded session path and file query`() = runBlocking {
         val sessionKey = "webui:folder /中文?"
         val requestRef = AtomicReference<RecordedRequest>()
@@ -704,7 +738,11 @@ class DefaultChatRepositoryTest {
         assertTrue(socketClosed.await(2, TimeUnit.SECONDS))
     }
 
-    private fun newRepository(): DefaultChatRepository {
+    private fun newRepository(
+        bootstrapProvider: BootstrapSnapshotProvider = object : BootstrapSnapshotProvider {
+            override fun currentBootstrap(): BootstrapResponse? = null
+        },
+    ): DefaultChatRepository {
         currentRepository = DefaultChatRepository(
             api = GatewayApiClient(
                 client = httpClient,
@@ -718,9 +756,7 @@ class DefaultChatRepositoryTest {
             limitsProvider = object : IngressLimitsProvider {
                 override fun currentIngressLimits() = null
             },
-            bootstrapProvider = object : BootstrapSnapshotProvider {
-                override fun currentBootstrap(): BootstrapResponse? = null
-            },
+            bootstrapProvider = bootstrapProvider,
             workspaceAccessProvider = object : WorkspaceAccessProvider {
                 override val workspaces = MutableStateFlow<WorkspacesPayload?>(null)
                 override suspend fun refresh() = Unit
@@ -783,6 +819,44 @@ class DefaultChatRepositoryTest {
           }
         }
     """.trimIndent()
+
+    /**
+     * 用可控的 Bootstrap 读取顺序制造模型投影与 openSession 的确定性交错。
+     * 第一次读取代表后台 collector 持有的旧状态，第二次属于 openSession，第三次代表原子 CAS 失败后的重算。
+     */
+    private class BlockingBootstrapProvider : BootstrapSnapshotProvider {
+        val firstReadStarted = CountDownLatch(1)
+        val releaseFirstRead = CountDownLatch(1)
+        private val readCount = AtomicInteger(0)
+
+        override fun currentBootstrap(): BootstrapResponse {
+            val currentRead = readCount.incrementAndGet()
+            if (currentRead == 1) {
+                firstReadStarted.countDown()
+                check(releaseFirstRead.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    "first bootstrap read was not released"
+                }
+            }
+            val modelName = when (currentRead) {
+                1 -> STALE_MODEL
+                2 -> SESSION_MODEL
+                else -> CURRENT_MODEL
+            }
+            return BootstrapResponse(
+                token = "test-socket-token",
+                apiToken = "test-api-token",
+                wsPath = "/ws",
+                expiresIn = 60,
+                modelName = modelName,
+            )
+        }
+
+        companion object {
+            const val STALE_MODEL = "stale-model"
+            const val SESSION_MODEL = "session-model"
+            const val CURRENT_MODEL = "current-model"
+        }
+    }
 
     private data class TestCredentials(private val url: String) : TransportCredentials {
         override fun currentWebSocketUrl(): String = url

@@ -201,15 +201,18 @@ class DefaultChatRepository @Inject constructor(
     init {
         scope.launch {
             workspaceAccessProvider.workspaces.collectLatest { payload ->
-                val current = mutableState.value
-                mutableState.value = current.copy(
-                    workspaces = payload,
-                    workspaceScope = if (current.chatId == null) {
-                        current.workspaceScope ?: payload?.defaultScope?.normalized()
-                    } else {
-                        current.workspaceScope
-                    },
-                )
+                // Workspace 数据可能与 openSession、HTTP 回包和 WebSocket 事件并发到达。
+                // 必须用原子 update 基于提交时的最新状态计算，禁止旧的 ChatUiState 快照覆盖刚打开的会话。
+                mutableState.update { current ->
+                    current.copy(
+                        workspaces = payload,
+                        workspaceScope = if (current.chatId == null) {
+                            current.workspaceScope ?: payload?.defaultScope?.normalized()
+                        } else {
+                            current.workspaceScope
+                        },
+                    )
+                }
             }
         }
         scope.launch { transport.events.collect(::handleEvent) }
@@ -718,11 +721,14 @@ class DefaultChatRepository @Inject constructor(
 
     override fun clearFilePreview() {
         filePreviewLoader.invalidate()
-        mutableState.value = mutableState.value.copy(
-            filePreview = null,
-            filePreviewLoading = false,
-            filePreviewError = null,
-        )
+        // 清理预览只负责三个预览字段，使用原子更新避免与会话加载结果互相覆盖。
+        mutableState.update { current ->
+            current.copy(
+                filePreview = null,
+                filePreviewLoading = false,
+                filePreviewError = null,
+            )
+        }
     }
 
     /** 媒体 URL 解析委托给共享网络客户端，确保与当前登录会话实际 baseUrl 保持一致。 */
@@ -771,14 +777,17 @@ class DefaultChatRepository @Inject constructor(
         pendingPreset: String? = mutableState.value.model.pendingPreset,
         error: String? = mutableState.value.model.error,
     ) {
-        val current = mutableState.value
-        mutableState.value = current.copy(
-            model = buildModelSelection(
-                scopeKey = current.sessionKey ?: NEW_TOPIC_MODEL_SCOPE,
-                pendingPreset = pendingPreset,
-                error = error,
-            ),
-        )
+        // Transport 状态由后台线程持续发布；模型投影计算期间 openSession 可能已经替换整个会话状态。
+        // MutableStateFlow.update 会在 CAS 冲突时基于最新会话重算，只更新 model 字段，不回灌旧 sessionKey/chatId。
+        mutableState.update { current ->
+            current.copy(
+                model = buildModelSelection(
+                    scopeKey = current.sessionKey ?: NEW_TOPIC_MODEL_SCOPE,
+                    pendingPreset = pendingPreset,
+                    error = error,
+                ),
+            )
+        }
     }
 
     private suspend fun refreshCanonical(): Boolean {
@@ -972,7 +981,10 @@ class DefaultChatRepository @Inject constructor(
 
             is InboundEvent.SessionUpdated -> {
                 event.workspaceScope?.let { canonicalScope ->
-                    mutableState.value = mutableState.value.copy(workspaceScope = canonicalScope.normalized())
+                    // SessionUpdated 与会话切换可能在不同线程交错，只允许修改最新状态的 workspace 字段。
+                    mutableState.update { current ->
+                        current.copy(workspaceScope = canonicalScope.normalized())
+                    }
                 }
             }
 
