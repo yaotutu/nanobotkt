@@ -12,6 +12,9 @@ import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportState
 import com.nanobotkt.feature.auth.AuthSessionRepository
 import com.nanobotkt.feature.auth.AuthState
+import com.nanobotkt.feature.auth.GatewayConfigurationError
+import com.nanobotkt.feature.auth.GatewayConfigurationResult
+import com.nanobotkt.feature.auth.GatewayConnectionConfig
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +31,33 @@ import javax.inject.Inject
 
 internal enum class AppDestination { CHAT, CONVERSATIONS, WORKSPACES, APPS, SKILLS, AUTOMATIONS, CHANNELS, SECURITY, SETTINGS }
 
+/**
+ * Settings 中完整 Gateway 重配操作的 app 级状态。
+ *
+ * Settings feature 只消费是否提交、错误和成功代次，不读取 Auth feature 的会话状态。
+ * [successGeneration] 即使地址未变化也会递增，用于清空 Secret 输入，避免把“同地址换整套配置”
+ * 错误地当成无变化。Secret 本身绝不进入这个状态对象。
+ */
+internal data class GatewayReconfigurationUiState(
+    val submitting: Boolean = false,
+    val error: GatewayConfigurationError? = null,
+    val successGeneration: Long = 0L,
+)
+
+/** 将结构化重配结果归约为不含 Secret 的 UI 状态。 */
+internal fun GatewayReconfigurationUiState.afterGatewayReconfiguration(
+    result: GatewayConfigurationResult,
+): GatewayReconfigurationUiState = when (result) {
+    is GatewayConfigurationResult.Success -> GatewayReconfigurationUiState(
+        // 不依赖 URL 是否改变；同地址替换完整配置也必须产生新的成功信号。
+        successGeneration = successGeneration + 1L,
+    )
+    is GatewayConfigurationResult.Failure -> copy(
+        submitting = false,
+        error = result.error,
+    )
+}
+
 internal data class RootUiState(
     val selectedKey: String? = null,
     val destination: AppDestination = AppDestination.CHAT,
@@ -40,6 +70,12 @@ internal data class RootUiState(
      * 需要直接回到 Chat。把来源写入 SavedStateHandle，保证系统回收进程后返回行为不漂移。
      */
     val returnDestination: AppDestination = AppDestination.CHAT,
+)
+
+/** Gateway 切换只清除服务端作用域的会话选择，保留用户所在 Settings 页面。 */
+internal fun RootUiState.clearGatewayScopedSelection(): RootUiState = copy(
+    selectedKey = null,
+    draftingNewTopic = false,
 )
 
 private const val ROOT_SELECTED_KEY = "root.selectedKey"
@@ -148,6 +184,12 @@ class AppViewModel @Inject constructor(
     private val mutableRootUiState = MutableStateFlow(savedStateHandle.readRootUiState())
     internal val rootUiState: StateFlow<RootUiState> = mutableRootUiState.asStateFlow()
 
+    // 重新配置操作属于 app 组合根编排：它同时跨越 Auth、Root 会话状态和 Transport。
+    // 这里只保存非敏感结果；Secret 从 Settings 回调直接传入一次性协程，绝不进入 StateFlow。
+    private val mutableGatewayReconfiguration = MutableStateFlow(GatewayReconfigurationUiState())
+    internal val gatewayReconfiguration: StateFlow<GatewayReconfigurationUiState> =
+        mutableGatewayReconfiguration.asStateFlow()
+
     init {
         authRepository.start()
         viewModelScope.launch {
@@ -172,9 +214,58 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    fun authenticate(secret: String) = viewModelScope.launch { authRepository.authenticate(secret) }
+    /** 初次使用必须提交完整地址和 Secret，不再保留只输入密码的入口。 */
+    fun connectGateway(config: GatewayConnectionConfig) = viewModelScope.launch {
+        authRepository.connect(config)
+    }
 
     fun retry() = viewModelScope.launch { authRepository.retry() }
+
+    /** 临时连接失败时进入完整配置页；现有持久化配置仍保留，可由用户改完后整体替换。 */
+    fun editGatewayConfiguration() = authRepository.editConfiguration()
+
+    /**
+     * Settings 中验证并替换完整 Gateway 配置。
+     *
+     * 候选验证失败时 CredentialManager 保证不调用清理回调，因此旧 Gateway、旧会话和
+     * WebSocket 全部继续工作。只有候选已经验证并原子持久化成功后，才同步清理旧会话，
+     * 随后激活新配置并发布新的 Ready epoch。
+     */
+    fun reconfigureGateway(serverUrl: String, bootstrapSecret: String) {
+        if (mutableGatewayReconfiguration.value.submitting) return
+        mutableGatewayReconfiguration.value = mutableGatewayReconfiguration.value.copy(
+            submitting = true,
+            error = null,
+        )
+        viewModelScope.launch {
+            try {
+                val result = authRepository.reconfigure(
+                    config = GatewayConnectionConfig(serverUrl, bootstrapSecret),
+                    beforeActivation = ::resetGatewayScopedStatePreservingNavigation,
+                )
+                mutableGatewayReconfiguration.value =
+                    mutableGatewayReconfiguration.value.afterGatewayReconfiguration(result)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                // ViewModel 销毁时无需再向已经离开的页面发布结果，但仍保持协程取消语义。
+                throw error
+            } catch (error: Exception) {
+                // Repository 的预期失败都应返回结构化结果；这里兜住组合根或未来实现中的
+                // 非预期异常，避免 Settings 永久停留在 submitting=true。状态不保存 Secret。
+                mutableGatewayReconfiguration.value = mutableGatewayReconfiguration.value.copy(
+                    submitting = false,
+                    error = GatewayConfigurationError.Unknown(error.message),
+                )
+            } finally {
+                // 协程正常结束、异常结束都必须解除提交锁。成功分支已经创建默认状态，这里不会
+                // 改变 successGeneration；失败分支也只补强 submitting 不变量。
+                if (mutableGatewayReconfiguration.value.submitting) {
+                    mutableGatewayReconfiguration.value = mutableGatewayReconfiguration.value.copy(
+                        submitting = false,
+                    )
+                }
+            }
+        }
+    }
 
     fun logout() {
         scheduleLogoutCleanup(
@@ -281,6 +372,20 @@ class AppViewModel @Inject constructor(
             selectedKey = selection.selectedKey,
             draftingNewTopic = selection.draftingNewTopic,
         )
+    }
+
+    /**
+     * 完整 Gateway 替换成功前清理所有旧服务端作用域状态，同时保留当前 Settings 导航位置。
+     *
+     * 与 logout 不同，用户正在 Gateway Manage 页面等待结果；强制跳回 Chat 会丢失操作反馈。
+     * 因此只清除会话选择和 drafting guard，再同步清理 feature 仓库、附件登记和旧 Socket。
+     * 此函数故意不启动协程，确保 CredentialManager 激活新配置前清理顺序已经完成。
+     */
+    private fun resetGatewayScopedStatePreservingNavigation() {
+        updateRootUiState(RootUiState::clearGatewayScopedSelection)
+        sessionCleanup.resetAll()
+        transport.clearAttachments()
+        transport.close()
     }
 
     private fun resetRootUiState() {

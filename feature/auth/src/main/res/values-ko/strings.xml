@@ -1,7 +1,6 @@
 <resources>
     <string name="auth_title">nanobot에 연결</string>
-    <string name="auth_description">게이트웨이에 설정된 부트스트랩 비밀 값을 입력하세요.</string>
-    <string name="auth_rejected">비밀 값이 거부되었습니다. 확인 후 다시 시도하세요.</string>
+    <string name="auth_description">Gateway 주소와 부트스트랩 비밀 값을 함께 구성하세요. 두 값은 함께 검증되고 교체됩니다.</string>
     <string name="bootstrap_secret">부트스트랩 비밀 값</string>
     <string name="connect">연결</string>
 </resources>

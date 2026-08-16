@@ -1,7 +1,26 @@
 <resources>
     <string name="auth_title">Connect to nanobot</string>
-    <string name="auth_description">Enter the bootstrap secret configured on your gateway.</string>
-    <string name="auth_rejected">The secret was rejected. Check it and try again.</string>
+    <string name="auth_description">Configure the complete Gateway address and bootstrap secret. They are validated and replaced together.</string>
+    <string name="gateway_address">Gateway address</string>
     <string name="bootstrap_secret">Bootstrap secret</string>
-    <string name="connect">Connect</string>
+    <string name="connect">Validate and connect</string>
+    <string name="error_missing_secret">Enter the bootstrap secret.</string>
+    <string name="error_configuration_rejected">The Gateway rejected this address and secret combination.</string>
+    <string name="error_gateway_timeout">The Gateway timed out. Check the address and network, then try again.</string>
+    <string name="error_gateway_network">The Gateway could not be reached. Check the address and network.</string>
+    <string name="error_gateway_html">The address returned an HTML page instead of a Gateway response.</string>
+    <string name="error_gateway_non_json">The address did not return a valid Gateway JSON response.</string>
+    <string name="error_gateway_invalid_response">The Gateway response is missing required connection data.</string>
+    <string name="error_gateway_http">The Gateway returned HTTP %1$d.</string>
+    <string name="error_gateway_storage">The configuration was validated but could not be saved. The previous configuration is still active.</string>
+    <string name="error_gateway_cancelled">Configuration was cancelled.</string>
+    <string name="error_gateway_unknown">The Gateway configuration failed unexpectedly.</string>
+    <string name="error_address_empty">Enter a Gateway address.</string>
+    <string name="error_address_scheme">Include http:// or https:// in the Gateway address.</string>
+    <string name="error_address_unsupported_scheme">Only http:// and https:// Gateway addresses are supported.</string>
+    <string name="error_address_invalid">Enter a valid Gateway address.</string>
+    <string name="error_address_host">The Gateway address must include a host.</string>
+    <string name="error_address_credentials">Do not put a username or password in the Gateway address.</string>
+    <string name="error_address_query">The Gateway address cannot contain query parameters.</string>
+    <string name="error_address_fragment">The Gateway address cannot contain a fragment.</string>
 </resources>

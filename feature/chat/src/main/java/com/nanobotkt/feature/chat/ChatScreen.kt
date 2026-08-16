@@ -331,6 +331,7 @@ fun ChatScreen(
             hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
             hasSessionInfo = state.sessionKey != null,
             hasAccessSettings = activeWorkspaceScope != null,
+            onOpenSettings = onOpenSettings,
             onStatusClick = {
                 // 运行/等待状态指向当前时间轴中最后一段可见 Activity；连接状态没有对应
                 // 消息记录，因此点击时保持原位，避免伪造跳转目标。

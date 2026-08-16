@@ -1,7 +1,26 @@
 <resources>
     <string name="auth_title">連線 nanobot</string>
-    <string name="auth_description">請輸入閘道中設定的引導密鑰。</string>
-    <string name="auth_rejected">密鑰遭拒，請檢查後重試。</string>
+    <string name="auth_description">請完整設定 Gateway 位址和引導密鑰。兩者會一起驗證、一起替換。</string>
+    <string name="gateway_address">Gateway 位址</string>
     <string name="bootstrap_secret">引導密鑰</string>
-    <string name="connect">連線</string>
+    <string name="connect">驗證並連線</string>
+    <string name="error_missing_secret">請輸入引導密鑰。</string>
+    <string name="error_configuration_rejected">Gateway 拒絕了這組位址和密鑰。</string>
+    <string name="error_gateway_timeout">連線 Gateway 逾時，請檢查位址和網路後重試。</string>
+    <string name="error_gateway_network">無法連線 Gateway，請檢查位址和網路。</string>
+    <string name="error_gateway_html">該位址傳回了網頁，而不是 Gateway 回應。</string>
+    <string name="error_gateway_non_json">該位址沒有傳回有效的 Gateway JSON 回應。</string>
+    <string name="error_gateway_invalid_response">Gateway 回應缺少必要的連線資訊。</string>
+    <string name="error_gateway_http">Gateway 傳回 HTTP %1$d。</string>
+    <string name="error_gateway_storage">設定驗證成功，但無法儲存。原設定仍保持有效。</string>
+    <string name="error_gateway_cancelled">已取消設定。</string>
+    <string name="error_gateway_unknown">Gateway 設定發生未知錯誤。</string>
+    <string name="error_address_empty">請輸入 Gateway 位址。</string>
+    <string name="error_address_scheme">Gateway 位址必須包含 http:// 或 https://。</string>
+    <string name="error_address_unsupported_scheme">Gateway 位址只支援 http:// 或 https://。</string>
+    <string name="error_address_invalid">請輸入有效的 Gateway 位址。</string>
+    <string name="error_address_host">Gateway 位址必須包含主機名稱或 IP。</string>
+    <string name="error_address_credentials">不要在 Gateway 位址中包含使用者名稱或密碼。</string>
+    <string name="error_address_query">Gateway 位址不能包含查詢參數。</string>
+    <string name="error_address_fragment">Gateway 位址不能包含片段。</string>
 </resources>

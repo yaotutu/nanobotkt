@@ -1,7 +1,6 @@
 <resources>
     <string name="auth_title">Hubungkan ke nanobot</string>
-    <string name="auth_description">Masukkan rahasia bootstrap yang dikonfigurasi pada gateway.</string>
-    <string name="auth_rejected">Rahasia ditolak. Periksa lalu coba lagi.</string>
+    <string name="auth_description">Konfigurasikan alamat gateway lengkap dan rahasia bootstrap. Keduanya divalidasi dan diganti bersama-sama.</string>
     <string name="bootstrap_secret">Rahasia bootstrap</string>
     <string name="connect">Hubungkan</string>
 </resources>

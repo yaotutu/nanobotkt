@@ -2,13 +2,10 @@ package com.nanobotkt.feature.auth
 
 import com.nanobotkt.core.model.BootstrapResponse
 import com.nanobotkt.core.network.GatewayException
-import com.nanobotkt.core.persistence.UserPreferences
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,194 +15,283 @@ import org.junit.Test
 
 class AuthSessionRepositoryTest {
     @Test
-    fun startWithoutStoredSecretShowsAuthenticationAndRestoresServerUrl() = runTest {
-        val preferences = FakeAuthPreferencesStore("http://saved-server/")
-        val manager = managerFor(
-            gateway = FakeBootstrapGateway(),
-            secretStore = FakeAuthSecretStore(),
-            preferences = preferences,
-        )
-        val repository = AuthSessionRepository(manager)
+    fun noStoredV2ConfigShowsEditableConfigurationWithDefaultAddress() = runTest {
+        val repository = AuthSessionRepository(managerFor())
 
         repository.start()
-        val state = repository.awaitState { it !is AuthState.Booting }
+        val state = repository.awaitState { it is AuthState.Configuration }
 
-        assertEquals(AuthState.Authentication(sessionEpoch = 0L), state)
-        // 即使没有登录 Secret，服务地址仍属于可恢复配置，后续手工登录必须使用持久化入口。
-        assertEquals("http://saved-server", repository.baseUrl)
+        assertEquals(AuthState.Configuration(DEFAULT_URL), state)
+        assertEquals(DEFAULT_URL, repository.baseUrl)
     }
 
     @Test
-    fun startWithValidStoredSecretEstablishesOneSession() = runTest {
+    fun validStoredConfigRestoresOneReadySession() = runTest {
         val gateway = FakeBootstrapGateway().apply { enqueue(testBootstrap(apiToken = "restored-token")) }
-        val secretStore = FakeAuthSecretStore(savedSecret = "stored-secret")
-        val repository = AuthSessionRepository(managerFor(gateway, secretStore))
+        val store = FakeGatewayConfigStore(config(OLD_URL, "stored-secret"))
+        val repository = AuthSessionRepository(managerFor(gateway, store))
 
         repository.start()
         val state = repository.awaitState { it is AuthState.Ready }
 
         assertEquals(AuthState.Ready(sessionEpoch = 1L), state)
-        assertEquals(listOf("stored-secret"), gateway.requestedSecrets)
+        assertEquals(listOf(BootstrapRequest(OLD_URL, "stored-secret")), gateway.requests)
     }
 
     @Test
-    fun startNetworkFailureShowsUnreachableInsteadOfAuthenticationFailure() = runTest {
+    fun startupNetworkFailureIsRetryableAndPreservesCompleteConfig() = runTest {
         val gateway = FakeBootstrapGateway().apply {
             enqueue(GatewayException.Network(IllegalStateException("offline")))
         }
-        val repository = AuthSessionRepository(
-            managerFor(gateway, FakeAuthSecretStore(savedSecret = "stored-secret")),
-        )
+        val stored = config(OLD_URL, "stored-secret")
+        val store = FakeGatewayConfigStore(stored)
+        val repository = AuthSessionRepository(managerFor(gateway, store))
 
         repository.start()
         val state = repository.awaitState { it is AuthState.Unreachable }
 
-        assertEquals(AuthState.Unreachable("network_unavailable", sessionEpoch = 0L), state)
+        assertEquals(
+            AuthState.Unreachable(
+                error = GatewayConfigurationError.NetworkUnavailable,
+                serverUrl = OLD_URL,
+                sessionEpoch = 0L,
+            ),
+            state,
+        )
+        assertEquals(stored, store.config)
+        assertEquals(OLD_URL, repository.baseUrl)
     }
 
     @Test
-    fun rejectedStoredSecretReturnsToFailedAuthenticationAndClearsSecret() = runTest {
+    fun rejectedStoredPairReturnsToCompleteConfigurationAndClearsPair() = runTest {
         val gateway = FakeBootstrapGateway().apply {
-            enqueue(GatewayException.AuthenticationRequired("bootstrap rejected"))
+            enqueue(GatewayException.AuthenticationRequired("stored pair rejected"))
         }
-        val secretStore = FakeAuthSecretStore(savedSecret = "rejected-secret")
-        val repository = AuthSessionRepository(managerFor(gateway, secretStore))
+        val store = FakeGatewayConfigStore(config(OLD_URL, "rejected-secret"))
+        val repository = AuthSessionRepository(managerFor(gateway, store))
 
         repository.start()
-        val state = repository.awaitState { it is AuthState.Authentication && it.failed }
+        val state = repository.awaitState {
+            it is AuthState.Configuration && it.error == GatewayConfigurationError.AuthenticationRejected
+        }
 
-        assertEquals(AuthState.Authentication(failed = true, sessionEpoch = 0L), state)
-        assertNull(secretStore.savedSecret)
-        assertEquals(1, secretStore.clearCount)
+        assertEquals(
+            AuthState.Configuration(
+                serverUrl = OLD_URL,
+                error = GatewayConfigurationError.AuthenticationRejected,
+            ),
+            state,
+        )
+        assertNull(store.config)
+        assertEquals(1, store.clearCount)
     }
 
     @Test
-    fun authenticateNetworkFailureKeepsSessionRecoverable() = runTest {
+    fun initialCandidateFailureStaysOnEditableCompleteConfiguration() = runTest {
         val gateway = FakeBootstrapGateway().apply {
             enqueue(GatewayException.Http(503, "unavailable"))
         }
-        val repository = AuthSessionRepository(managerFor(gateway, FakeAuthSecretStore()))
+        val repository = AuthSessionRepository(managerFor(gateway))
 
-        repository.authenticate("new-secret")
+        repository.connect(config(NEW_URL, "new-secret"))
 
-        assertEquals(AuthState.Unreachable("unavailable", sessionEpoch = 0L), repository.state.value)
+        assertEquals(
+            AuthState.Configuration(
+                serverUrl = NEW_URL,
+                error = GatewayConfigurationError.Http(503, "unavailable"),
+            ),
+            repository.state.value,
+        )
     }
 
     @Test
-    fun successfulAuthenticateAdvancesEpochButTokenRotationDoesNot() = runTest {
+    fun failedCandidateWhileReadyKeepsOldReadySessionAndSkipsCleanup() = runTest {
+        val gateway = FakeBootstrapGateway().apply {
+            enqueue(testBootstrap(apiToken = "old-token"))
+            enqueue(GatewayException.AuthenticationRequired("candidate rejected"))
+        }
+        val store = FakeGatewayConfigStore(config(OLD_URL, "old-secret"))
+        val repository = AuthSessionRepository(managerFor(gateway, store))
+        repository.start()
+        repository.awaitState { it == AuthState.Ready(1L) }
+        var cleanupCalled = false
+
+        val result = repository.reconfigure(config(NEW_URL, "new-secret")) { cleanupCalled = true }
+
+        assertEquals(
+            GatewayConfigurationResult.Failure(GatewayConfigurationError.AuthenticationRejected),
+            result,
+        )
+        assertFalse(cleanupCalled)
+        assertEquals(AuthState.Ready(1L), repository.state.value)
+        assertEquals(config(OLD_URL, "old-secret"), store.config)
+    }
+
+    @Test
+    fun successfulReconfigurationIncrementsEpochExactlyOnce() = runTest {
+        val gateway = FakeBootstrapGateway().apply {
+            enqueue(testBootstrap(apiToken = "old-token"))
+            enqueue(testBootstrap(apiToken = "new-token"))
+        }
+        val repository = AuthSessionRepository(
+            managerFor(gateway, FakeGatewayConfigStore(config(OLD_URL, "old-secret"))),
+        )
+        repository.start()
+        repository.awaitState { it == AuthState.Ready(1L) }
+        var cleanupCount = 0
+
+        val result = repository.reconfigure(config(NEW_URL, "new-secret")) { cleanupCount += 1 }
+
+        assertEquals(GatewayConfigurationResult.Success(NEW_URL), result)
+        assertEquals(1, cleanupCount)
+        assertEquals(AuthState.Ready(2L), repository.state.value)
+        assertEquals(NEW_URL, repository.baseUrl)
+    }
+
+    @Test
+    fun tokenRefreshDoesNotCreateNewSessionEpoch() = runTest {
         val clock = FakeClock()
         val gateway = FakeBootstrapGateway().apply {
-            enqueue(testBootstrap(apiToken = "api-token-1", expiresIn = 60))
-            enqueue(testBootstrap(apiToken = "api-token-2", expiresIn = 60))
+            enqueue(testBootstrap(apiToken = "token-1", expiresIn = 60))
+            enqueue(testBootstrap(apiToken = "token-2", expiresIn = 60))
         }
-        val manager = managerFor(gateway, FakeAuthSecretStore(), clock = clock)
+        val manager = managerFor(gateway, FakeGatewayConfigStore(), clock)
         val repository = AuthSessionRepository(manager)
+        repository.connect(config())
+        assertEquals(AuthState.Ready(1L), repository.state.value)
 
-        repository.authenticate("new-secret")
-        assertEquals(AuthState.Ready(sessionEpoch = 1L), repository.state.value)
-
-        // 60 秒 TTL 的刷新边界是第 30 秒。凭据轮换属于鉴权内部细节，不能让 App Root
-        // 误判为新登录会话，也不能触发业务 Repository 重建。
         clock.nowMillis = 30_000L
-        assertEquals("api-token-2", manager.tokenForRequest())
-        assertEquals(AuthState.Ready(sessionEpoch = 1L), repository.state.value)
+        assertEquals("token-2", manager.tokenForRequest())
+
+        assertEquals(AuthState.Ready(1L), repository.state.value)
         assertEquals(2, gateway.fetchCount)
     }
 
     @Test
-    fun logoutEndsSessionWithoutRewindingEpoch() = runTest {
+    fun logoutClearsCompleteConfigWithoutRewindingEpoch() = runTest {
         val gateway = FakeBootstrapGateway().apply { enqueue(testBootstrap()) }
-        val secretStore = FakeAuthSecretStore()
-        val repository = AuthSessionRepository(managerFor(gateway, secretStore))
+        val store = FakeGatewayConfigStore()
+        val repository = AuthSessionRepository(managerFor(gateway, store))
+        repository.connect(config(OLD_URL, "secret"))
+        assertEquals(AuthState.Ready(1L), repository.state.value)
 
-        repository.authenticate("new-secret")
         repository.logout()
 
-        assertEquals(AuthState.Authentication(sessionEpoch = 1L), repository.state.value)
-        assertNull(secretStore.savedSecret)
-        assertEquals(1, secretStore.clearCount)
+        assertEquals(AuthState.Configuration(DEFAULT_URL, sessionEpoch = 1L), repository.state.value)
+        assertNull(store.config)
+        assertEquals(DEFAULT_URL, repository.baseUrl)
+    }
+
+    @Test
+    fun logoutRaceCannotPublishLateReconfigurationReady() = runTest {
+        val candidateStarted = CompletableDeferred<Unit>()
+        val releaseCandidate = CompletableDeferred<Unit>()
+        val gateway = FakeBootstrapGateway().apply {
+            enqueue(testBootstrap(apiToken = "old-token"))
+            enqueue {
+                candidateStarted.complete(Unit)
+                releaseCandidate.await()
+                testBootstrap(apiToken = "late-token")
+            }
+        }
+        val store = FakeGatewayConfigStore(config(OLD_URL, "old-secret"))
+        val repository = AuthSessionRepository(managerFor(gateway, store))
+        repository.start()
+        repository.awaitState { it == AuthState.Ready(1L) }
+
+        val reconfiguration = async {
+            repository.reconfigure(config(NEW_URL, "new-secret")) {}
+        }
+        candidateStarted.await()
+        val logout = async { repository.logout() }
+        releaseCandidate.complete(Unit)
+
+        assertEquals(
+            GatewayConfigurationResult.Failure(GatewayConfigurationError.Cancelled),
+            reconfiguration.await(),
+        )
+        logout.await()
+        assertEquals(AuthState.Configuration(DEFAULT_URL, sessionEpoch = 1L), repository.state.value)
+        assertNull(store.config)
     }
 
     private suspend fun AuthSessionRepository.awaitState(
         predicate: (AuthState) -> Boolean,
-    ): AuthState = withContext(Dispatchers.Default.limitedParallelism(1)) {
-        // Repository 的生产 Scope 固定使用 Dispatchers.IO，不受 runTest 虚拟时钟控制。
-        // 因此这里在真实调度器上设置超时，避免测试调度器瞬间推进 5 秒并抢先判定失败。
-        withTimeout(5_000L) { state.first(predicate) }
+    ): AuthState = withTimeout(5_000L) {
+        while (!predicate(state.value)) delay(10L)
+        state.value
     }
 
     private fun managerFor(
-        gateway: FakeBootstrapGateway,
-        secretStore: FakeAuthSecretStore,
-        preferences: FakeAuthPreferencesStore = FakeAuthPreferencesStore(),
+        gateway: FakeBootstrapGateway = FakeBootstrapGateway(),
+        store: FakeGatewayConfigStore = FakeGatewayConfigStore(),
         clock: FakeClock = FakeClock(),
-    ): GatewayCredentialManager = GatewayCredentialManager(
+    ) = GatewayCredentialManager(
         bootstrapService = gateway,
-        secretStore = secretStore,
-        preferences = preferences,
-        defaultServerUrl = "http://test-server",
+        configStore = store,
+        defaultServerUrl = DEFAULT_URL,
         clock = clock,
     )
 
+    private data class BootstrapRequest(val baseUrl: String, val secret: String)
+
     private class FakeBootstrapGateway : AuthBootstrapGateway {
-        private val results = mutableListOf<Result<BootstrapResponse>>()
-        val requestedSecrets = mutableListOf<String>()
-        var fetchCount: Int = 0
-            private set
+        private val handlers = ArrayDeque<suspend (String, String) -> BootstrapResponse>()
+        val requests = mutableListOf<BootstrapRequest>()
+        val fetchCount: Int get() = requests.size
 
         fun enqueue(response: BootstrapResponse) {
-            results += Result.success(response)
+            enqueue { _, _ -> response }
         }
 
         fun enqueue(error: Exception) {
-            results += Result.failure(error)
+            enqueue { _, _ -> throw error }
+        }
+
+        fun enqueue(handler: suspend () -> BootstrapResponse) {
+            enqueue { _, _ -> handler() }
+        }
+
+        private fun enqueue(handler: suspend (String, String) -> BootstrapResponse) {
+            handlers.addLast(handler)
         }
 
         override suspend fun fetch(baseUrl: String, secret: String): BootstrapResponse {
-            fetchCount += 1
-            requestedSecrets += secret
-            check(results.isNotEmpty()) { "没有为第 $fetchCount 次 Bootstrap 配置结果" }
-            return results.removeAt(0).getOrThrow()
+            requests += BootstrapRequest(baseUrl, secret)
+            check(handlers.isNotEmpty()) { "没有为第 $fetchCount 次 Bootstrap 配置处理器" }
+            return handlers.removeFirst()(baseUrl, secret)
         }
 
         override fun deriveWebSocketUrl(baseUrl: String, payload: BootstrapResponse): String =
             "$baseUrl/ws?token=${payload.token}"
     }
 
-    private class FakeAuthSecretStore(
-        var savedSecret: String? = null,
-    ) : AuthSecretStore {
-        var clearCount: Int = 0
+    private class FakeGatewayConfigStore(
+        var config: GatewayConnectionConfig? = null,
+    ) : AuthGatewayConfigStore {
+        var clearCount = 0
             private set
 
-        override suspend fun save(secret: String) {
-            savedSecret = secret
+        override suspend fun save(config: GatewayConnectionConfig) {
+            this.config = config
         }
 
-        override suspend fun load(): String? = savedSecret
+        override suspend fun load(): GatewayConnectionConfig? = config
 
         override suspend fun clear() {
             clearCount += 1
-            savedSecret = null
+            config = null
         }
     }
 
-    private class FakeAuthPreferencesStore(
-        initialServerUrl: String? = null,
-    ) : AuthPreferencesStore {
-        private val current = MutableStateFlow(UserPreferences(serverUrl = initialServerUrl))
-        override val preferences: Flow<UserPreferences> = current
-
-        override suspend fun setServerUrl(value: String?) {
-            current.value = current.value.copy(serverUrl = value)
-        }
-    }
-
-    private class FakeClock(
-        var nowMillis: Long = 0L,
-    ) : MonotonicClock {
+    private class FakeClock(var nowMillis: Long = 0L) : MonotonicClock {
         override fun elapsedRealtimeMillis(): Long = nowMillis
     }
+
+    private fun config(
+        serverUrl: String = DEFAULT_URL,
+        secret: String = "secret",
+    ) = GatewayConnectionConfig(serverUrl, secret)
 
     private fun testBootstrap(
         apiToken: String = "api-token",
@@ -217,4 +303,10 @@ class AuthSessionRepositoryTest {
         wsPath = "/ws",
         expiresIn = expiresIn,
     )
+
+    private companion object {
+        const val DEFAULT_URL = "http://test-server"
+        const val OLD_URL = "http://old-server"
+        const val NEW_URL = "https://new-server.example/gateway"
+    }
 }

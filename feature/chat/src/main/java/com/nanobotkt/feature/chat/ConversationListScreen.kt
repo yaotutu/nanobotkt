@@ -175,7 +175,7 @@ fun ConversationListSheet(
                     IconButton(onClick = onOpenSettings) {
                         Icon(
                             Icons.Rounded.Settings,
-                            contentDescription = stringResource(R.string.open_settings),
+                            contentDescription = stringResource(R.string.system_settings),
                         )
                     }
                     IconButton(onClick = onNewTopic) {

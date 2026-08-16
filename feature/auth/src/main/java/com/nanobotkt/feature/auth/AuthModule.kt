@@ -16,8 +16,7 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 abstract class AuthModule {
     @Binds abstract fun bindAuthBootstrapGateway(implementation: DefaultAuthBootstrapGateway): AuthBootstrapGateway
-    @Binds abstract fun bindAuthSecretStore(implementation: DefaultAuthSecretStore): AuthSecretStore
-    @Binds abstract fun bindAuthPreferencesStore(implementation: DefaultAuthPreferencesStore): AuthPreferencesStore
+    @Binds abstract fun bindAuthGatewayConfigStore(implementation: DefaultAuthGatewayConfigStore): AuthGatewayConfigStore
 
     /** 通信层只依赖最小凭据接口；登录状态仓库不再充当 Token 快照容器。 */
     @Binds abstract fun bindGatewayEndpointProvider(manager: GatewayCredentialManager): GatewayEndpointProvider

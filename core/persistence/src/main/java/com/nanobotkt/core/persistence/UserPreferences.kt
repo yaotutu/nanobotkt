@@ -28,7 +28,12 @@ data class UserPreferences(
     val wrapCode: Boolean = false,
     val showBrandLogos: Boolean = true,
     val fileEditDisplay: FileEditDisplay = FileEditDisplay.SUMMARY,
-    val serverUrl: String? = null,
+)
+
+/** DataStore 内的一次性 Gateway 配置记录；地址和加密 Secret 只能成对出现。 */
+internal data class EncryptedGatewayConfigRecord(
+    val serverUrl: String,
+    val encryptedSecret: String,
 )
 
 @Singleton
@@ -42,7 +47,48 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
     suspend fun setWrapCode(value: Boolean) = update(Keys.wrapCode, value)
     suspend fun setShowBrandLogos(value: Boolean) = update(Keys.brandLogos, value)
     suspend fun setFileEditDisplay(value: FileEditDisplay) = update(Keys.fileEditDisplay, value.name)
-    suspend fun setServerUrl(value: String?) { context.nanobotDataStore.edit { if (value.isNullOrBlank()) it.remove(Keys.serverUrl) else it[Keys.serverUrl] = value.trim().trimEnd('/') } }
+
+    /**
+     * 读取新的完整 Gateway 配置记录。
+     *
+     * 旧版本分离保存的 server_url/bootstrap_secret_ciphertext 不再参与恢复。项目明确不做
+     * 兼容迁移，因此只有同一次 DataStore 事务写入的 v2 地址和密文才构成有效活动配置。
+     */
+    internal suspend fun readEncryptedGatewayConfig(): EncryptedGatewayConfigRecord? =
+        context.nanobotDataStore.data.map { values ->
+            val serverUrl = values[Keys.gatewayServerUrl]
+            val encryptedSecret = values[Keys.gatewaySecretCiphertext]
+            if (serverUrl.isNullOrBlank() || encryptedSecret.isNullOrBlank()) {
+                null
+            } else {
+                EncryptedGatewayConfigRecord(serverUrl = serverUrl, encryptedSecret = encryptedSecret)
+            }
+        }.firstValue()
+
+    /**
+     * 原子替换完整 Gateway 配置。
+     *
+     * DataStore 的 edit 要么整体提交地址和密文，要么整体失败；同时删除旧格式字段，避免
+     * logout 或后续排障时设备上继续残留一份已经失去业务意义的旧 Secret。
+     */
+    internal suspend fun writeEncryptedGatewayConfig(serverUrl: String, encryptedSecret: String) {
+        context.nanobotDataStore.edit { values ->
+            values[Keys.gatewayServerUrl] = serverUrl
+            values[Keys.gatewaySecretCiphertext] = encryptedSecret
+            values.remove(Keys.legacyServerUrl)
+            values.remove(Keys.legacyBootstrapSecret)
+        }
+    }
+
+    /** 地址、Secret 以及不再支持的旧格式字段必须在同一个事务中一起清除。 */
+    internal suspend fun clearEncryptedGatewayConfig() {
+        context.nanobotDataStore.edit { values ->
+            values.remove(Keys.gatewayServerUrl)
+            values.remove(Keys.gatewaySecretCiphertext)
+            values.remove(Keys.legacyServerUrl)
+            values.remove(Keys.legacyBootstrapSecret)
+        }
+    }
 
     /**
      * 读取最近一次 App 更新检查时间。
@@ -54,11 +100,7 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
         context.nanobotDataStore.data.map { it[Keys.lastAppUpdateCheckAtMillis] }.firstValue()
 
     /** 在检查开始时立即记录时间，使失败的自动请求也不会在同一天反复打扰用户。 */
-    suspend fun writeLastAppUpdateCheckAtMillis(value: Long) =
-        update(Keys.lastAppUpdateCheckAtMillis, value)
-
-    internal suspend fun readEncryptedSecret(): String? = context.nanobotDataStore.data.map { it[Keys.bootstrapSecret] }.firstValue()
-    internal suspend fun writeEncryptedSecret(value: String?) { context.nanobotDataStore.edit { if (value == null) it.remove(Keys.bootstrapSecret) else it[Keys.bootstrapSecret] = value } }
+    suspend fun writeLastAppUpdateCheckAtMillis(value: Long) = update(Keys.lastAppUpdateCheckAtMillis, value)
 
     private suspend fun <T> update(key: Preferences.Key<T>, value: T) { context.nanobotDataStore.edit { it[key] = value } }
 
@@ -70,7 +112,6 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
         wrapCode = values[Keys.wrapCode] ?: false,
         showBrandLogos = values[Keys.brandLogos] ?: true,
         fileEditDisplay = values[Keys.fileEditDisplay]?.let { runCatching { FileEditDisplay.valueOf(it) }.getOrNull() } ?: FileEditDisplay.SUMMARY,
-        serverUrl = values[Keys.serverUrl],
     )
 
     private object Keys {
@@ -81,12 +122,13 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
         val wrapCode = booleanPreferencesKey("wrap_code")
         val brandLogos = booleanPreferencesKey("brand_logos")
         val fileEditDisplay = stringPreferencesKey("file_edit_display")
-        val serverUrl = stringPreferencesKey("server_url")
-        val bootstrapSecret = stringPreferencesKey("bootstrap_secret_ciphertext")
+        val gatewayServerUrl = stringPreferencesKey("gateway_config_v2_server_url")
+        val gatewaySecretCiphertext = stringPreferencesKey("gateway_config_v2_secret_ciphertext")
+        // 旧字段只用于彻底清理，不参与任何恢复或迁移逻辑。
+        val legacyServerUrl = stringPreferencesKey("server_url")
+        val legacyBootstrapSecret = stringPreferencesKey("bootstrap_secret_ciphertext")
         val lastAppUpdateCheckAtMillis = longPreferencesKey("last_app_update_check_at_millis")
     }
 }
 
 private suspend fun <T> Flow<T>.firstValue(): T = first()
-
-

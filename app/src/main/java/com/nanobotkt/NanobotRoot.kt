@@ -38,6 +38,8 @@ import com.nanobotkt.core.transport.TransportStatus
 import com.nanobotkt.feature.apps.AppsScreen
 import com.nanobotkt.feature.auth.AuthScreen
 import com.nanobotkt.feature.auth.AuthState
+import com.nanobotkt.feature.auth.GatewayConfigurationError
+import com.nanobotkt.feature.auth.gatewayConfigurationErrorMessage
 import com.nanobotkt.feature.automations.AutomationsScreen
 import com.nanobotkt.feature.channels.ChannelsScreen
 import com.nanobotkt.feature.chat.ChatScreen
@@ -79,8 +81,13 @@ fun NanobotRoot(appViewModel: AppViewModel) {
         Surface(Modifier.fillMaxSize()) {
             when (val state = authState) {
                 is AuthState.Booting -> LoadingScreen()
-                is AuthState.Authentication -> AuthScreen(state, appViewModel::authenticate)
-                is AuthState.Unreachable -> UnreachableScreen(state.message, appViewModel::retry)
+                is AuthState.Configuration -> AuthScreen(state, appViewModel::connectGateway)
+                is AuthState.Unreachable -> UnreachableScreen(
+                    error = state.error,
+                    serverUrl = state.serverUrl,
+                    onRetry = appViewModel::retry,
+                    onReconfigure = appViewModel::editGatewayConfiguration,
+                )
                 is AuthState.Ready -> ReadyRoot(state.sessionEpoch, appViewModel)
             }
         }
@@ -99,7 +106,12 @@ private fun LoadingScreen() {
 }
 
 @Composable
-private fun UnreachableScreen(message: String, onRetry: () -> Unit) {
+private fun UnreachableScreen(
+    error: GatewayConfigurationError,
+    serverUrl: String,
+    onRetry: () -> Unit,
+    onReconfigure: () -> Unit,
+) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -112,10 +124,19 @@ private fun UnreachableScreen(message: String, onRetry: () -> Unit) {
                 tint = MaterialTheme.colorScheme.error,
             )
             Text(stringResource(R.string.gateway_unreachable), style = MaterialTheme.typography.headlineSmall)
-            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 临时故障保留完整配置，因此明确展示当前重试目标，并同时提供“重试当前”
+            // 和“重新配置”两个出口；用户不再被困在只允许换密码的旧流程。
+            Text(serverUrl, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                gatewayConfigurationErrorMessage(error),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Button(onClick = onRetry) {
                 Icon(Icons.Rounded.Refresh, contentDescription = null)
                 Text(stringResource(R.string.retry), Modifier.padding(start = 8.dp))
+            }
+            OutlinedButton(onClick = onReconfigure) {
+                Text(stringResource(R.string.reconfigure_gateway))
             }
         }
     }
@@ -131,6 +152,7 @@ private fun ReadyRoot(
     val sidebar by sidebarViewModel.state.collectAsStateWithLifecycle()
     val transport by appViewModel.transportState.collectAsStateWithLifecycle()
     val rootUiState by appViewModel.rootUiState.collectAsStateWithLifecycle()
+    val gatewayReconfiguration by appViewModel.gatewayReconfiguration.collectAsStateWithLifecycle()
     val selectedKey = rootUiState.selectedKey
     val destination = rootUiState.destination
     val draftingNewTopic = rootUiState.draftingNewTopic
@@ -283,6 +305,12 @@ private fun ReadyRoot(
                 onOpenSecurityAndPairing = { appViewModel.openSettingsChild(AppDestination.SECURITY) },
                 onLogout = appViewModel::logout,
                 onReconnect = appViewModel::reconnect,
+                onReconfigureGateway = appViewModel::reconfigureGateway,
+                gatewayReconfigurationInProgress = gatewayReconfiguration.submitting,
+                gatewayReconfigurationError = gatewayReconfiguration.error?.let { error ->
+                    gatewayConfigurationErrorMessage(error)
+                },
+                gatewayReconfigurationSuccessGeneration = gatewayReconfiguration.successGeneration,
                 connectionStatus = transport.status.displayName(),
                 // 展示认证与网络层实际使用的客户端入口，禁止误用服务端内部监听地址。
                 gatewayEndpoint = appViewModel.gatewayServerUrl,

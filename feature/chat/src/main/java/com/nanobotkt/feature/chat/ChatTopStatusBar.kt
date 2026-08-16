@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Toc
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
@@ -37,9 +38,10 @@ import androidx.compose.ui.unit.dp
 /**
  * 聊天页唯一的顶部常驻区域。
  *
- * 顶部只承载“会话标题、运行/连接状态、队列状态、当前会话菜单”。全局导航和会话切换已经在底部输入区
- * 提供入口，不能再在这里重复占用左侧空间。空闲时不渲染任何状态文案，标题因此可以自然居中在
- * 64dp 的最小高度内；出现运行、等待、连接或队列状态时才增加第二行。
+ * 顶部承载“会话标题、运行/连接状态、队列状态、系统设置、当前会话菜单”。左侧不放置全局操作，避免
+ * 系统设置被误解成返回、抽屉或产品标识；系统设置与当前会话菜单在右侧保持两个独立入口，既形成统一的
+ * 操作区，又不混淆应用级和会话级状态。空闲时不渲染任何状态文案；出现运行、等待、连接或队列状态时
+ * 才增加第二行。
  */
 @Composable
 internal fun ChatTopStatusBar(
@@ -51,6 +53,7 @@ internal fun ChatTopStatusBar(
     hasPromptNavigator: Boolean,
     hasSessionInfo: Boolean,
     hasAccessSettings: Boolean,
+    onOpenSettings: () -> Unit,
     onStatusClick: () -> Unit,
     onQueueOpenChange: (Boolean) -> Unit,
     onConfigMenuOpenChange: (Boolean) -> Unit,
@@ -105,6 +108,17 @@ internal fun ChatTopStatusBar(
                     }
                 }
             }
+        }
+
+        // 系统设置是应用级入口，使用独立的描边齿轮并放在会话菜单左侧。两个按钮共享右侧操作区，
+        // 但不合并到同一个菜单中，从视觉和语义上同时保留“全局设置 / 当前会话设置”的边界。
+        IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
+            Icon(
+                Icons.Outlined.Settings,
+                contentDescription = stringResource(R.string.system_settings),
+                modifier = Modifier.size(22.dp),
+                tint = muted,
+            )
         }
 
         Box {

@@ -104,6 +104,10 @@ fun SettingsScreen(
     onOpenSecurityAndPairing: () -> Unit,
     onLogout: () -> Unit = {},
     onReconnect: () -> Unit = {},
+    onReconfigureGateway: (serverUrl: String, bootstrapSecret: String) -> Unit = { _, _ -> },
+    gatewayReconfigurationInProgress: Boolean = false,
+    gatewayReconfigurationError: String? = null,
+    gatewayReconfigurationSuccessGeneration: Long = 0L,
     connectionStatus: String = "Unknown",
     gatewayEndpoint: String = "",
     initialSection: String = SETTINGS_SECTION_OVERVIEW,
@@ -205,6 +209,10 @@ fun SettingsScreen(
                     connectionStatus = connectionStatus,
                     gatewayEndpoint = gatewayEndpoint,
                     onReconnect = onReconnect,
+                    onReconfigureGateway = onReconfigureGateway,
+                    reconfigurationInProgress = gatewayReconfigurationInProgress,
+                    reconfigurationError = gatewayReconfigurationError,
+                    reconfigurationSuccessGeneration = gatewayReconfigurationSuccessGeneration,
                 )
                 SETTINGS_SECTION_SECURITY -> SecurityPage(state, viewModel)
             }

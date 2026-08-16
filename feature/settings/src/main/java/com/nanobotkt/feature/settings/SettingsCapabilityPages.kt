@@ -15,6 +15,8 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,11 +28,44 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardOptions
 import com.nanobotkt.core.model.RuntimeSurface
+import com.nanobotkt.core.network.GatewayServerAddressError
+import com.nanobotkt.core.network.GatewayServerAddressResult
+import com.nanobotkt.core.network.normalizeGatewayServerAddress
 
 /** System、Security、Image、Voice 与 Web 等能力页。 */
+
+/** 将严格地址校验错误映射为 Settings 内可直接展示的说明。 */
+internal fun gatewayAddressErrorLabel(error: GatewayServerAddressError): String = when (error) {
+    GatewayServerAddressError.EMPTY -> "Enter a Gateway address."
+    GatewayServerAddressError.MISSING_SCHEME -> "Include http:// or https://."
+    GatewayServerAddressError.UNSUPPORTED_SCHEME -> "Only http:// and https:// are supported."
+    GatewayServerAddressError.INVALID_URL -> "Enter a valid Gateway address."
+    GatewayServerAddressError.MISSING_HOST -> "The Gateway address must include a host."
+    GatewayServerAddressError.EMBEDDED_CREDENTIALS -> "Do not include credentials in the address."
+    GatewayServerAddressError.QUERY_NOT_ALLOWED -> "Query parameters are not allowed."
+    GatewayServerAddressError.FRAGMENT_NOT_ALLOWED -> "Fragments are not allowed."
+}
+
+/**
+ * Settings Gateway Manage 的提交资格纯规则。
+ *
+ * 规则故意不比较当前地址：同一 URL 配合新的 Secret 仍是一次完整重配。Secret 只做空白判断，
+ * 不 trim、不规范化，避免改变服务端定义的不透明凭据值。
+ */
+internal fun canSubmitGatewayReconfiguration(
+    address: GatewayServerAddressResult,
+    bootstrapSecret: String,
+    submitting: Boolean,
+): Boolean = address is GatewayServerAddressResult.Valid &&
+    bootstrapSecret.isNotBlank() &&
+    !submitting
+
 @Composable
 internal fun SystemPage(
     state: SettingsUiState,
@@ -38,31 +73,117 @@ internal fun SystemPage(
     connectionStatus: String,
     gatewayEndpoint: String,
     onReconnect: () -> Unit,
+    onReconfigureGateway: (serverUrl: String, bootstrapSecret: String) -> Unit,
+    reconfigurationInProgress: Boolean,
+    reconfigurationError: String?,
+    reconfigurationSuccessGeneration: Long,
 ) {
     val payload = state.payload
     val service = state.apiService
+    var serverUrl by rememberSaveable(gatewayEndpoint) { mutableStateOf(gatewayEndpoint) }
+    // Bootstrap Secret 是一次性提交凭据，禁止使用 rememberSaveable。旋转屏幕或进程恢复后
+    // 主动清空比把凭据写入 Bundle 更安全；地址不是秘密，可以保留编辑进度。
+    var bootstrapSecret by remember { mutableStateOf("") }
+    var editedSinceFailure by remember { mutableStateOf(false) }
+    val normalizedAddress = normalizeGatewayServerAddress(serverUrl)
+    val addressError = (normalizedAddress as? GatewayServerAddressResult.Invalid)?.error
+    val canSubmit = canSubmitGatewayReconfiguration(
+        address = normalizedAddress,
+        bootstrapSecret = bootstrapSecret,
+        submitting = reconfigurationInProgress,
+    )
+
+    LaunchedEffect(reconfigurationSuccessGeneration, gatewayEndpoint) {
+        if (reconfigurationSuccessGeneration > 0L) {
+            // 成功代次而不是地址变化是唯一清空信号：同一 URL 换一整套配置同样属于成功重配。
+            serverUrl = gatewayEndpoint
+            bootstrapSecret = ""
+            editedSinceFailure = false
+        }
+    }
 
     SettingsGroup("Server connection") {
         SettingsRow(
             icon = Icons.Outlined.Dns,
             title = "Current Gateway",
             subtitle = connectionStatus,
-            // 只展示 Android 客户端实际使用的固定入口；服务端 payload 中的内部监听地址
-            // 可能是 loopback，且不允许在客户端作为可编辑连接目标。
+            // 这里展示 Android 客户端真实使用的入口，不读取服务端内部监听地址。
             value = gatewayEndpointLabel(gatewayEndpoint),
             showChevron = false,
         )
         CardDivider()
         PreferenceBlock(
-            title = "Connection",
-            description = "The Android client uses the configured Nanobot Gateway endpoint.",
+            title = "Replace Gateway configuration",
+            description =
+                "The address and bootstrap secret are validated and replaced as one configuration. " +
+                    "A failed candidate leaves the current Gateway connected.",
         ) {
-            OutlinePillButton(
-                text = "Reconnect current",
-                onClick = onReconnect,
-                icon = Icons.Outlined.Sync,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = serverUrl,
+                    onValueChange = {
+                        serverUrl = it
+                        editedSinceFailure = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !reconfigurationInProgress,
+                    label = { Text("Gateway address") },
+                    supportingText = addressError?.let { error ->
+                        { Text(gatewayAddressErrorLabel(error)) }
+                    },
+                    isError = addressError != null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                )
+                OutlinedTextField(
+                    value = bootstrapSecret,
+                    onValueChange = {
+                        bootstrapSecret = it
+                        editedSinceFailure = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !reconfigurationInProgress,
+                    label = { Text("Bootstrap secret") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                )
+                if (reconfigurationError != null && !editedSinceFailure) {
+                    Text(
+                        text = reconfigurationError,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Button(
+                    onClick = {
+                        val valid = normalizedAddress as? GatewayServerAddressResult.Valid
+                        if (valid != null && bootstrapSecret.isNotBlank()) {
+                            editedSinceFailure = false
+                            // Secret 是不透明值，只判断 blank，不 trim、不规范化、不写入 UI 状态。
+                            onReconfigureGateway(valid.url, bootstrapSecret)
+                        }
+                    },
+                    enabled = canSubmit,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (reconfigurationInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.size(8.dp))
+                    }
+                    Text(if (reconfigurationInProgress) "Validating..." else "Validate and reconfigure")
+                }
+                OutlinePillButton(
+                    text = "Reconnect current",
+                    onClick = onReconnect,
+                    enabled = !reconfigurationInProgress,
+                    icon = Icons.Outlined.Sync,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 
