@@ -15,7 +15,7 @@
 | 文件 | 作用 | 谁负责修改 |
 |---|---|---|
 | `version.properties` | 保存 `VERSION_NAME=0.1.x` 和递增的 `VERSION_CODE` | 本地脚本 |
-| `scripts/release.sh` | 检查分支/工作区、递增版本、生成日志、创建版本提交 | 本地执行 |
+| `scripts/release.sh` | 检查分支/工作区、递增版本、生成日志、创建版本提交并 push | 本地执行 |
 | `docs/CHANGELOG.md` | 当前待发布版本的更新日志 | 本地脚本生成，可在发布前人工检查 |
 | `app/build.gradle.kts` | 读取版本文件，配置 `com.nanobotkt`、Dev 和 Release 构建 | 工程代码 |
 | `.github/workflows/android-build.yml` | PR 检查和 `dev` 分支构建/发布 | GitHub Actions |
@@ -28,8 +28,8 @@ scripts/release.sh dev|release
         ├── 校验参数与当前分支匹配
         ├── 修改 version.properties
         ├── 生成 docs/CHANGELOG.md
-        └── 创建 chore(dev/release): prepare v0.1.x 提交
-                └── push 后由 GitHub Actions 读取这次提交并构建
+        ├── 创建 chore(dev/release): prepare v0.1.x 提交
+        └── 自动 push，随后由 GitHub Actions 读取这次提交并构建
 ```
 
 ## 3. 构建产物和覆盖安装关系
@@ -138,10 +138,9 @@ git commit -m "feat: ..."
 # 工作区必须干净；脚本会自动把 0.1.x 和 VERSION_CODE 各加 1。
 scripts/release.sh dev             # 显式准备 Dev 版本并提交
 
-# 确认脚本创建的提交和版本后再 push。
+# 脚本成功后会自动 push；如需确认版本，可查看：
 git log -2 --oneline
 git show --stat --oneline HEAD
-git push origin dev
 ```
 
 `scripts/release.sh dev` 会：
@@ -157,7 +156,7 @@ git push origin dev
 chore(dev): prepare v0.1.5
 ```
 
-push 后，`android-build.yml` 会自动运行测试、`lintDev`、稳定签名的 `assembleDev`，然后更新唯一的滚动预发布 `dev-latest`。旧的 `dev-latest` 会被删除并由当前版本替换，不会无限堆积 Dev Release。
+脚本 push 成功后，`android-build.yml` 会自动运行测试、`lintDev`、稳定签名的 `assembleDev`，然后更新唯一的滚动预发布 `dev-latest`。旧的 `dev-latest` 会被删除并由当前版本替换，不会无限堆积 Dev Release。
 
 ### 5.2 下载 Dev APK
 
@@ -176,11 +175,11 @@ Dev APK 可覆盖旧 Dev，也可覆盖当前正式版，只要设备上的旧 A
 正式版必须来自已经测试通过的 Dev 代码。推荐的分支关系是：
 
 ```text
-dev 开发 → release.sh dev → push dev → 测试 dev-latest
+dev 开发 → release.sh dev（自动 push）→ 测试 dev-latest
                                       ↓ 测试通过
                                   合并到 main
                                       ↓
-                             release.sh release → push main
+                             release.sh release（自动 push）
 ```
 
 ### 6.1 合并并发布
@@ -198,7 +197,6 @@ scripts/release.sh release         # 显式准备正式版本并提交
 
 git log -2 --oneline
 git show --stat --oneline HEAD
-git push origin main
 ```
 
 `scripts/release.sh release` 必须在 `main` 分支执行，并创建类似下面的提交：
@@ -255,7 +253,7 @@ gh release download v0.1.6 --repo yaotutu/nanobotkt --pattern '*.apk' --clobber
 
 ### 8.1 构建或测试失败
 
-**不要再次执行 `prepare`。** 当前提交已经包含版本号和更新日志，重复执行会无意义地递增到下一个版本。
+**不要再次执行发布脚本。** 当前提交已经包含版本号和更新日志；如果只是临时 CI 失败，应直接重跑当前 Action，避免无意义地递增到下一个版本。
 
 处理方式：
 
@@ -270,7 +268,7 @@ gh run rerun <RUN_ID> --failed --repo yaotutu/nanobotkt
 
 4. 如果是代码或 workflow 问题，先修复并提交修复；修复提交应保留在同一个分支，然后重新运行当前版本 workflow，或按仓库现有规则重新推送触发。
 
-只有当当前版本已经无法继续使用、需要发布下一轮版本时，才执行下一次 `prepare`。
+只有当当前版本已经无法继续使用、需要发布下一轮版本时，才再次执行发布脚本。
 
 ### 8.2 正式 Release 已经存在
 
@@ -285,7 +283,7 @@ Dev：    chore(dev): prepare v0.1.x
 正式版： chore(release): prepare v0.1.x
 ```
 
-如果直接 push 了普通业务提交，workflow 可能只做检查或跳过发布 job。正确做法是先确认版本文件状态，再执行对应的 `prepare`，不要手工伪造提交标题。
+如果直接 push 了普通业务提交，workflow 可能只做检查或跳过发布 job。正确做法是先确认版本文件状态，再执行对应的发布脚本，不要手工伪造提交标题。
 
 ### 8.4 签名错误或无法覆盖安装
 
@@ -326,7 +324,6 @@ git switch dev
 git pull --ff-only origin dev
 # 必要时先：git merge origin/main
 scripts/release.sh dev             # 显式准备 Dev 版本并提交
-git push origin dev
 ```
 
 ### 发布正式版
@@ -336,7 +333,6 @@ git switch main
 git pull --ff-only origin main
 git merge --no-ff dev
 scripts/release.sh release         # 显式准备正式版本并提交
-git push origin main
 ```
 
 ### 检查发布结果
@@ -356,7 +352,7 @@ gh run rerun <RUN_ID> --failed --repo yaotutu/nanobotkt
 
 ```text
 不要在云端手工 bump 版本。
-不要连续执行两次 prepare。
+不要连续执行两次发布脚本。
 不要把 keystore、密码、Token 提交到仓库。
 不要把 Dev 改成另一个 applicationId，否则不能覆盖正式版。
 不要为了普通发布构建或上传 Debug APK。

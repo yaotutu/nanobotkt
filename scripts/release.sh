@@ -8,7 +8,7 @@
 # 显式参数避免调用者仅凭当前目录猜测发布类型；分支校验则防止版本号递增到错误分支。
 #
 # 版本号和更新日志必须在本地进入 Git 提交，GitHub Actions 只读取该提交并负责测试、
-# 构建和发布。脚本只创建本地提交，不会自动 push，避免未经确认修改远程分支。
+# 构建和发布。脚本会在版本提交创建成功后自动 push，随后由 GitHub Actions 负责测试、构建和发布。
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -26,8 +26,8 @@ usage() {
   dev      只能在 dev 分支执行，递增版本并创建 Dev 版本提交。
   release  只能在 main 分支执行，递增版本并创建正式版本提交。
 
-脚本会在本地完成版本递增、更新日志生成和 Git 提交，但不会自动 push。
-提交完成后执行：git push origin <当前分支>
+脚本会在本地完成版本递增、更新日志生成、Git 提交和 push。
+push 成功后，GitHub Actions 会自动开始测试、构建和发布。
 USAGE
 }
 
@@ -149,9 +149,15 @@ prepare_release() {
   git -C "$ROOT_DIR" add version.properties docs/CHANGELOG.md
   git -C "$ROOT_DIR" commit -m "$commit_prefix$next_version"
 
-  printf '已准备%s：%s\n' "$release_kind" "$next_version"
+  # 版本提交成功后立即推送同一个分支，确保本地版本号、更新日志和远端构建使用完全相同的提交。
+  # 如果远端有新提交导致 push 失败，本地版本提交会保留，用户处理分支同步后可以重新 push。
+  if ! git -C "$ROOT_DIR" push origin "$expected_branch"; then
+    echo "版本提交已创建，但 push origin ${expected_branch} 失败；请处理远端分支后重新 push。" >&2
+    return 1
+  fi
+
+  printf '已准备并推送%s：%s\n' "$release_kind" "$next_version"
   printf 'VERSION_NAME=%s\nVERSION_CODE=%s\n' "$next_version" "$next_code"
-  printf '下一步：git push origin %s\n' "$expected_branch"
 }
 
 case "${1:-}" in
