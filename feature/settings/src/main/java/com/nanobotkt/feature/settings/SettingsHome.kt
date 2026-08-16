@@ -36,7 +36,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,111 +77,111 @@ internal fun SettingsHomePage(
     )
 
     GroupSpacer()
-    SettingsGroup(stringResource(R.string.settings_group_general)) {
+    SettingsGroup("GENERAL") {
         SettingsRow(
             icon = Icons.Outlined.Palette,
-            title = stringResource(R.string.settings_appearance),
-            subtitle = stringResource(R.string.settings_appearance_summary),
+            title = "Appearance",
+            subtitle = "Theme, language, density and display",
             onClick = { onOpenSection(SETTINGS_SECTION_APPEARANCE) },
         )
     }
 
     GroupSpacer()
-    SettingsGroup(stringResource(R.string.settings_group_ai_capabilities)) {
+    SettingsGroup("AI & CAPABILITIES") {
         SettingsRow(
             icon = Icons.Outlined.Tune,
-            title = stringResource(R.string.settings_models_providers),
-            subtitle = stringResource(R.string.settings_models_summary),
+            title = "Models & Providers",
+            subtitle = "Providers, credentials and model call order",
             onClick = { onOpenSection(SETTINGS_SECTION_MODELS) },
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.Apps,
-            title = stringResource(R.string.settings_apps),
-            subtitle = stringResource(R.string.settings_apps_summary),
+            title = "Apps",
+            subtitle = "Install and manage assistant apps",
             onClick = onOpenApps,
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.AutoAwesome,
-            title = stringResource(R.string.settings_skills),
-            subtitle = stringResource(R.string.settings_skills_summary),
+            title = "Skills",
+            subtitle = "Manage assistant capabilities",
             onClick = onOpenSkills,
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.Image,
-            title = stringResource(R.string.settings_image_generation),
-            subtitle = stringResource(R.string.settings_image_generation_summary),
+            title = "Image generation",
+            subtitle = "Provider, model and output defaults",
             onClick = { onOpenSection(SETTINGS_SECTION_IMAGE) },
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.MicNone,
-            title = stringResource(R.string.settings_voice),
-            subtitle = stringResource(R.string.settings_voice_summary),
+            title = "Voice",
+            subtitle = "Audio transcription provider and model",
             onClick = { onOpenSection(SETTINGS_SECTION_VOICE) },
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.Public,
-            title = stringResource(R.string.settings_web_search),
-            subtitle = stringResource(R.string.settings_web_search_summary),
+            title = "Web search",
+            subtitle = "Search provider and credentials",
             onClick = { onOpenSection(SETTINGS_SECTION_WEB) },
         )
     }
 
     GroupSpacer()
-    SettingsGroup(stringResource(R.string.settings_group_integrations_automation)) {
+    SettingsGroup("INTEGRATIONS & AUTOMATION") {
         SettingsRow(
             icon = Icons.Outlined.Sync,
-            title = stringResource(R.string.settings_channels),
-            subtitle = stringResource(R.string.settings_channels_summary),
+            title = "Channels",
+            subtitle = "Connect messaging channels to your assistant",
             onClick = onOpenChannels,
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.Schedule,
-            title = stringResource(R.string.settings_automations),
-            subtitle = stringResource(R.string.settings_automations_summary),
+            title = "Automations",
+            subtitle = "Create and manage scheduled tasks",
             onClick = onOpenAutomations,
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.FolderOpen,
-            title = stringResource(R.string.settings_workspaces),
-            subtitle = stringResource(R.string.settings_workspaces_summary),
+            title = "Workspaces",
+            subtitle = "Default workspace and access mode",
             onClick = onOpenWorkspaces,
         )
     }
 
     GroupSpacer()
-    SettingsGroup(stringResource(R.string.settings_group_system_security)) {
+    SettingsGroup("SYSTEM & SECURITY") {
         SettingsRow(
             icon = Icons.Outlined.Api,
-            title = stringResource(R.string.settings_gateway_system),
-            subtitle = stringResource(R.string.settings_gateway_system_summary),
+            title = "Gateway & System",
+            subtitle = "Runtime, API service and connection details",
             onClick = { onOpenSection(SETTINGS_SECTION_SYSTEM) },
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.SettingsSuggest,
-            title = stringResource(R.string.settings_app_safety),
-            subtitle = stringResource(R.string.settings_app_safety_summary),
+            title = "App safety",
+            subtitle = "Local service and default access rules",
             onClick = { onOpenSection(SETTINGS_SECTION_SECURITY) },
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.Security,
-            title = stringResource(R.string.settings_security_pairing),
-            subtitle = stringResource(R.string.settings_security_pairing_summary),
+            title = "Security & Pairing",
+            subtitle = "Review device pairing requests",
             onClick = onOpenSecurityAndPairing,
         )
         CardDivider()
         SettingsRow(
             icon = Icons.Outlined.Info,
-            title = stringResource(R.string.settings_about),
-            subtitle = stringResource(R.string.settings_about_summary),
+            title = "About",
+            subtitle = "Version information and Gateway update check",
             value = state.payload?.version?.let { versions ->
                 versions["current"] ?: versions.values.firstOrNull()
             },
@@ -193,20 +192,15 @@ internal fun SettingsHomePage(
         // 意外移除服务端版本信息和更新检查功能。
         SettingsRow(
             icon = Icons.Outlined.SystemUpdate,
-            title = stringResource(R.string.settings_check_app_update),
-            subtitle =
-                stringResource(
-                    R.string.settings_current_app_version,
-                    appUpdateState.current.versionName,
-                    appUpdateState.current.channel.displayName,
-                ),
+            title = "检查 App 更新",
+            subtitle = "当前版本 ${appUpdateState.current.versionName}（${appUpdateState.current.channel.displayName}）",
             value = appUpdateStatusLabel(appUpdateState.status),
             onClick = onOpenAppUpdate,
         )
     }
 
     GroupSpacer()
-    SettingsGroup(stringResource(R.string.settings_group_account)) {
+    SettingsGroup("ACCOUNT") {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Button(
                 onClick = onLogout,
@@ -219,46 +213,31 @@ internal fun SettingsHomePage(
             ) {
                 Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.settings_log_out))
+                Text("Log out")
             }
         }
     }
 }
 
-/**
- * Settings 首页只展示简短更新摘要，完整版本和日志统一放在更新对话框中。
- *
- * 更新状态对象属于稳定业务模型，不能把某一种语言写进模型；这里在 Compose 展示边界
- * 根据当前 Locale 解析文案，语言切换后首页状态会与其他设置项一起立即重组。
- */
-@Composable
-internal fun appUpdateStatusLabel(status: AppUpdateStatus): String? =
-    when (status) {
-        AppUpdateStatus.Idle -> null
-        AppUpdateStatus.Checking -> stringResource(R.string.settings_update_checking)
-        AppUpdateStatus.UpToDate -> stringResource(R.string.settings_update_up_to_date)
-        is AppUpdateStatus.UpdateAvailable ->
-            stringResource(R.string.settings_update_found, status.update.versionName)
-        is AppUpdateStatus.Downloading ->
-            status.progress.fraction?.let { fraction ->
-                stringResource(
-                    R.string.settings_update_downloading_percent,
-                    (fraction * 100).toInt(),
-                )
-            } ?: stringResource(R.string.settings_update_downloading)
-        is AppUpdateStatus.Downloaded -> stringResource(R.string.settings_update_waiting_install)
-        is AppUpdateStatus.Installing -> stringResource(R.string.settings_update_installing)
-        is AppUpdateStatus.Error -> stringResource(R.string.settings_update_retry_available)
-    }
+/** Settings 首页只展示简短更新摘要，完整版本和日志统一放在更新对话框中。 */
+internal fun appUpdateStatusLabel(status: AppUpdateStatus): String? = when (status) {
+    AppUpdateStatus.Idle -> null
+    AppUpdateStatus.Checking -> "检查中"
+    AppUpdateStatus.UpToDate -> "已是最新"
+    is AppUpdateStatus.UpdateAvailable -> "发现 ${status.update.versionName}"
+    is AppUpdateStatus.Downloading -> status.progress.fraction?.let { fraction ->
+        "下载 ${(fraction * 100).toInt()}%"
+    } ?: "下载中"
+    is AppUpdateStatus.Downloaded -> "等待安装"
+    is AppUpdateStatus.Installing -> "安装中"
+    is AppUpdateStatus.Error -> "可重试"
+}
 
 /**
- * 统一清理 Gateway 展示值，并由调用方提供当前 Locale 对应的空值文案。
- * 默认英文值仅用于保留既有纯函数测试和非 Compose 调用兼容性；这里不猜测或回退到服务端内部监听地址。
+ * 统一清理 Gateway 展示值。这里只处理显示格式，不猜测或回退到服务端内部监听地址。
  */
-internal fun gatewayEndpointLabel(
-    gatewayEndpoint: String,
-    emptyLabel: String = "Gateway endpoint unavailable",
-): String = gatewayEndpoint.trim().trimEnd('/').ifBlank { emptyLabel }
+internal fun gatewayEndpointLabel(gatewayEndpoint: String): String =
+    gatewayEndpoint.trim().trimEnd('/').ifBlank { "Gateway endpoint unavailable" }
 
 /** Settings 首页顶部只展示用户做判断所需的连接与模型摘要。 */
 @Composable
@@ -277,28 +256,12 @@ private fun GatewaySummaryCard(
         ?: agent?.provider?.takeIf(String::isNotBlank)
     val providerConfigured = payload?.providers?.firstOrNull { it.name == provider }?.configured == true
     val model = agent?.model?.takeIf(String::isNotBlank)?.takeIf { providerConfigured }
-        ?: stringResource(R.string.settings_not_configured)
+        ?: "Not configured"
     // runtime.gatewayHost/runtime.gatewayPort 描述的是服务端进程自己的监听端点，
     // 可能是 127.0.0.1 等 Android 无法访问的内部地址。首页只展示 app 组合根传入的
     // 真实客户端入口，确保连接摘要与 HTTP、Bootstrap、WebSocket 的实际配置一致。
-    val gateway =
-        gatewayEndpointLabel(
-            gatewayEndpoint = gatewayEndpoint,
-            emptyLabel = stringResource(R.string.settings_gateway_endpoint_unavailable),
-        )
+    val gateway = gatewayEndpointLabel(gatewayEndpoint)
     val connected = connectionStatus.equals("Connected", ignoreCase = true)
-    // connectionStatus 是 app 组合根传入的稳定英文状态值。使用 ignoreCase 比较而不是
-    // 依赖当前 Locale 的 lowercase 转换，避免土耳其语等 Locale 改写字母 I 后匹配失败。
-    val localizedConnectionStatus =
-        when {
-            connectionStatus.equals("Connected", ignoreCase = true) ->
-                stringResource(R.string.settings_connection_connected)
-            connectionStatus.equals("Connecting", ignoreCase = true) ->
-                stringResource(R.string.settings_connection_connecting)
-            connectionStatus.equals("Disconnected", ignoreCase = true) ->
-                stringResource(R.string.settings_connection_disconnected)
-            else -> stringResource(R.string.settings_connection_unknown)
-        }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -318,7 +281,7 @@ private fun GatewaySummaryCard(
                 ) {}
                 Column(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
                     Text(
-                        text = stringResource(R.string.settings_gateway_status, localizedConnectionStatus),
+                        text = "Gateway $connectionStatus",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -335,13 +298,13 @@ private fun GatewaySummaryCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinePillButton(
-                    text = stringResource(R.string.settings_manage),
+                    text = "Manage",
                     onClick = onManage,
                     icon = Icons.Outlined.SettingsSuggest,
                 )
                 Spacer(Modifier.size(8.dp))
                 OutlinePillButton(
-                    text = stringResource(R.string.settings_reconnect),
+                    text = "Reconnect",
                     onClick = onReconnect,
                     icon = Icons.Outlined.Sync,
                 )
@@ -362,7 +325,7 @@ private fun GatewaySummaryCard(
                         modifier = Modifier.size(20.dp),
                     )
                     Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(stringResource(R.string.settings_current_model), fontSize = 12.sp)
+                        Text("Current model", fontSize = 12.sp)
                         Text(
                             text = model,
                             style = MaterialTheme.typography.titleSmall,
