@@ -30,4 +30,5 @@
     <string name="model_select_title">Pilih model</string>
     <string name="model_select_help">Digunakan untuk balasan baru.</string>
     <string name="model_settings">Model dan penyedia</string>
+    <string name="reconfigure_gateway">Konfigurasi ulang Gateway</string>
 </resources>
