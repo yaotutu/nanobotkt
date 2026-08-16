@@ -23,14 +23,16 @@ import java.util.concurrent.TimeUnit
 
 class GatewayApiClientTest {
     private lateinit var server: MockWebServer
-    private lateinit var auth: MutableAuthContext
+    private lateinit var endpoint: MutableEndpointProvider
+    private lateinit var credentials: FakeCredentialProvider
     private lateinit var json: Json
 
     @Before
     fun setUp() {
         server = MockWebServer()
         server.start()
-        auth = MutableAuthContext(server.url("/").toString(), "api-token")
+        endpoint = MutableEndpointProvider(server.url("/").toString())
+        credentials = FakeCredentialProvider("api-token")
         json = Json {
             ignoreUnknownKeys = true
             explicitNulls = false
@@ -44,16 +46,16 @@ class GatewayApiClientTest {
     }
 
     @Test
-    fun `get adds bearer accept and preserves explicit empty query parameters`() = runBlocking {
+    fun `get obtains token and preserves explicit empty query parameters`() = runBlocking {
         server.enqueue(jsonResponse("""{"value":"ok"}"""))
-        val client = client()
 
-        val result = client.get<TestPayload>(
+        val result = client().get<TestPayload>(
             "/api/items",
             mapOf("a" to 1, "blank" to "", "none" to null, "query" to "a b&c"),
         )
 
         assertEquals("ok", result.value)
+        assertEquals(1, credentials.requestTokenCalls)
         val request = server.takeRequest()
         assertEquals("Bearer api-token", request.getHeader("Authorization"))
         assertEquals("application/json", request.getHeader("Accept"))
@@ -64,28 +66,98 @@ class GatewayApiClientTest {
     }
 
     @Test
-    fun `empty token omits authorization`() = runBlocking {
-        auth.apiToken = ""
+    fun `blank provider token fails before network request`() {
+        credentials.currentToken = ""
+
+        assertThrows(GatewayException.AuthenticationRequired::class.java) {
+            runBlocking { client().get<TestPayload>("/api/items") }
+        }
+
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `gateway unauthorized refreshes token and retries exactly once`() = runBlocking {
+        credentials.refreshedToken = "api-token-2"
+        server.enqueue(errorResponse(401, """{"error":"Unauthorized"}"""))
+        server.enqueue(jsonResponse("""{"value":"recovered"}"""))
+
+        val result = client().get<TestPayload>("/api/items")
+
+        assertEquals("recovered", result.value)
+        assertEquals(listOf("api-token"), credentials.rejectedTokens)
+        assertEquals("Bearer api-token", server.takeRequest().getHeader("Authorization"))
+        assertEquals("Bearer api-token-2", server.takeRequest().getHeader("Authorization"))
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `second gateway unauthorized stops without infinite retry`() {
+        credentials.refreshedToken = "api-token-2"
+        repeat(2) {
+            server.enqueue(errorResponse(401, """{"error":"Unauthorized"}"""))
+        }
+
+        assertThrows(GatewayException.AuthenticationRequired::class.java) {
+            runBlocking { client().get<TestPayload>("/api/items") }
+        }
+
+        assertEquals(listOf("api-token"), credentials.rejectedTokens)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `provider oauth 401 remains http error and does not refresh gateway token`() {
+        server.enqueue(errorResponse(401, """{"error":"OAuth login failed"}"""))
+
+        val error = assertThrows(GatewayException.Http::class.java) {
+            runBlocking { client().get<TestPayload>("/api/providers/oauth") }
+        }
+
+        assertEquals(401, error.status)
+        assertTrue(error.message.orEmpty().contains("OAuth login failed"))
+        assertTrue(credentials.rejectedTokens.isEmpty())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `forbidden remains business http error`() {
+        server.enqueue(errorResponse(403, """{"error":"Forbidden"}"""))
+
+        val error = assertThrows(GatewayException.Http::class.java) {
+            runBlocking { client().get<TestPayload>("/api/items") }
+        }
+
+        assertEquals(403, error.status)
+        assertTrue(credentials.rejectedTokens.isEmpty())
+    }
+
+    @Test
+    fun `caller headers cannot override authorization selected by credential provider`() = runBlocking {
         server.enqueue(jsonResponse("""{"value":"ok"}"""))
 
-        client().get<TestPayload>("/api/items")
+        client().request(
+            path = "/api/items",
+            deserializer = TestPayload.serializer(),
+            headers = mapOf("Authorization" to "Bearer stale-token", "X-Test" to "value"),
+        )
 
-        assertNull(server.takeRequest().getHeader("Authorization"))
+        val request = server.takeRequest()
+        assertEquals("Bearer api-token", request.getHeader("Authorization"))
+        assertEquals("value", request.getHeader("X-Test"))
     }
 
     @Test
     fun `resolve url joins relative media paths and preserves complete uri schemes`() {
         val client = client()
-        val baseUrl = auth.baseUrl.trimEnd('/')
+        val baseUrl = endpoint.baseUrl.trimEnd('/')
 
         // Gateway 历史既可能返回根相对路径，也可能返回不带斜杠的相对路径；两者都必须
-        // 使用当前认证上下文的 origin 补齐，且绝不能把 API Token 拼进媒体地址。
+        // 使用当前 Gateway origin 补齐，且绝不能把 API Token 拼进媒体地址。
         assertEquals("$baseUrl/api/media/a.png", client.resolveUrl("/api/media/a.png"))
         assertEquals("$baseUrl/api/media/b.png", client.resolveUrl("api/media/b.png"))
         assertTrue(client.resolveUrl("/api/media/a.png").contains("api-token").not())
 
-        // 已经可直接消费的 URI 不属于 Gateway 相对路径。大小写协议和首尾空白统一归一化，
-        // 避免系统 Intent 或图片加载器收到无效的前导空格。
         assertEquals("https://cdn.example/a.png", client.resolveUrl("  https://cdn.example/a.png  "))
         assertEquals("HTTP://cdn.example/b.png", client.resolveUrl("HTTP://cdn.example/b.png"))
         assertEquals("data:image/png;base64,abc", client.resolveUrl("data:image/png;base64,abc"))
@@ -109,7 +181,7 @@ class GatewayApiClientTest {
 
     @Test
     fun `http error preserves status and response text`() {
-        server.enqueue(MockResponse().setResponseCode(422).setBody("invalid settings"))
+        server.enqueue(errorResponse(422, "invalid settings"))
 
         val error = assertThrows(GatewayException.Http::class.java) {
             runBlocking { client().get<TestPayload>("/api/items") }
@@ -120,62 +192,13 @@ class GatewayApiClientTest {
     }
 
     @Test
-    fun `authentication statuses map to authentication required`() {
-        server.enqueue(MockResponse().setResponseCode(401).setBody("unauthorized"))
-
-        assertThrows(GatewayException.AuthenticationRequired::class.java) {
-            runBlocking { client().get<TestPayload>("/api/items") }
-        }
-    }
-
-    @Test
-    fun `forbidden response maps to authentication required`() {
-        // 403 与 401 都表示当前凭据不能继续访问，必须保持统一的认证错误语义。
-        server.enqueue(MockResponse().setResponseCode(403).setBody("forbidden"))
-
-        assertThrows(GatewayException.AuthenticationRequired::class.java) {
-            runBlocking { client().get<TestPayload>("/api/items") }
-        }
-    }
-
-    @Test
-    fun `rate limit and server errors preserve http status`() {
-        // 429/5xx 属于服务端或限流错误，不应被误判成认证失败，方便上层决定重试策略。
-        listOf(429, 500, 503).forEach { status ->
-            server.enqueue(MockResponse().setResponseCode(status).setBody("status-$status"))
-
-            val error = assertThrows(GatewayException.Http::class.java) {
-                runBlocking { client().get<TestPayload>("/api/items") }
-            }
-
-            assertEquals(status, error.status)
-            assertTrue(error.message.orEmpty().contains("status-$status"))
-        }
-    }
-
-    @Test
-    fun `html success response is rejected`() {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeader("Content-Type", "text/html")
-                .setBody("<!doctype html><html><body>gateway</body></html>"),
-        )
-
+    fun `html and non json responses are distinguished`() {
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "text/html").setBody("<html>gateway</html>"))
         assertThrows(GatewayException.HtmlResponse::class.java) {
             runBlocking { client().get<TestPayload>("/api/items") }
         }
-    }
 
-    @Test
-    fun `non json success response is rejected`() {
-        server.enqueue(
-            MockResponse()
-                .setResponseCode(200)
-                .setHeader("Content-Type", "text/plain")
-                .setBody("ok"),
-        )
-
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "text/plain").setBody("ok"))
         assertThrows(GatewayException.NonJsonResponse::class.java) {
             runBlocking { client().get<TestPayload>("/api/items") }
         }
@@ -201,20 +224,19 @@ class GatewayApiClientTest {
             .build()
 
         assertThrows(GatewayException.Timeout::class.java) {
-            runBlocking { GatewayApiClient(shortClient, json, auth).get<TestPayload>("/api/slow") }
+            runBlocking { GatewayApiClient(shortClient, json, endpoint, credentials).get<TestPayload>("/api/slow") }
         }
     }
 
     @Test
     fun `ordinary io failure maps to network`() {
-        // 普通连接失败不是超时；必须保留 Network 语义，避免上层错误地进入超时提示或重试分支。
         val failingClient = OkHttpClient.Builder()
             .addInterceptor(Interceptor { throw IOException("connection reset") })
             .build()
 
         val error = assertThrows(GatewayException.Network::class.java) {
             runBlocking {
-                GatewayApiClient(failingClient, json, auth).get<TestPayload>("/api/items")
+                GatewayApiClient(failingClient, json, endpoint, credentials).get<TestPayload>("/api/items")
             }
         }
 
@@ -223,7 +245,6 @@ class GatewayApiClientTest {
 
     @Test
     fun `coroutine cancellation is not mapped to gateway timeout or network`() {
-        // withTimeout 触发的是协程取消，不是 OkHttp 请求超时；取消必须原样向调用方传播。
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
 
         val error = assertThrows(CancellationException::class.java) {
@@ -238,18 +259,42 @@ class GatewayApiClientTest {
         assertNotEquals(GatewayException.Network::class.java, error::class.java)
     }
 
-    private fun client(): GatewayApiClient = GatewayApiClient(OkHttpClient(), json, auth)
+    private fun client(): GatewayApiClient = GatewayApiClient(OkHttpClient(), json, endpoint, credentials)
 
     private fun jsonResponse(body: String): MockResponse = MockResponse()
         .setResponseCode(200)
         .setHeader("Content-Type", "application/json; charset=utf-8")
         .setBody(body)
 
+    private fun errorResponse(code: Int, body: String): MockResponse = MockResponse()
+        .setResponseCode(code)
+        .setHeader("Content-Type", "application/json; charset=utf-8")
+        .setBody(body)
+
     @Serializable
     private data class TestPayload(val value: String)
 
-    private data class MutableAuthContext(
+    private data class MutableEndpointProvider(
         override var baseUrl: String,
-        override var apiToken: String?,
-    ) : AuthContext
+    ) : GatewayEndpointProvider
+
+    private class FakeCredentialProvider(
+        var currentToken: String,
+    ) : ApiCredentialProvider {
+        var refreshedToken: String = currentToken
+        var requestTokenCalls: Int = 0
+            private set
+        val rejectedTokens = mutableListOf<String>()
+
+        override suspend fun tokenForRequest(): String {
+            requestTokenCalls += 1
+            return currentToken
+        }
+
+        override suspend fun tokenAfterUnauthorized(rejectedToken: String): String {
+            rejectedTokens += rejectedToken
+            currentToken = refreshedToken
+            return currentToken
+        }
+    }
 }

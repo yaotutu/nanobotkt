@@ -1,14 +1,15 @@
 package com.nanobotkt.feature.chat
 
-import com.nanobotkt.core.model.BootstrapResponse
-import com.nanobotkt.core.model.BootstrapSnapshotProvider
+import com.nanobotkt.core.model.GatewayRuntimeSnapshot
+import com.nanobotkt.core.model.GatewayRuntimeSnapshotProvider
 import com.nanobotkt.core.model.IngressLimitsProvider
 import com.nanobotkt.core.model.OutboundMedia
 import com.nanobotkt.core.model.WorkspacesPayload
-import com.nanobotkt.core.network.AuthContext
+import com.nanobotkt.core.network.ApiCredentialProvider
+import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
 import com.nanobotkt.core.transport.NanobotTransport
-import com.nanobotkt.core.transport.TransportCredentials
+import com.nanobotkt.core.transport.WebSocketCredentialProvider
 import com.nanobotkt.core.transport.TransportStatus
 import com.nanobotkt.core.workspace.WorkspaceAccessProvider
 import java.util.concurrent.CountDownLatch
@@ -116,34 +117,34 @@ class DefaultChatRepositoryTest {
     @Test
     fun `background model projection cannot overwrite a concurrently opened session`() = runBlocking<Unit> {
         val sessionKey = "webui:atomic-model"
-        val bootstrapProvider = BlockingBootstrapProvider()
+        val runtimeSnapshotProvider = BlockingRuntimeSnapshotProvider()
         server.dispatcher = threadDispatcher {
             jsonResponse(threadPayload(sessionKey, messageId = "atomic-message", before = null))
         }
 
-        val repository = newRepository(bootstrapProvider = bootstrapProvider)
+        val repository = newRepository(runtimeSnapshotProvider = runtimeSnapshotProvider)
         try {
             // 先让 Transport 状态 collector 读取旧的空会话，并阻塞在模型信息读取中。
             // 随后打开真实会话，稳定复现旧实现“后台 copy 回灌旧 ChatUiState”的竞态窗口。
-            assertTrue(bootstrapProvider.firstReadStarted.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+            assertTrue(runtimeSnapshotProvider.firstReadStarted.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
             repository.openSession(sessionKey, "atomic-chat")
             assertEquals(sessionKey, repository.state.value.sessionKey)
 
-            bootstrapProvider.releaseFirstRead.countDown()
+            runtimeSnapshotProvider.releaseFirstRead.countDown()
             val projected = awaitState {
-                it.model.displayLabel == BlockingBootstrapProvider.CURRENT_MODEL ||
-                    it.model.displayLabel == BlockingBootstrapProvider.STALE_MODEL
+                it.model.displayLabel == BlockingRuntimeSnapshotProvider.CURRENT_MODEL ||
+                    it.model.displayLabel == BlockingRuntimeSnapshotProvider.STALE_MODEL
             }
 
             // 原子 update 在 CAS 冲突后必须基于新会话重新计算模型，因此只能得到 CURRENT_MODEL；
             // 如果仍使用 value = stale.copy(...)，这里会得到 STALE_MODEL 且 sessionKey 被清空。
-            assertEquals(BlockingBootstrapProvider.CURRENT_MODEL, projected.model.displayLabel)
+            assertEquals(BlockingRuntimeSnapshotProvider.CURRENT_MODEL, projected.model.displayLabel)
             assertEquals(sessionKey, projected.sessionKey)
             assertEquals("atomic-chat", projected.chatId)
             awaitState { it.sessionKey == sessionKey && !it.loading }
         } finally {
             // 前置断言失败时也释放后台 collector，避免阻塞线程污染后续测试。
-            bootstrapProvider.releaseFirstRead.countDown()
+            runtimeSnapshotProvider.releaseFirstRead.countDown()
         }
     }
 
@@ -739,24 +740,27 @@ class DefaultChatRepositoryTest {
     }
 
     private fun newRepository(
-        bootstrapProvider: BootstrapSnapshotProvider = object : BootstrapSnapshotProvider {
-            override fun currentBootstrap(): BootstrapResponse? = null
+        runtimeSnapshotProvider: GatewayRuntimeSnapshotProvider = object : GatewayRuntimeSnapshotProvider {
+            override fun currentRuntimeSnapshot(): GatewayRuntimeSnapshot? = null
         },
     ): DefaultChatRepository {
         currentRepository = DefaultChatRepository(
             api = GatewayApiClient(
                 client = httpClient,
                 json = json,
-                authContext = object : AuthContext {
+                endpointProvider = object : GatewayEndpointProvider {
                     override val baseUrl: String = server.url("/").toString()
-                    override val apiToken: String? = null
+                },
+                credentialProvider = object : ApiCredentialProvider {
+                    override suspend fun tokenForRequest(): String = "test-api-token"
+                    override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
                 },
             ),
             transport = transport,
             limitsProvider = object : IngressLimitsProvider {
                 override fun currentIngressLimits() = null
             },
-            bootstrapProvider = bootstrapProvider,
+            runtimeSnapshotProvider = runtimeSnapshotProvider,
             workspaceAccessProvider = object : WorkspaceAccessProvider {
                 override val workspaces = MutableStateFlow<WorkspacesPayload?>(null)
                 override suspend fun refresh() = Unit
@@ -821,20 +825,20 @@ class DefaultChatRepositoryTest {
     """.trimIndent()
 
     /**
-     * 用可控的 Bootstrap 读取顺序制造模型投影与 openSession 的确定性交错。
+     * 用可控的运行时快照读取顺序制造模型投影与 openSession 的确定性交错。
      * 第一次读取代表后台 collector 持有的旧状态，第二次属于 openSession，第三次代表原子 CAS 失败后的重算。
      */
-    private class BlockingBootstrapProvider : BootstrapSnapshotProvider {
+    private class BlockingRuntimeSnapshotProvider : GatewayRuntimeSnapshotProvider {
         val firstReadStarted = CountDownLatch(1)
         val releaseFirstRead = CountDownLatch(1)
         private val readCount = AtomicInteger(0)
 
-        override fun currentBootstrap(): BootstrapResponse {
+        override fun currentRuntimeSnapshot(): GatewayRuntimeSnapshot {
             val currentRead = readCount.incrementAndGet()
             if (currentRead == 1) {
                 firstReadStarted.countDown()
                 check(releaseFirstRead.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                    "first bootstrap read was not released"
+                    "first runtime snapshot read was not released"
                 }
             }
             val modelName = when (currentRead) {
@@ -842,13 +846,7 @@ class DefaultChatRepositoryTest {
                 2 -> SESSION_MODEL
                 else -> CURRENT_MODEL
             }
-            return BootstrapResponse(
-                token = "test-socket-token",
-                apiToken = "test-api-token",
-                wsPath = "/ws",
-                expiresIn = 60,
-                modelName = modelName,
-            )
+            return GatewayRuntimeSnapshot(modelName = modelName)
         }
 
         companion object {
@@ -858,9 +856,8 @@ class DefaultChatRepositoryTest {
         }
     }
 
-    private data class TestCredentials(private val url: String) : TransportCredentials {
-        override fun currentWebSocketUrl(): String = url
-        override suspend fun reauthenticateWebSocketUrl(): String = url
+    private data class TestCredentials(private val url: String) : WebSocketCredentialProvider {
+        override suspend fun freshWebSocketUrl(): String = url
         override fun maxFrameBytes(): Int? = null
     }
 

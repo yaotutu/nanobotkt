@@ -1,6 +1,7 @@
 package com.nanobotkt.feature.skills
 
-import com.nanobotkt.core.network.AuthContext
+import com.nanobotkt.core.network.ApiCredentialProvider
+import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -204,10 +205,12 @@ class SkillsRepositoryTest {
                     ignoreUnknownKeys = true
                     explicitNulls = false
                 },
-            authContext =
-                object : AuthContext {
+            endpointProvider = object : GatewayEndpointProvider {
                     override val baseUrl: String = server.url("/").toString()
-                    override val apiToken: String? = null
+                },
+                credentialProvider = object : ApiCredentialProvider {
+                    override suspend fun tokenForRequest(): String = "test-api-token"
+                    override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
                 },
         )
 

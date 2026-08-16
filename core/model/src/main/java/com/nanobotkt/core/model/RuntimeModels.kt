@@ -48,6 +48,19 @@ interface IngressLimitsProvider {
     fun currentIngressLimits(): WebUiIngressLimits?
 }
 
-interface BootstrapSnapshotProvider {
-    fun currentBootstrap(): BootstrapResponse?
+/**
+ * 可以安全暴露给业务层的 Gateway 运行时信息。
+ *
+ * 该快照刻意不包含 Bootstrap Secret、API Token、WebSocket Token 或带 Token 的 URL，
+ * 防止短期凭据从鉴权系统泄漏到 Chat、Settings 等业务模块。
+ */
+data class GatewayRuntimeSnapshot(
+    val limits: WebUiIngressLimits? = null,
+    val modelName: String? = null,
+    val runtimeSurface: RuntimeSurface? = null,
+    val runtimeCapabilities: RuntimeCapabilities? = null,
+)
+
+interface GatewayRuntimeSnapshotProvider {
+    fun currentRuntimeSnapshot(): GatewayRuntimeSnapshot?
 }

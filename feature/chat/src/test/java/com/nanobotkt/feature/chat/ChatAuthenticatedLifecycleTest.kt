@@ -1,13 +1,15 @@
 package com.nanobotkt.feature.chat
 
 import com.nanobotkt.core.model.BootstrapResponse
-import com.nanobotkt.core.model.BootstrapSnapshotProvider
+import com.nanobotkt.core.model.GatewayRuntimeSnapshot
+import com.nanobotkt.core.model.GatewayRuntimeSnapshotProvider
 import com.nanobotkt.core.model.IngressLimitsProvider
 import com.nanobotkt.core.model.WorkspacesPayload
-import com.nanobotkt.core.network.AuthContext
+import com.nanobotkt.core.network.ApiCredentialProvider
+import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
 import com.nanobotkt.core.transport.NanobotTransport
-import com.nanobotkt.core.transport.TransportCredentials
+import com.nanobotkt.core.transport.WebSocketCredentialProvider
 import com.nanobotkt.core.workspace.WorkspaceAccessProvider
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -59,17 +61,20 @@ class ChatAuthenticatedLifecycleTest {
             api = GatewayApiClient(
                 client = httpClient,
                 json = json,
-                authContext = object : AuthContext {
+                endpointProvider = object : GatewayEndpointProvider {
                     override val baseUrl: String = server.url("/").toString()
-                    override val apiToken: String? = "test-token"
+                },
+                credentialProvider = object : ApiCredentialProvider {
+                    override suspend fun tokenForRequest(): String = "test-api-token"
+                    override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
                 },
             ),
             transport = transport,
             limitsProvider = object : IngressLimitsProvider {
                 override fun currentIngressLimits() = null
             },
-            bootstrapProvider = object : BootstrapSnapshotProvider {
-                override fun currentBootstrap(): BootstrapResponse? = null
+            runtimeSnapshotProvider = object : GatewayRuntimeSnapshotProvider {
+                override fun currentRuntimeSnapshot(): GatewayRuntimeSnapshot? = null
             },
             workspaceAccessProvider = workspaceProvider,
         )
@@ -188,8 +193,7 @@ private class RecordingWorkspaceProvider : WorkspaceAccessProvider {
 
 private data class TestLifecycleCredentials(
     private val wsUrl: String,
-) : TransportCredentials {
-    override fun currentWebSocketUrl(): String = wsUrl
-    override suspend fun reauthenticateWebSocketUrl(): String = wsUrl
+) : WebSocketCredentialProvider {
+    override suspend fun freshWebSocketUrl(): String = wsUrl
     override fun maxFrameBytes(): Int? = null
 }

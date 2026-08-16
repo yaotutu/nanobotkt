@@ -2,7 +2,8 @@ package com.nanobotkt.feature.automations
 
 import com.nanobotkt.core.model.AutomationSchedule
 import com.nanobotkt.core.model.AutomationUpdatePayload
-import com.nanobotkt.core.network.AuthContext
+import com.nanobotkt.core.network.ApiCredentialProvider
+import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -449,9 +450,12 @@ class AutomationsRepositoryTest {
         GatewayApiClient(
             OkHttpClient(),
             Json { ignoreUnknownKeys = true; explicitNulls = false },
-            object : AuthContext {
+            object : GatewayEndpointProvider {
                 override val baseUrl: String = server.url("/").toString()
-                override val apiToken: String? = null
+            },
+            object : ApiCredentialProvider {
+                override suspend fun tokenForRequest(): String = "test-api-token"
+                override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
             },
         ),
     )

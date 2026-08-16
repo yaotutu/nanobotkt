@@ -130,9 +130,8 @@ class NanobotTransportWorkspaceScopeTest {
         assertEquals(expected.restrictToWorkspace, payload.getValue("restrict_to_workspace").jsonPrimitive.boolean)
     }
 
-    private data class TestCredentials(val url: String) : TransportCredentials {
-        override fun currentWebSocketUrl(): String = url
-        override suspend fun reauthenticateWebSocketUrl(): String = url
+    private data class TestCredentials(val url: String) : WebSocketCredentialProvider {
+        override suspend fun freshWebSocketUrl(): String = url
         override fun maxFrameBytes(): Int? = null
     }
 }

@@ -1,6 +1,6 @@
 package com.nanobotkt.feature.chat
 
-import com.nanobotkt.core.model.BootstrapSnapshotProvider
+import com.nanobotkt.core.model.GatewayRuntimeSnapshotProvider
 import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.FilePreviewPayload
 import com.nanobotkt.core.model.InboundEvent
@@ -152,7 +152,7 @@ class DefaultChatRepository @Inject constructor(
     private val api: GatewayApiClient,
     private val transport: NanobotTransport,
     private val limitsProvider: IngressLimitsProvider,
-    private val bootstrapProvider: BootstrapSnapshotProvider,
+    private val runtimeSnapshotProvider: GatewayRuntimeSnapshotProvider,
     private val workspaceAccessProvider: WorkspaceAccessProvider,
 ) : ChatRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -764,7 +764,7 @@ class DefaultChatRepository @Inject constructor(
                 presets = presets,
                 turnModelName = turnModelName,
                 runtimeModelName = runtimeModelName,
-                bootstrapModelName = bootstrapProvider.currentBootstrap()?.modelName,
+                bootstrapModelName = runtimeSnapshotProvider.currentRuntimeSnapshot()?.modelName,
             ),
             presets = presets,
             pendingPreset = pendingPreset,

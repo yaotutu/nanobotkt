@@ -154,9 +154,11 @@ class AppViewModel @Inject constructor(
             authRepository.state.collectLatest { state ->
                 if (state is AuthState.Ready) {
                     // 必须先发布认证会话边界，再恢复实时连接。Composer/Workspace 的 HTTP
-                    // 加载依赖当前 Token；Repository 会按 sessionEpoch 去重周期性 Token 续期。
+                    // 加载依赖已建立的登录会话；短期 Token 续期由凭据系统内部处理，不再改变 epoch。
                     sessionCleanup.onAuthenticated(state.sessionEpoch)
-                    transport.resume()
+                    // Ready 是唯一可以激活实时通信的认证边界；Activity 前台事件只负责恢复
+                    // 已激活会话，不能在登录页或 logout 后隐式创建连接。
+                    transport.connect()
                 } else {
                     transport.close()
                 }
@@ -188,7 +190,8 @@ class AppViewModel @Inject constructor(
             logout = authRepository::logout,
         )
     }
-    fun reconnect() = transport.resume()
+    /** Settings 的手工重连只替换当前登录会话的 Socket，不得借此激活已注销会话。 */
+    fun reconnect() = transport.reconnect()
     fun toggleTheme() = viewModelScope.launch {
         val next = if (preferences.value.theme == ThemePreference.DARK) {
             ThemePreference.LIGHT

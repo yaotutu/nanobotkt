@@ -34,9 +34,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.min
 
-interface TransportCredentials {
-    fun currentWebSocketUrl(): String?
-    suspend fun reauthenticateWebSocketUrl(): String?
+/**
+ * 新建 WebSocket 所需的一次性凭据能力。
+ *
+ * 服务端会在握手成功时消费 Bootstrap 下发的 WebSocket Token，因此通信层每次真正创建
+ * Socket 都必须调用 [freshWebSocketUrl] 领取一个尚未使用的 URL，不能保存并复用旧值。
+ */
+interface WebSocketCredentialProvider {
+    suspend fun freshWebSocketUrl(): String?
     fun maxFrameBytes(): Int?
 }
 
@@ -49,7 +54,7 @@ data class MessageSendResult(val turnId: String, val accepted: CompletableDeferr
 class NanobotTransport @Inject constructor(
     @param:com.nanobotkt.core.network.WebSocketClient private val client: OkHttpClient,
     private val json: Json,
-    private val credentials: TransportCredentials,
+    private val credentials: WebSocketCredentialProvider,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableState = MutableStateFlow(TransportState())
@@ -62,7 +67,16 @@ class NanobotTransport @Inject constructor(
     private var socket: WebSocket? = null
     private var reconnectAttempt = 0
     private var reconnectJob: Job? = null
-    private var intentionallyClosed = false
+    private var credentialJob: Job? = null
+    private var connectionGeneration = 0L
+
+    /**
+     * Transport 是否属于一个已经建立的登录会话。
+     *
+     * 该状态只由 [connect]（认证成功）和 [close]（退出/认证失效）改变；前后台切换与
+     * 网络恢复只能暂停或恢复已有会话，绝不能隐式把已关闭的认证会话重新激活。
+     */
+    private var sessionActive = false
     private var networkAvailable = true
     private var backgroundAt: Long? = null
     private var backgroundCloseJob: Job? = null
@@ -71,16 +85,75 @@ class NanobotTransport @Inject constructor(
     val events: SharedFlow<InboundEvent> = mutableEvents.asSharedFlow()
     val errors: SharedFlow<TransportError> = mutableErrors.asSharedFlow()
 
+    /** 认证成功后激活实时通信；重复调用只会确保当前会话已连接，不会创建并行 Socket。 */
     @Synchronized fun connect() {
-        if (intentionallyClosed || !networkAvailable || socket != null) return
-        val url = credentials.currentWebSocketUrl() ?: return
-        open(url, reconnecting = reconnectAttempt > 0)
+        sessionActive = true
+        connectIfEligible()
+    }
+
+    /**
+     * 用户显式要求重连当前认证会话。
+     *
+     * 与 [connect] 不同，该入口不会激活一个已关闭的认证会话；它只会替换当前会话已有的
+     * Socket/连接任务，并重新领取一次性 WS Token。这样 Settings 的 Reconnect 不会在登录页
+     * 制造后台重连，同时在连接仍显示 OPEN 时也确实执行一次新的握手。
+     */
+    @Synchronized fun reconnect() {
+        if (!sessionActive || backgroundAt != null || !networkAvailable) return
+        restartConnection("manual_reconnect")
+    }
+
+    /**
+     * 根据认证会话、前后台和网络三个正交条件决定是否真正领取一次性凭据。
+     *
+     * 这里是所有初次连接入口的唯一闸门。尤其不能在登录页、后台或离线状态下启动
+     * Bootstrap，否则生命周期事件会反向制造无凭据重连和一次性 Token 浪费。
+     */
+    @Synchronized private fun connectIfEligible() {
+        if (!sessionActive || backgroundAt != null || !networkAvailable || socket != null || credentialJob != null || reconnectJob != null) return
+        val expectedGeneration = connectionGeneration
+        val reconnecting = reconnectAttempt > 0
+        mutableState.value = mutableState.value.copy(
+            status = if (reconnecting) TransportStatus.RECONNECTING else TransportStatus.CONNECTING,
+            error = null,
+        )
+        credentialJob = scope.launch {
+            var failure: Throwable? = null
+            val url = try {
+                // 初次连接和前台恢复同样必须领取一次性 Token；凭据获取是 suspend 操作，
+                // 放在 Transport scope 中执行，避免在 Activity/ViewModel 或 OkHttp 线程中阻塞。
+                credentials.freshWebSocketUrl()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                failure = error
+                null
+            }
+            synchronized(this@NanobotTransport) {
+                if (connectionGeneration != expectedGeneration) return@synchronized
+                credentialJob = null
+                if (url != null && socket == null && sessionActive && backgroundAt == null && networkAvailable) {
+                    open(url, reconnecting = reconnecting)
+                } else if (sessionActive && backgroundAt == null && networkAvailable && socket == null) {
+                    mutableState.value = mutableState.value.copy(
+                        status = TransportStatus.RECONNECTING,
+                        error = failure?.message ?: "websocket_credentials_unavailable",
+                    )
+                    scheduleReconnect()
+                }
+            }
+        }
     }
 
     @Synchronized fun close() {
-        intentionallyClosed = true
+        sessionActive = false
+        connectionGeneration += 1L
+        credentialJob?.cancel()
+        credentialJob = null
         reconnectJob?.cancel()
         reconnectJob = null
+        backgroundCloseJob?.cancel()
+        backgroundCloseJob = null
         val active = socket
         socket = null
         rejectPendingOnDisconnect(messageTooBig = false)
@@ -103,6 +176,19 @@ class NanobotTransport @Inject constructor(
 
     @Synchronized fun onBackground() {
         backgroundAt = System.currentTimeMillis()
+
+        // 进入后台后保留已经打开的 Socket 最多 10 秒，给短暂系统弹窗或 Activity 切换留出
+        // grace；但立即取消尚未完成的凭据领取和退避重连。后台不能新发 Bootstrap，也不能
+        // 消费一个尚未用于握手的一次性 WebSocket Token。
+        connectionGeneration += 1L
+        credentialJob?.cancel()
+        credentialJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
+        if (socket == null) {
+            mutableState.value = mutableState.value.copy(status = TransportStatus.CLOSED)
+        }
+
         backgroundCloseJob?.cancel()
         backgroundCloseJob = scope.launch {
             delay(10_000L)
@@ -125,9 +211,12 @@ class NanobotTransport @Inject constructor(
         backgroundAt = null
         backgroundCloseJob?.cancel()
         backgroundCloseJob = null
-        intentionallyClosed = false
+
+        // 前台恢复只恢复“已经激活的认证会话”。如果 AuthState 仍在登录页或已经 logout，
+        // 此处必须保持关闭，等待组合根在 Ready 后显式调用 connect()。
+        if (!sessionActive) return
         val stale = mutableState.value.lastActivityAt?.let { System.currentTimeMillis() - it > 45_000L } ?: false
-        if ((awayFor > 10_000L || stale) && socket != null) reconnect("resume_stale") else connect()
+        if ((awayFor > 10_000L || stale) && socket != null) restartConnection("resume_stale") else connectIfEligible()
     }
 
     @Synchronized fun setNetworkAvailable(available: Boolean) {
@@ -135,6 +224,9 @@ class NanobotTransport @Inject constructor(
         networkAvailable = available
         mutableState.value = mutableState.value.copy(networkAvailable = available)
         if (!available) {
+            connectionGeneration += 1L
+            credentialJob?.cancel()
+            credentialJob = null
             reconnectJob?.cancel()
             reconnectJob = null
             val active = socket
@@ -143,9 +235,8 @@ class NanobotTransport @Inject constructor(
             active?.cancel()
             mutableState.value = mutableState.value.copy(status = TransportStatus.CLOSED, needsCanonicalRefresh = true)
         } else {
-            intentionallyClosed = false
             reconnectAttempt = 0
-            connect()
+            connectIfEligible()
         }
     }
 
@@ -389,7 +480,14 @@ class NanobotTransport @Inject constructor(
         }
     }
 
-    @Synchronized private fun reconnect(reason: String) {
+    @Synchronized private fun restartConnection(reason: String) {
+        connectionGeneration += 1L
+        credentialJob?.cancel()
+        credentialJob = null
+        // 显式重连可能发生在退避或凭据领取阶段。必须同时取消并清空旧任务，否则
+        // scheduleReconnect() 会被旧引用挡住，用户点击 Reconnect 后看似无任何动作。
+        reconnectJob?.cancel()
+        reconnectJob = null
         val active = socket
         socket = null
         rejectPendingOnDisconnect(messageTooBig = false)
@@ -399,9 +497,10 @@ class NanobotTransport @Inject constructor(
     }
 
     @Synchronized private fun scheduleReconnect() {
-        if (reconnectJob != null || intentionallyClosed || !networkAvailable) return
+        if (reconnectJob != null || !sessionActive || backgroundAt != null || !networkAvailable) return
         val delayMs = min(30_000L, 1_000L shl min(reconnectAttempt, 5))
         reconnectAttempt += 1
+        val expectedGeneration = connectionGeneration
         reconnectJob = scope.launch {
             var retryAfterFailure = false
             try {
@@ -409,7 +508,7 @@ class NanobotTransport @Inject constructor(
                 val url = try {
                     // 重连必须重新获取认证后的 WebSocket 地址，不能在刷新失败时
                     // 静默回退到可能已经过期的旧地址。
-                    credentials.reauthenticateWebSocketUrl()
+                    credentials.freshWebSocketUrl()
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -423,9 +522,12 @@ class NanobotTransport @Inject constructor(
                     null
                 }
                 synchronized(this@NanobotTransport) {
-                    if (url != null && socket == null && !intentionallyClosed && networkAvailable) {
+                    // close、切后台、网络断开或显式 reconnect 都会推进代数。凭据请求即使
+                    // 无法及时响应协程取消，迟到的一次性 URL 也只能被丢弃，不能打开旧连接。
+                    if (connectionGeneration != expectedGeneration) return@synchronized
+                    if (url != null && socket == null && sessionActive && backgroundAt == null && networkAvailable) {
                         open(url, reconnecting = true)
-                    } else if (url == null && !intentionallyClosed && networkAvailable) {
+                    } else if (url == null && sessionActive && backgroundAt == null && networkAvailable) {
                         retryAfterFailure = true
                     }
                 }
@@ -434,7 +536,14 @@ class NanobotTransport @Inject constructor(
                 // scheduleReconnect() 会被自身的非空引用拦截，认证失败后就不再恢复。
                 synchronized(this@NanobotTransport) {
                     reconnectJob = null
-                    if (retryAfterFailure && !intentionallyClosed && networkAvailable && socket == null) {
+                    if (
+                        retryAfterFailure &&
+                        connectionGeneration == expectedGeneration &&
+                        sessionActive &&
+                        backgroundAt == null &&
+                        networkAvailable &&
+                        socket == null
+                    ) {
                         scheduleReconnect()
                     }
                 }
@@ -479,8 +588,9 @@ class NanobotTransport @Inject constructor(
         socket = null
         val tooBig = code == 1009
         rejectPendingOnDisconnect(tooBig)
-        mutableState.value = mutableState.value.copy(status = if (intentionallyClosed || !networkAvailable) TransportStatus.CLOSED else TransportStatus.RECONNECTING, needsCanonicalRefresh = true, error = if (tooBig) "message_too_big" else cause?.message)
-        if (!intentionallyClosed && networkAvailable) scheduleReconnect()
+        val canReconnect = sessionActive && backgroundAt == null && networkAvailable
+        mutableState.value = mutableState.value.copy(status = if (canReconnect) TransportStatus.RECONNECTING else TransportStatus.CLOSED, needsCanonicalRefresh = true, error = if (tooBig) "message_too_big" else cause?.message)
+        if (canReconnect) scheduleReconnect()
     }
 
     private data class QueuedFrame(val id: String, val frame: OutboundFrame)

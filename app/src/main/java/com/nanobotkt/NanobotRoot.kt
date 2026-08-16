@@ -81,7 +81,7 @@ fun NanobotRoot(appViewModel: AppViewModel) {
                 is AuthState.Booting -> LoadingScreen()
                 is AuthState.Authentication -> AuthScreen(state, appViewModel::authenticate)
                 is AuthState.Unreachable -> UnreachableScreen(state.message, appViewModel::retry)
-                is AuthState.Ready -> ReadyRoot(state.sessionEpoch, state.tokenGeneration, appViewModel)
+                is AuthState.Ready -> ReadyRoot(state.sessionEpoch, appViewModel)
             }
         }
     }
@@ -124,7 +124,6 @@ private fun UnreachableScreen(message: String, onRetry: () -> Unit) {
 @Composable
 private fun ReadyRoot(
     sessionEpoch: Long,
-    tokenGeneration: Long,
     appViewModel: AppViewModel,
     sidebarViewModel: SidebarViewModel = hiltViewModel(),
     chatViewModel: ChatViewModel = hiltViewModel(),
@@ -290,7 +289,6 @@ private fun ReadyRoot(
                 initialSection = rootUiState.settingsSection,
                 onOpenSection = appViewModel::openSettingsSection,
                 onSectionChange = appViewModel::setSettingsSection,
-                refreshKey = tokenGeneration,
             )
         }
     }

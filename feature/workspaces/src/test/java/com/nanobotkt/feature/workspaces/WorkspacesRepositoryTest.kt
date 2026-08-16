@@ -1,7 +1,8 @@
 package com.nanobotkt.feature.workspaces
 
 import com.nanobotkt.core.model.DefaultAccessMode
-import com.nanobotkt.core.network.AuthContext
+import com.nanobotkt.core.network.ApiCredentialProvider
+import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
 import com.nanobotkt.feature.workspaces.data.DefaultWorkspacesRepository
 import com.nanobotkt.feature.workspaces.data.WorkspacesUiState
@@ -268,10 +269,13 @@ class WorkspacesRepositoryTest {
     private fun gateway(): GatewayApiClient = GatewayApiClient(
         OkHttpClient(),
         Json { ignoreUnknownKeys = true; explicitNulls = false },
-        object : AuthContext {
-            override val baseUrl: String = server.url("/").toString()
-            override val apiToken: String? = null
-        },
+        object : GatewayEndpointProvider {
+                override val baseUrl: String = server.url("/").toString()
+            },
+            object : ApiCredentialProvider {
+                override suspend fun tokenForRequest(): String = "test-api-token"
+                override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
+            },
     )
 
     private fun workspacesJson(

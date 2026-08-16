@@ -1,6 +1,7 @@
 package com.nanobotkt.feature.settings
 
-import com.nanobotkt.core.network.AuthContext
+import com.nanobotkt.core.network.ApiCredentialProvider
+import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -61,9 +62,12 @@ class SettingsRepositoryTest {
             GatewayApiClient(
                 OkHttpClient(),
                 Json { ignoreUnknownKeys = true; explicitNulls = false },
-                object : AuthContext {
+                object : GatewayEndpointProvider {
                     override val baseUrl: String = server.url("/").toString()
-                    override val apiToken: String? = null
+                },
+                object : ApiCredentialProvider {
+                    override suspend fun tokenForRequest(): String = "test-api-token"
+                    override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
                 },
             ),
             Json { ignoreUnknownKeys = true; explicitNulls = false },
@@ -554,9 +558,12 @@ class SettingsRepositoryTest {
             GatewayApiClient(
                 OkHttpClient(),
                 Json { ignoreUnknownKeys = true; explicitNulls = false },
-                object : AuthContext {
+                object : GatewayEndpointProvider {
                     override val baseUrl: String = server.url("/").toString()
-                    override val apiToken: String? = null
+                },
+                object : ApiCredentialProvider {
+                    override suspend fun tokenForRequest(): String = "test-api-token"
+                    override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
                 },
             ),
             Json { ignoreUnknownKeys = true; explicitNulls = false },
@@ -596,7 +603,8 @@ class SettingsRepositoryTest {
         assertTrue(encodedValues?.contains("%7B") == true)
         assertTrue(encodedValues?.contains("apiKey") == true)
         assertTrue(encodedValues?.contains("https%3A%2F%2Fapi.example.test%2Fv1") == true)
-        assertTrue(request.getHeader("Authorization").isNullOrBlank())
+        // Provider 私密值仍使用专用 Header 传递，但 Gateway REST 请求本身必须始终携带短期 Bearer Token。
+        assertEquals("Bearer test-api-token", request.getHeader("Authorization"))
     }
 
     @Test
@@ -850,9 +858,12 @@ class SettingsRepositoryTest {
         GatewayApiClient(
             OkHttpClient(),
             Json { ignoreUnknownKeys = true; explicitNulls = false },
-            object : AuthContext {
+            object : GatewayEndpointProvider {
                 override val baseUrl: String = server.url("/").toString()
-                override val apiToken: String? = null
+            },
+            object : ApiCredentialProvider {
+                override suspend fun tokenForRequest(): String = "test-api-token"
+                override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
             },
         ),
         Json { ignoreUnknownKeys = true; explicitNulls = false },

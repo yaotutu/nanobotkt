@@ -1,7 +1,8 @@
 package com.nanobotkt.feature.sidebar
 
 import com.nanobotkt.core.model.SidebarStatePayload
-import com.nanobotkt.core.network.AuthContext
+import com.nanobotkt.core.network.ApiCredentialProvider
+import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -264,9 +265,12 @@ class SidebarRepositoryTest {
         GatewayApiClient(
             OkHttpClient(),
             json,
-            object : AuthContext {
+            object : GatewayEndpointProvider {
                 override val baseUrl: String = server.url("/").toString()
-                override val apiToken: String? = null
+            },
+            object : ApiCredentialProvider {
+                override suspend fun tokenForRequest(): String = "test-api-token"
+                override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
             },
         ),
     )

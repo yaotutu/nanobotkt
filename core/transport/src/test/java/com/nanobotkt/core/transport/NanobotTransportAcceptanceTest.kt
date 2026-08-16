@@ -100,7 +100,7 @@ class NanobotTransportAcceptanceTest {
         // 模拟注销：清除会话级 attachment 后关闭并重新建立连接。
         transport.clearAttachments()
         transport.close()
-        connectWebSocket(reopen = true)
+        connectWebSocket()
 
         assertNull(withTimeoutOrNull(500) { receivedFrames.receive() })
     }
@@ -113,7 +113,7 @@ class NanobotTransportAcceptanceTest {
 
         // 普通断线/重连没有更换认证主体，attachment 应继续恢复。
         transport.close()
-        connectWebSocket(reopen = true)
+        connectWebSocket()
 
         val reattached = receiveFrame()
         assertEquals("attach", reattached.getValue("type").jsonPrimitive.content)
@@ -122,6 +122,11 @@ class NanobotTransportAcceptanceTest {
 
     @Test
     fun `disconnect removes queued message after acceptance failure`() = runBlocking {
+        // 先在后台激活一个已认证会话，使 Transport 保持“会话有效但暂不领取 WS Token”的状态。
+        // 这样可以稳定构造尚未连通时的 outbound 队列，又不会依赖网络恢复去隐式激活已关闭会话。
+        transport.onBackground()
+        transport.connect()
+
         // 未连接时发送会把 message 放进 outbound；网络状态切换到不可用时，
         // pending 会失败，重连后不应再把这条已经失败的非幂等消息发出去。
         val result = transport.sendMessage(
@@ -138,6 +143,9 @@ class NanobotTransportAcceptanceTest {
             assertEquals("connection_closed", error.message)
         }
 
+        // 回到前台时网络仍不可用，因此只恢复会话状态；直到网络真正恢复后才允许领取
+        // 新的一次性 WS Token 并建立连接。
+        transport.resume()
         server.enqueue(
             MockResponse().withWebSocketUpgrade(
                 object : WebSocketListener() {
@@ -161,29 +169,46 @@ class NanobotTransportAcceptanceTest {
     }
 
     @Test
-    fun `reauthentication failure does not block a later reconnect`() = runBlocking {
-        credentials.failNextReauthentication()
+    fun `credential failure does not block a later reconnect`() = runBlocking {
         connectWebSocket()
+        credentials.failNextReauthentication()
 
-        // 第一次断线会触发凭据刷新；测试凭据故意让这次刷新抛异常。
+        // 已打开连接断开后，下一次一次性凭据领取故意失败。Transport 必须先释放当前
+        // reconnectJob，再安排后续退避；否则非空 Job 引用会永久阻塞下一轮重连。
         serverSocket.get()!!.close(1000, "trigger_reconnect")
         withTimeout(3_000) {
-            while (credentials.reauthCalls.get() < 1) delay(10)
+            while (credentials.reauthCalls.get() < 2) delay(10)
         }
 
-        // resume() 使用当前 URL 建立第二条连接，用于再次制造断线。若前一次
-        // reconnectJob 因异常没有清理引用，第二次断线将无法创建新的重连任务。
-        connectWebSocket(reopen = true)
-        serverSocket.get()!!.close(1000, "trigger_second_reconnect")
         server.enqueue(webSocketUpgrade())
-
-        // 第二次凭据刷新应成功，并最终建立第三条连接，证明重连任务引用已释放。
-        withTimeout(4_000) {
+        withTimeout(5_000) {
             transport.state.first {
-                it.status == TransportStatus.OPEN && credentials.reauthCalls.get() >= 2
+                it.status == TransportStatus.OPEN && credentials.reauthCalls.get() >= 3
             }
         }
         Unit
+    }
+
+    @Test
+    fun `manual reconnect replaces an open socket with fresh credentials`() = runBlocking {
+        connectWebSocket()
+        val credentialCallsBeforeReconnect = credentials.reauthCalls.get()
+        server.enqueue(webSocketUpgrade())
+
+        // Settings 中的 Reconnect 是显式用户操作：即使当前状态仍为 OPEN，也必须关闭旧 Socket，
+        // 重新领取一次性 Token 并完成新握手，而不是退化成 connect() 的幂等“确保已连接”。
+        transport.reconnect()
+        withTimeout(3_000) {
+            while (
+                transport.state.value.status != TransportStatus.OPEN ||
+                credentials.reauthCalls.get() <= credentialCallsBeforeReconnect
+            ) {
+                delay(10)
+            }
+        }
+
+        assertEquals(credentialCallsBeforeReconnect + 1, credentials.reauthCalls.get())
+        assertEquals(2, server.requestCount)
     }
 
     @Test
@@ -254,6 +279,31 @@ class NanobotTransportAcceptanceTest {
         assertEquals(TransportStatus.CLOSED, transport.state.value.status)
         assertFalse(transport.state.value.networkAvailable)
         assertEquals(1, server.requestCount)
+    }
+
+
+    @Test
+    fun `closed authentication session is not reactivated by lifecycle or network events`() = runBlocking {
+        connectWebSocket()
+        transport.close()
+        val credentialCallsAfterClose = credentials.reauthCalls.get()
+
+        // close() 表示认证会话已经结束。前台事件和网络恢复只能恢复已有会话，不能自行
+        // 重新激活 Transport；否则登录页会产生无凭据退避任务，并阻塞随后真正的登录连接。
+        transport.resume()
+        transport.reconnect()
+        transport.setNetworkAvailable(false)
+        transport.setNetworkAvailable(true)
+        delay(300)
+
+        assertEquals(credentialCallsAfterClose, credentials.reauthCalls.get())
+        assertEquals(TransportStatus.CLOSED, transport.state.value.status)
+
+        // 新认证会话必须通过显式 connect() 激活，此时才允许领取下一枚一次性 Token。
+        server.enqueue(webSocketUpgrade())
+        transport.connect()
+        withTimeout(2_000) { transport.state.first { it.status == TransportStatus.OPEN } }
+        assertEquals(credentialCallsAfterClose + 1, credentials.reauthCalls.get())
     }
 
     @Test
@@ -470,9 +520,9 @@ class NanobotTransportAcceptanceTest {
         assertEquals(expected, (failure as? IllegalStateException)?.message)
     }
 
-    private suspend fun connectWebSocket(reopen: Boolean = false) {
+    private suspend fun connectWebSocket() {
         server.enqueue(webSocketUpgrade())
-        if (reopen) transport.resume() else transport.connect()
+        transport.connect()
         withTimeout(2_000) {
             transport.state.first { it.status == TransportStatus.OPEN }
         }
@@ -493,7 +543,7 @@ class NanobotTransportAcceptanceTest {
 
     private data class TestCredentials(
         val url: String,
-    ) : TransportCredentials {
+    ) : WebSocketCredentialProvider {
         val reauthCalls = AtomicInteger()
         private val failuresRemaining = AtomicInteger()
 
@@ -501,11 +551,14 @@ class NanobotTransportAcceptanceTest {
             failuresRemaining.incrementAndGet()
         }
 
-        override fun currentWebSocketUrl(): String = url
-
-        override suspend fun reauthenticateWebSocketUrl(): String {
+        override suspend fun freshWebSocketUrl(): String {
             reauthCalls.incrementAndGet()
-            if (failuresRemaining.getAndDecrement() > 0) {
+            // 失败次数必须在零处饱和。若直接 getAndDecrement()，每次成功调用都会把计数减成
+            // 负数，随后 failNextReauthentication() 只会加回零，导致“下一次失败”测试失真。
+            val shouldFail = failuresRemaining.getAndUpdate { remaining ->
+                if (remaining > 0) remaining - 1 else 0
+            } > 0
+            if (shouldFail) {
                 throw IllegalStateException("reauthentication_failed")
             }
             return url

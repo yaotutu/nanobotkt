@@ -175,9 +175,8 @@ class NanobotTransportForkTest {
 
     private data class TestCredentials(
         val url: String,
-    ) : TransportCredentials {
-        override fun currentWebSocketUrl(): String = url
-        override suspend fun reauthenticateWebSocketUrl(): String = url
+    ) : WebSocketCredentialProvider {
+        override suspend fun freshWebSocketUrl(): String = url
         override fun maxFrameBytes(): Int? = null
     }
 }
