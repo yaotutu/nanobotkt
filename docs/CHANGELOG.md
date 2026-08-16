@@ -1,9 +1,11 @@
-# NanobotKT 0.1.7
+# NanobotKT 0.1.8
 
-> 自动构建发布，提交：`bf8cfe5`。
+> 自动构建发布，提交：`17aa54c`。
 
 ## 变更
 
+- refactor: harden chat lifecycle and state ownership (`17aa54c`)
+- chore(dev): prepare v0.1.7 (`8db4260`)
 - chore(release): simplify local release workflow (`bf8cfe5`)
 - chore(dev): prepare v0.1.6 (`0c41496`)
 - merge: integrate chat preview race fix into dev (`7845979`)
