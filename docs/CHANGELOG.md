@@ -1,9 +1,12 @@
-# NanobotKT 0.1.9
+# NanobotKT 0.1.10
 
-> 自动构建发布，提交：`e88d9ff`。
+> 自动构建发布，提交：`a8a2ec4`。
 
 ## 变更
 
+- refactor: unify gateway configuration and settings entry (`a8a2ec4`)
+- refactor(auth): centralize gateway credential lifecycle (`6045af5`)
+- chore(dev): prepare v0.1.9 (`1cc0f83`)
 - chore(release): push prepared versions automatically (`e88d9ff`)
 - fix(chat): prevent stale state from overwriting sessions (`bdbb671`)
 - chore(dev): prepare v0.1.8 (`00a646d`)
