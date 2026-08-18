@@ -194,6 +194,8 @@ feature/<name>/src/main/java/com/nanobotkt/feature/<name>/
 - 只有用户明确要求发布时，才允许运行 `scripts/release.sh`；脚本要求显式传入 `dev` 或 `release`，并校验当前分支分别为 `dev` 或 `main`；通过后才会修改版本文件、更新日志并创建本地提交。
 - 不手工制造发布版本提交，不在 GitHub Actions 中修改版本号，也不把 Debug APK 当作可发布升级包。
 - 未经用户额外明确要求，不 push、不创建或删除 tag、不创建或删除 GitHub Release，也不覆盖 `dev-latest`。
+- 用户显式调用 `$nanobotkt-dev-release`，或明确要求“执行 Dev 收尾发布闭环”时，必须使用项目级 `.codex/skills/nanobotkt-dev-release/SKILL.md`。该请求视为对当前任务范围内代码整理、验证、业务提交、执行 `scripts/release.sh dev`、脚本自动 push、Actions 监控以及 CI 失败修复/提交/push/重触发的明确授权；不授权正式 Release、服务端修改、无关重构、历史改写或手工操作 `dev-latest`。
+- Dev 版本准备提交创建后，CI 失败时禁止再次执行 `scripts/release.sh dev`：临时故障重跑原 run 的失败 jobs；代码或 workflow 故障修复并提交后，使用 `workflow_dispatch` 在当前 `dev` HEAD 上沿用同一版本重新构建。
 
 ---
 

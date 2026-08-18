@@ -1,0 +1,8 @@
+interface:
+  display_name: "NanobotKT Dev 发布闭环"
+  short_description: "整理本轮代码、提交并持续修复 Dev 发布流程直至成功"
+  default_prompt: "使用 $nanobotkt-dev-release 完成本轮功能的代码整理、提交、Dev 发布与 CI 修复闭环。"
+
+policy:
+  # Dev 发布会创建提交、push 并更新远端预发布版本，因此只允许用户显式调用，避免普通开发任务误触发发布。
+  allow_implicit_invocation: false
