@@ -107,6 +107,39 @@ class ChatComposerUiTest {
         saveRootScreenshot(SCREENSHOT_DARK_DRAFT)
     }
 
+    @Test
+    fun stopButtonBecomesDisabledWhileStopRequestIsPending() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val stopping = mutableStateOf(false)
+        val stopCount = AtomicInteger(0)
+
+        composeRule.setContent {
+            NanobotTheme(darkTheme = false, dynamicColor = false) {
+                ComposerPrimaryActionButton(
+                    showSendAction = false,
+                    stopButton = true,
+                    sendEnabled = false,
+                    sending = false,
+                    stopping = stopping.value,
+                    controlColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant,
+                    sendColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                    sendContentColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
+                    onSend = {},
+                    onStop = { stopCount.incrementAndGet() },
+                )
+            }
+        }
+
+        val stopDescription = context.getString(R.string.stop)
+        composeRule.onNodeWithContentDescription(stopDescription).assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertEquals(1, stopCount.get())
+            stopping.value = true
+        }
+        // pending 时同一个无障碍节点保留“停止”语义，但按钮变为 disabled，视觉内容切换为 spinner。
+        composeRule.onNodeWithContentDescription(stopDescription).assertIsNotEnabled()
+    }
+
     private fun saveRootScreenshot(fileName: String) {
         composeRule.waitForIdle()
         val context = InstrumentationRegistry.getInstrumentation().targetContext

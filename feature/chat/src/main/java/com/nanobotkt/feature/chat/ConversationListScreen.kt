@@ -30,12 +30,14 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +72,12 @@ data class ConversationListItem(
     val pinned: Boolean,
     /** 归档态由客户端已有 Sidebar 快照推导，不会改变服务端数据结构。 */
     val archived: Boolean = false,
+    /** Sidebar mutation 未完成时禁用管理入口并显示进度，避免同一行重复提交。 */
+    val pending: Boolean = false,
+    /** 当前会话有 agent turn 在运行。 */
+    val running: Boolean = false,
+    /** 非当前会话在上次查看后完成了新活动。 */
+    val unread: Boolean = false,
 )
 
 /**
@@ -141,7 +150,7 @@ fun ConversationListSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 680.dp)
+                .heightIn(min = 320.dp, max = 680.dp)
                 .navigationBarsPadding(),
         ) {
             Row(
@@ -204,7 +213,7 @@ fun ConversationListSheet(
                 onShowArchived = { archivedMode = true },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f, fill = false),
+                    .weight(1f),
             )
         }
     }
@@ -296,7 +305,7 @@ private fun ConversationListContent(
         )
 
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(bottom = 16.dp),
         ) {
             if (filtered.isEmpty()) {
@@ -430,6 +439,16 @@ private fun ConversationRow(
     onDelete: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    var deferredMenuAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    LaunchedEffect(menuOpen, deferredMenuAction) {
+        val action = deferredMenuAction ?: return@LaunchedEffect
+        if (menuOpen) return@LaunchedEffect
+        // 该 Effect 只会在 menuOpen=false 已经完成重组后启动；此时 Popup 已从当前 composition
+        // 退出，再移动 LazyColumn 中的 item 不会留下继续拦截触摸事件的旧窗口层。
+        deferredMenuAction = null
+        action()
+    }
 
     /**
      * 会话是典型的“标题 + 摘要 + leading icon + trailing action”列表语义，直接使用 Material 3
@@ -488,16 +507,39 @@ private fun ConversationRow(
             )
         },
         trailingContent = {
-            ConversationActionsMenu(
-                item = item,
-                expanded = menuOpen,
-                onExpand = { menuOpen = true },
-                onDismiss = { menuOpen = false },
-                onTogglePinned = onTogglePinned,
-                onRename = onRename,
-                onArchive = onArchive,
-                onDelete = onDelete,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                when {
+                    item.pending || item.running -> CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    item.unread -> Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .background(MaterialTheme.colorScheme.tertiary, CircleShape),
+                    )
+                }
+                ConversationActionsMenu(
+                    item = item,
+                    expanded = menuOpen,
+                    enabled = !item.pending,
+                    onExpand = { menuOpen = true },
+                    onDismiss = { menuOpen = false },
+                    onAction = { action ->
+                        // 先记录动作并关闭 Popup；真正的 mutation 由上面的 LaunchedEffect 在关闭重组
+                        // 提交后执行，避免置顶导致行跨分组移动时 Popup 与列表同时销毁/重建。
+                        deferredMenuAction = action
+                        menuOpen = false
+                    },
+                    onTogglePinned = onTogglePinned,
+                    onRename = onRename,
+                    onArchive = onArchive,
+                    onDelete = onDelete,
+                )
+            }
         },
     )
     HorizontalDivider(
@@ -510,8 +552,10 @@ private fun ConversationRow(
 private fun ConversationActionsMenu(
     item: ConversationListItem,
     expanded: Boolean,
+    enabled: Boolean,
     onExpand: () -> Unit,
     onDismiss: () -> Unit,
+    onAction: (() -> Unit) -> Unit,
     onTogglePinned: () -> Unit,
     onRename: () -> Unit,
     onArchive: () -> Unit,
@@ -520,6 +564,7 @@ private fun ConversationActionsMenu(
     Box {
         IconButton(
             onClick = onExpand,
+            enabled = enabled,
             modifier = Modifier.size(40.dp),
         ) {
             Icon(
@@ -542,18 +587,14 @@ private fun ConversationActionsMenu(
                     )
                 },
                 leadingIcon = { Icon(Icons.Rounded.PushPin, contentDescription = null) },
-                onClick = {
-                    onDismiss()
-                    onTogglePinned()
-                },
+                enabled = enabled,
+                onClick = { onAction(onTogglePinned) },
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.rename)) },
                 leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
-                onClick = {
-                    onDismiss()
-                    onRename()
-                },
+                enabled = enabled,
+                onClick = { onAction(onRename) },
             )
             DropdownMenuItem(
                 text = {
@@ -564,10 +605,8 @@ private fun ConversationActionsMenu(
                     )
                 },
                 leadingIcon = { Icon(Icons.Rounded.Archive, contentDescription = null) },
-                onClick = {
-                    onDismiss()
-                    onArchive()
-                },
+                enabled = enabled,
+                onClick = { onAction(onArchive) },
             )
             DropdownMenuItem(
                 text = {
@@ -583,10 +622,8 @@ private fun ConversationActionsMenu(
                         tint = MaterialTheme.colorScheme.error,
                     )
                 },
-                onClick = {
-                    onDismiss()
-                    onDelete()
-                },
+                enabled = enabled,
+                onClick = { onAction(onDelete) },
             )
         }
     }

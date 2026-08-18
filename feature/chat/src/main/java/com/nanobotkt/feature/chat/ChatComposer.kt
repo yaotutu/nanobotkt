@@ -64,6 +64,7 @@ import com.nanobotkt.core.model.SlashCommand
 internal fun HeroComposer(
     state: ComposerUiState,
     active: Boolean,
+    stopping: Boolean = false,
     slashCommands: List<SlashCommand>,
     skills: List<SkillSummary>,
     cliApps: List<CliAppInfo>,
@@ -81,6 +82,7 @@ internal fun HeroComposer(
     ComposerLayout(
         state = state,
         active = active,
+        stopping = stopping,
         slashCommands = slashCommands,
         skills = skills,
         cliApps = cliApps,
@@ -102,6 +104,7 @@ internal fun HeroComposer(
 internal fun ConversationComposer(
     state: ComposerUiState,
     active: Boolean,
+    stopping: Boolean = false,
     slashCommands: List<SlashCommand>,
     skills: List<SkillSummary>,
     cliApps: List<CliAppInfo>,
@@ -120,6 +123,7 @@ internal fun ConversationComposer(
     ComposerLayout(
         state = state,
         active = active,
+        stopping = stopping,
         slashCommands = slashCommands,
         skills = skills,
         cliApps = cliApps,
@@ -149,6 +153,7 @@ internal fun ConversationComposer(
 internal fun ComposerLayout(
     state: ComposerUiState,
     active: Boolean,
+    stopping: Boolean = false,
     slashCommands: List<SlashCommand>,
     skills: List<SkillSummary>,
     cliApps: List<CliAppInfo>,
@@ -344,6 +349,7 @@ internal fun ComposerLayout(
                         stopButton = stopButton,
                         sendEnabled = sendEnabled,
                         sending = state.sending,
+                        stopping = stopping,
                         // 空草稿时只保留弱化的发送图标；有草稿或运行中才形成高强调主操作。
                         controlColor = Color.Transparent,
                         sendColor = actionColor,
@@ -396,6 +402,7 @@ internal fun ComposerContextStrip(
 internal fun Composer(
     state: ComposerUiState,
     active: Boolean,
+    stopping: Boolean = false,
     slashCommands: List<SlashCommand>,
     skills: List<SkillSummary>,
     cliApps: List<CliAppInfo>,
@@ -416,6 +423,7 @@ internal fun Composer(
         HeroComposer(
             state = state,
             active = active,
+            stopping = stopping,
             slashCommands = slashCommands,
             skills = skills,
             cliApps = cliApps,
@@ -434,6 +442,7 @@ internal fun Composer(
         ConversationComposer(
             state = state,
             active = active,
+            stopping = stopping,
             slashCommands = slashCommands,
             skills = skills,
             cliApps = cliApps,

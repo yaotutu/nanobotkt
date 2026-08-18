@@ -77,7 +77,7 @@ interface ChatRepository {
     ): ChatSendOutcome
     suspend fun retry(messageId: String): ChatSendOutcome
     suspend fun fork(beforeUserIndex: Int, title: String? = null): String
-    fun stop()
+    fun stop(): Boolean
     suspend fun transcribeAudio(dataUrl: String, durationMs: Long): String
     suspend fun loadSessionAutomations(sessionKey: String): List<SessionAutomationJob>
     /** 异步加载当前会话中某次文件编辑对应的文件内容。 */
@@ -135,6 +135,8 @@ data class ChatUiState(
     val loadingOlder: Boolean = false,
     val sendingTurnIds: Set<String> = emptySet(),
     val activeTurnId: String? = null,
+    /** 正在向服务端提交停止请求的 turn；非空时 UI 必须禁用停止按钮，防止重复 `/stop`。 */
+    val stoppingTurnId: String? = null,
     val hasMoreBefore: Boolean = false,
     val beforeCursor: String? = null,
     val userMessageOffset: Int = 0,
@@ -709,8 +711,61 @@ class DefaultChatRepository @Inject constructor(
             }
         }
     }
-    override fun stop() {
-        mutableState.value.chatId?.let(transport::stopTurn)
+    override fun stop(): Boolean {
+        val request = synchronized(timelineWriterLock) {
+            val current = mutableState.value
+            val chatId = current.chatId ?: return false
+            val activeTurnId = current.activeTurnId ?: return false
+            // 第一次点击同步写入 pending；后续点击即使发生在网络协程真正启动前，也会在这里被拒绝，
+            // 从而保证一个活动 turn 最多发送一条 `/stop`，并避免重复清空本地 Queue。
+            if (current.stoppingTurnId == activeTurnId) return false
+            mutableState.value = current.copy(
+                stoppingTurnId = activeTurnId,
+                error = null,
+            )
+            StopTurnRequest(
+                sessionKey = current.sessionKey,
+                chatId = chatId,
+                turnId = activeTurnId,
+            )
+        }
+        scope.launch {
+            try {
+                transport.stopTurn(request.chatId)
+                // 命令被 Gateway 接受不代表原 turn 已经结束。pending 保持到对应 turn_end 或
+                // canonical 快照确认 activeTurnId 消失，避免确认窗口内再次点击产生重复取消消息。
+            } catch (error: CancellationException) {
+                clearStoppingRequest(request)
+                throw error
+            } catch (error: Exception) {
+                synchronized(timelineWriterLock) {
+                    val current = mutableState.value
+                    if (current.sessionKey == request.sessionKey &&
+                        current.chatId == request.chatId &&
+                        current.stoppingTurnId == request.turnId
+                    ) {
+                        mutableState.value = current.copy(
+                            stoppingTurnId = null,
+                            error = error.message ?: "stop_turn_failed",
+                        )
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    /** 仅允许原停止请求清理自己的 pending，避免切换会话后迟到失败回调覆盖新会话状态。 */
+    private fun clearStoppingRequest(request: StopTurnRequest) {
+        synchronized(timelineWriterLock) {
+            val current = mutableState.value
+            if (current.sessionKey == request.sessionKey &&
+                current.chatId == request.chatId &&
+                current.stoppingTurnId == request.turnId
+            ) {
+                mutableState.value = current.copy(stoppingTurnId = null)
+            }
+        }
     }
 
     override suspend fun transcribeAudio(dataUrl: String, durationMs: Long): String =
@@ -1031,11 +1086,40 @@ class DefaultChatRepository @Inject constructor(
                         activeTurnId = current.activeTurnId.takeUnless { activeTurnId ->
                             event.turnId == null || activeTurnId == event.turnId
                         },
+                        stoppingTurnId = current.stoppingTurnId.takeUnless { stoppingTurnId ->
+                            event.turnId == null || stoppingTurnId == event.turnId
+                        },
                         sendingTurnIds = event.turnId?.let { current.sendingTurnIds - it }
                             ?: current.sendingTurnIds,
                     )
                     publishLocked()
                 }
+                scope.launch {
+                    delay(250)
+                    refreshCanonical()
+                }
+            }
+
+            is InboundEvent.GoalStatus -> {
+                if (!event.status.equals("idle", ignoreCase = true)) return
+                synchronized(timelineWriterLock) {
+                    val current = mutableState.value
+                    // 服务端明确把 goal_status:idle 定义为终态兜底：取消或直接运行可能不会再发送
+                    // turn_end。这里必须按 turnId 收敛 active/stopping，否则 `/stop` 已成功但按钮会
+                    // 永久停在 loading；旧协议缺少 turnId 时，只能清理当前会话唯一的活动 turn。
+                    mutableState.value = current.copy(
+                        activeTurnId = current.activeTurnId.takeUnless { activeTurnId ->
+                            event.turnId == null || activeTurnId == event.turnId
+                        },
+                        stoppingTurnId = current.stoppingTurnId.takeUnless { stoppingTurnId ->
+                            event.turnId == null || stoppingTurnId == event.turnId
+                        },
+                        sendingTurnIds = event.turnId?.let { current.sendingTurnIds - it }
+                            ?: current.sendingTurnIds,
+                    )
+                }
+                // idle 只负责结束本地运行态，最终消息仍以规范 HTTP 快照为准；延迟一点等待服务端
+                // 完成落盘，并与 turn_end 路径共用串行 refresh，避免并发快照互相覆盖。
                 scope.launch {
                     delay(250)
                     refreshCanonical()
@@ -1337,6 +1421,13 @@ private enum class LocalDeliveryState {
 
 private data class PendingLocalSend(
     val result: MessageSendResult,
+)
+
+/** 停止请求携带完整会话身份，用于隔离切换会话、reset 与迟到失败回调。 */
+private data class StopTurnRequest(
+    val sessionKey: String?,
+    val chatId: String,
+    val turnId: String,
 )
 
 private const val MAX_HANDLED_ACCEPTANCE_FAILURES = 64

@@ -21,5 +21,6 @@ class SidebarViewModel @Inject constructor(
     fun toggleGroup(groupId: String) = viewModelScope.launch { repository.toggleGroup(groupId) }
     fun renameProject(projectKey: String, title: String) = viewModelScope.launch { repository.renameProject(projectKey, title) }
     fun delete(key: String, deleteAutomations: Boolean = false) = viewModelScope.launch { repository.deleteSession(key, deleteAutomations) }
+    fun markRead(chatId: String?) = repository.markRead(chatId)
     fun clearError() = repository.clearError()
 }

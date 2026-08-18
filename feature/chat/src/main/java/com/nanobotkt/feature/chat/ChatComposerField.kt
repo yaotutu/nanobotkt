@@ -213,13 +213,16 @@ internal fun ComposerPrimaryActionButton(
     stopButton: Boolean,
     sendEnabled: Boolean,
     sending: Boolean,
+    stopping: Boolean = false,
     controlColor: Color,
     sendColor: Color,
     sendContentColor: Color,
     onSend: () -> Unit,
     onStop: () -> Unit,
 ) {
-    val enabled = stopButton || (showSendAction && sendEnabled)
+    // 停止请求一旦进入 pending，按钮立即禁用并显示进度，防止连续点击产生多条 `/stop`。
+    val enabled = (stopButton && !stopping) || (showSendAction && sendEnabled)
+    val actionDescription = stringResource(if (stopButton) R.string.stop else R.string.send)
     Surface(
         onClick = {
             when {
@@ -228,7 +231,9 @@ internal fun ComposerPrimaryActionButton(
             }
         },
         enabled = enabled,
-        modifier = Modifier.size(48.dp),
+        // 描述放在始终存在的点击容器上；停止图标替换为 spinner 后，无障碍节点仍保留
+        // “停止”语义和 disabled 状态，测试与读屏都能感知请求已经进入 pending。
+        modifier = Modifier.size(48.dp).semantics { contentDescription = actionDescription },
         shape = CircleShape,
         // 外层透明 Surface 保留完整 48dp 点击与涟漪区域，内部视觉圆只占 40dp，
         // 因而输入胶囊更轻巧，同时不会牺牲无障碍触控尺寸。
@@ -242,7 +247,7 @@ internal fun ComposerPrimaryActionButton(
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     when {
-                        sending ->
+                        sending || stopping ->
                             CircularProgressIndicator(
                                 Modifier.size(18.dp),
                                 strokeWidth = 2.dp,
@@ -251,7 +256,7 @@ internal fun ComposerPrimaryActionButton(
                         stopButton ->
                             Icon(
                                 Icons.Rounded.Stop,
-                                contentDescription = stringResource(R.string.stop),
+                                contentDescription = null,
                                 modifier = Modifier.size(20.dp),
                                 tint = sendContentColor,
                             )
@@ -259,7 +264,7 @@ internal fun ComposerPrimaryActionButton(
                             // 纸飞机和“回到底部”的下箭头具有不同轮廓，降低两个右侧动作的导航歧义。
                             Icon(
                                 Icons.AutoMirrored.Rounded.Send,
-                                contentDescription = stringResource(R.string.send),
+                                contentDescription = null,
                                 modifier = Modifier.size(20.dp),
                                 tint = sendContentColor,
                             )

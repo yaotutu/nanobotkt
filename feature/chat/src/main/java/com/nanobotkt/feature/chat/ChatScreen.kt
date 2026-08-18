@@ -276,6 +276,7 @@ fun ChatScreen(
         Composer(
             state = composer,
             active = state.activeTurnId != null,
+            stopping = state.stoppingTurnId != null,
             slashCommands = state.slashCommands,
             skills = state.skills,
             cliApps = state.cliApps,

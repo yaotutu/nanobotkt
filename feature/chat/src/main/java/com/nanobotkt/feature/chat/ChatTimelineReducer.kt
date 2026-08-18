@@ -78,6 +78,9 @@ internal fun reduceChatTimeline(
     hasMoreBefore = metadata.hasMoreBefore,
     beforeCursor = metadata.beforeCursor,
     activeTurnId = metadata.activeTurnId,
+    // 规范快照或 turn_end 一旦确认原 turn 不再活动，停止 pending 必须同时收敛；
+    // 若仍是同一个 turn，则继续禁用按钮直到真正结束，而不是以 `/stop` ack 作为完成信号。
+    stoppingTurnId = current.stoppingTurnId?.takeIf { it == metadata.activeTurnId },
     userMessageOffset = metadata.userMessageOffset,
     limits = limits,
 )

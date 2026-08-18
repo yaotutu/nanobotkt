@@ -416,6 +416,25 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `rejected duplicate stop keeps queued prompts unchanged`() = runTest {
+        val viewModel = viewModel()
+        viewModel.open("websocket:a", "a")
+        runCurrent()
+        repository.setActiveTurn("turn-1")
+        runCurrent()
+        viewModel.updateText("keep queued")
+        viewModel.send()
+        repository.stopResult = false
+
+        viewModel.stop()
+
+        // Repository 返回 false 表示当前 turn 已有停止请求在途；ViewModel 不能再次触发
+        // Queue 的 stop 转换，否则重复点击会把本地状态当作新的停止操作处理。
+        assertEquals(1, repository.stopCount)
+        assertEquals(listOf("keep queued"), viewModel.composer.value.queuedPrompts.map(QueuedPrompt::text))
+    }
+
+    @Test
     fun `queued prompt can be removed without changing the remaining order`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
@@ -839,6 +858,8 @@ private class FakeChatRepository : ChatRepository {
         get() = sentPrompts.lastOrNull()?.quotedContext
     var transcript: String = ""
     var stopCount: Int = 0
+    /** 可控返回值用于验证 Repository 拒绝重复停止时，ViewModel 不会重复清理 Queue。 */
+    var stopResult: Boolean = true
     var sendBlock: suspend (String, List<OutboundMedia>, String?) -> Unit = { _, _, _ -> }
     var sendOutcome: ChatSendOutcome = ChatSendOutcome.Accepted
     var retryBlock: suspend (String) -> Unit = {}
@@ -924,8 +945,9 @@ private class FakeChatRepository : ChatRepository {
         return retryOutcome
     }
     override suspend fun fork(beforeUserIndex: Int, title: String?): String = forkBlock(beforeUserIndex, title)
-    override fun stop() {
+    override fun stop(): Boolean {
         stopCount += 1
+        return stopResult
     }
     override suspend fun transcribeAudio(dataUrl: String, durationMs: Long): String = transcript
     override suspend fun loadSessionAutomations(sessionKey: String): List<com.nanobotkt.core.model.SessionAutomationJob> =

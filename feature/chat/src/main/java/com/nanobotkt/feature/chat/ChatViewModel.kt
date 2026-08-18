@@ -440,10 +440,12 @@ constructor(
     }
 
     fun stop() {
+        // Repository 先同步抢占当前 turn 的停止权；只有第一次点击成功后才清 Queue。
+        // 这样重复点击既不会重复发送 `/stop`，也不会重复触发本地队列状态转换或提示。
+        if (!repository.stop()) return
         val current = composerCoordinator.value
         queueCoordinator.onStop(hasQueuedPrompts = current.queuedPrompts.isNotEmpty())
         composerCoordinator.value = current.copy(queuedPrompts = emptyList())
-        repository.stop()
     }
 
     fun clearError() = repository.clearError()

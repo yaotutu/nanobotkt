@@ -14,6 +14,7 @@ import com.nanobotkt.core.transport.TransportStatus
 import com.nanobotkt.core.workspace.WorkspaceAccessProvider
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.delay
@@ -688,6 +689,80 @@ class DefaultChatRepositoryTest {
         assertEquals(2, messageCount.get())
 
         assertTrue(socketRef.get().close(1000, "test_done"))
+        assertTrue(socketClosed.await(2, TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun `stop is idempotent until goal idle confirms cancellation`() = runBlocking {
+        val socketRef = AtomicReference<WebSocket>()
+        val socketOpened = CountDownLatch(1)
+        val socketClosed = CountDownLatch(1)
+        val stopFrameReceived = CountDownLatch(1)
+        val stopFrameCount = AtomicInteger(0)
+        val active = AtomicBoolean(true)
+        val webSocketListener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                socketRef.set(webSocket)
+                socketOpened.countDown()
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val frame = json.parseToJsonElement(text).jsonObject
+                if (frame["type"]?.jsonPrimitive?.content != "message") return
+                if (frame["content"]?.jsonPrimitive?.content != "/stop") return
+                stopFrameCount.incrementAndGet()
+                stopFrameReceived.countDown()
+                val systemTurnId = frame.getValue("turn_id").jsonPrimitive.content
+                // `/stop` 的命令响应只确认 Gateway 已受理，不代表原 agent turn 已经结束。
+                webSocket.send(
+                    """{"event":"message","chat_id":"current-chat","text":"cancelling","turn_id":"$systemTurnId"}""",
+                )
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                socketClosed.countDown()
+            }
+        }
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.path?.substringBefore('?') == "/ws" -> MockResponse().withWebSocketUpgrade(webSocketListener)
+                request.path?.substringBefore('?')?.endsWith("/webui-thread") == true -> {
+                    val activeTurn = if (active.get()) "\"active-turn\"" else "null"
+                    jsonResponse(
+                        """{"schemaVersion":1,"sessionKey":"webui:current","messages":[],"active_turn_id":$activeTurn}""",
+                    )
+                }
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+
+        val repository = newRepository()
+        transport.connect()
+        withTimeout(2_000) { transport.state.first { it.status == TransportStatus.OPEN } }
+        repository.openSession("webui:current", "current-chat")
+        awaitState { !it.loading && it.activeTurnId == "active-turn" }
+        assertTrue(socketOpened.await(2, TimeUnit.SECONDS))
+
+        assertTrue(repository.stop())
+        assertFalse(repository.stop())
+        assertFalse(repository.stop())
+        assertEquals("active-turn", repository.state.value.stoppingTurnId)
+        assertTrue(stopFrameReceived.await(2, TimeUnit.SECONDS))
+        delay(100)
+        assertEquals(1, stopFrameCount.get())
+        // 命令 ack 后仍保持 pending，确保 ack 与真实 turn_end 之间无法再次发送取消命令。
+        assertEquals("active-turn", repository.state.value.stoppingTurnId)
+
+        active.set(false)
+        val socket = socketRef.get()
+        assertNotNull(socket)
+        // 取消路径允许只有 goal_status:idle 而没有 turn_end；idle 必须结束 active turn 并恢复按钮。
+        socket.send(
+            """{"event":"goal_status","chat_id":"current-chat","status":"idle","turn_id":"active-turn"}""",
+        )
+        awaitState { it.activeTurnId == null && it.stoppingTurnId == null }
+
+        assertTrue(socket.close(1000, "test_done"))
         assertTrue(socketClosed.await(2, TimeUnit.SECONDS))
     }
 

@@ -15,6 +15,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +38,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nanobotkt.core.designsystem.NanobotTheme
 import com.nanobotkt.core.model.ChatSummary
+import com.nanobotkt.core.model.SidebarSortMode
 import com.nanobotkt.core.persistence.DensityPreference
 import com.nanobotkt.core.persistence.ThemePreference
 import com.nanobotkt.core.transport.TransportStatus
@@ -57,6 +60,7 @@ import com.nanobotkt.feature.sidebar.SidebarUiState
 import com.nanobotkt.feature.sidebar.SidebarViewModel
 import com.nanobotkt.feature.skills.SkillsScreen
 import com.nanobotkt.feature.workspaces.ui.WorkspacesScreen
+import java.util.Locale
 
 
 @Composable
@@ -161,6 +165,7 @@ private fun ReadyRoot(
     val destination = rootUiState.destination
     val draftingNewTopic = rootUiState.draftingNewTopic
     val lifecycleOwner = LocalLifecycleOwner.current
+    val sidebarSnackbar = remember { SnackbarHostState() }
 
     DisposableEffect(lifecycleOwner, chatViewModel) {
         val observer = LifecycleEventObserver { _, event ->
@@ -181,8 +186,16 @@ private fun ReadyRoot(
     }
 
     LaunchedEffect(sessionEpoch) { sidebarViewModel.refresh() }
-    val visibleSessions = remember(sidebar.sessions, sidebar.sidebar) {
-        sidebar.sessions.filter { session ->
+    LaunchedEffect(sidebar.error) {
+        val error = sidebar.error ?: return@LaunchedEffect
+        sidebarSnackbar.showSnackbar(error)
+        sidebarViewModel.clearError()
+    }
+    val sortedSessions = remember(sidebar.sessions, sidebar.sidebar) {
+        sortSidebarSessions(sidebar.sessions, sidebar)
+    }
+    val visibleSessions = remember(sortedSessions, sidebar.sidebar) {
+        sortedSessions.filter { session ->
             sidebar.sidebar.view.showArchived || session.key !in sidebar.sidebar.archivedKeys
         }
     }
@@ -198,10 +211,14 @@ private fun ReadyRoot(
         }
     }
     val selected = visibleSessions.firstOrNull { it.key == selectedKey }
+    LaunchedEffect(selected?.chatId) {
+        // Sidebar 自己维护全局活动状态；Root 只把当前选择作为最小边界传入，选中即读。
+        sidebarViewModel.markRead(selected?.chatId)
+    }
     // Sheet 需要同时拿到 active/archived 两种前端展示集合。两者都来自同一份 Sidebar
     // 快照，归档只是客户端过滤，不改变服务端返回的数据或会话选择算法。
-    val conversationItems = remember(sidebar.sessions, sidebar.sidebar) {
-        sidebar.sessions
+    val conversationItems = remember(sortedSessions, sidebar) {
+        sortedSessions
             .filter { it.key !in sidebar.sidebar.archivedKeys }
             .map { session ->
                 ConversationListItem(
@@ -210,11 +227,14 @@ private fun ReadyRoot(
                     preview = session.preview,
                     pinned = session.key in sidebar.sidebar.pinnedKeys,
                     archived = false,
+                    pending = session.key in sidebar.pendingKeys,
+                    running = session.chatId in sidebar.runningChatIds,
+                    unread = session.chatId in sidebar.unreadChatIds,
                 )
             }
     }
-    val archivedConversationItems = remember(sidebar.sessions, sidebar.sidebar) {
-        sidebar.sessions
+    val archivedConversationItems = remember(sortedSessions, sidebar) {
+        sortedSessions
             .filter { it.key in sidebar.sidebar.archivedKeys }
             .map { session ->
                 ConversationListItem(
@@ -223,6 +243,9 @@ private fun ReadyRoot(
                     preview = session.preview,
                     pinned = session.key in sidebar.sidebar.pinnedKeys,
                     archived = true,
+                    pending = session.key in sidebar.pendingKeys,
+                    running = session.chatId in sidebar.runningChatIds,
+                    unread = session.chatId in sidebar.unreadChatIds,
                 )
             }
     }
@@ -333,6 +356,10 @@ private fun ReadyRoot(
                 onSectionChange = appViewModel::setSettingsSection,
             )
         }
+        SnackbarHost(
+            hostState = sidebarSnackbar,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+        )
     }
 }
 
@@ -369,6 +396,34 @@ internal fun reconcileSessionSelection(
     )
 }
 
+
+/**
+ * 按服务端 Sidebar view 的显式排序模式生成稳定顺序。
+ *
+ * 时间字段是 Gateway 返回的 ISO-8601 字符串，同一格式下可直接按字典序比较；缺失值统一排在末尾，
+ * 再以标题和 key 作为稳定 tie-breaker，避免刷新时相同时间的行随机跳动。
+ */
+internal fun sortSidebarSessions(
+    sessions: List<ChatSummary>,
+    state: SidebarUiState,
+): List<ChatSummary> {
+    val titleOf: (ChatSummary) -> String = { session ->
+        session.displayTitle(state).lowercase(Locale.ROOT)
+    }
+    val stableTitleComparator = compareBy<ChatSummary>(titleOf).thenBy(ChatSummary::key)
+    val primary = when (state.sidebar.view.sort) {
+        SidebarSortMode.UPDATED_DESC -> compareByDescending<ChatSummary> {
+            it.updatedAt ?: it.createdAt ?: ""
+        }
+        SidebarSortMode.CREATED_DESC -> compareByDescending<ChatSummary> { it.createdAt ?: "" }
+        SidebarSortMode.TITLE_ASC -> stableTitleComparator
+    }
+    return if (state.sidebar.view.sort == SidebarSortMode.TITLE_ASC) {
+        sessions.sortedWith(primary)
+    } else {
+        sessions.sortedWith(primary.then(stableTitleComparator))
+    }
+}
 
 private fun ChatSummary.displayTitle(state: SidebarUiState): String =
     state.sidebar.titleOverrides[key] ?: title?.takeIf(String::isNotBlank) ?: preview.takeIf(String::isNotBlank) ?: chatId

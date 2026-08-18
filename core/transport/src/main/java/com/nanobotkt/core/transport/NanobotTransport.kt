@@ -352,7 +352,16 @@ class NanobotTransport @Inject constructor(
         }
     }
 
-    fun stopTurn(chatId: String) { scope.launch { runCatching { sendSystemCommand(chatId, "/stop", 5_000) } } }
+    /**
+     * 请求服务端停止指定会话的当前回合。
+     *
+     * 这里必须保留为可等待的挂起边界：调用方需要在请求失败时恢复按钮状态并展示错误，不能再由
+     * Transport 私自启动协程后吞掉异常。重复点击的幂等保护属于 Chat 状态机，Transport 只负责
+     * 一次明确的协议请求。
+     */
+    suspend fun stopTurn(chatId: String) {
+        sendSystemCommand(chatId, "/stop", 5_000)
+    }
 
     suspend fun transcribeAudio(dataUrl: String, durationMs: Long? = null, timeoutMs: Long = 30_000): String {
         check(networkAvailable) { "network_unavailable" }
