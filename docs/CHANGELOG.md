@@ -1,9 +1,11 @@
-# NanobotKT 0.1.13
+# NanobotKT 0.1.14
 
-> 自动构建发布，提交：`a9cfb6a`。
+> 自动构建发布，提交：`467022e`。
 
 ## 变更
 
+- fix: 修复会话停止与列表状态同步 (`467022e`)
+- chore(dev): prepare v0.1.13 (`3ecb6e8`)
 - fix(chat): preserve IME composition in composer (`a9cfb6a`)
 - chore(dev): prepare v0.1.12 (`b9a1bde`)
 - fix(settings): resolve Material 3 integration conflicts (`d26ce4d`)
