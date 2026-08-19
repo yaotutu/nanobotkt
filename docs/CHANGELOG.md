@@ -1,9 +1,12 @@
-# NanobotKT 0.1.14
+# NanobotKT 0.1.15
 
-> 自动构建发布，提交：`467022e`。
+> 自动构建发布，提交：`fb26cd1`。
 
 ## 变更
 
+- refactor(ui): align product surfaces with Material 3 (`fb26cd1`)
+- chore(codex): add dev release workflow skill (`444918b`)
+- chore(dev): prepare v0.1.14 (`98d26e0`)
 - fix: 修复会话停止与列表状态同步 (`467022e`)
 - chore(dev): prepare v0.1.13 (`3ecb6e8`)
 - fix(chat): preserve IME composition in composer (`a9cfb6a`)
