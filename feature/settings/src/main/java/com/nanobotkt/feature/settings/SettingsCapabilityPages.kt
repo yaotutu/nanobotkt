@@ -35,6 +35,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
+import com.nanobotkt.core.designsystem.NanobotStatusLabel
+import com.nanobotkt.core.designsystem.NanobotStatusTone
 import com.nanobotkt.core.model.RuntimeSurface
 import com.nanobotkt.core.network.GatewayServerAddressError
 import com.nanobotkt.core.network.GatewayServerAddressResult
@@ -357,9 +359,11 @@ internal fun ImageGenerationPage(
             title = "Provider status",
             description = "Image generation reuses provider credentials from Providers.",
         ) {
-            StatusPill(
-                text = if (providerConfigured) "Configured" else "Not configured",
-                positive = providerConfigured,
+            NanobotStatusLabel(
+                label = if (providerConfigured) "Configured" else "Not configured",
+                tone =
+                    if (providerConfigured) NanobotStatusTone.Success
+                    else NanobotStatusTone.Warning,
             )
             if (!providerConfigured) {
                 Spacer(Modifier.height(9.dp))
@@ -502,9 +506,11 @@ internal fun TranscriptionPage(
             title = "Provider status",
             description = "API keys stay under providers, not in transcription settings.",
         ) {
-            StatusPill(
-                text = if (providerConfigured) "Configured" else "Not configured",
-                positive = providerConfigured,
+            NanobotStatusLabel(
+                label = if (providerConfigured) "Configured" else "Not configured",
+                tone =
+                    if (providerConfigured) NanobotStatusTone.Success
+                    else NanobotStatusTone.Warning,
             )
             if (!providerConfigured) {
                 Spacer(Modifier.height(9.dp))
@@ -641,7 +647,12 @@ internal fun WebSearchPage(
         }
         if (selectedProvider?.credential == "none") {
             CardDivider()
-            FormSettingRow("Credentials") { StatusPill("No credential required", positive = true) }
+            FormSettingRow("Credentials") {
+                NanobotStatusLabel(
+                    label = "No credential required",
+                    tone = NanobotStatusTone.Success,
+                )
+            }
         }
         if (acceptsApiKey) {
             CardDivider()

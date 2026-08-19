@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -23,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotRowDivider
 
 /** 保存状态、分段选择、开关与通用间距组件。 */
 @Composable
@@ -124,10 +124,8 @@ internal fun ToggleSetting(checked: Boolean, onCheckedChange: (Boolean) -> Unit)
 
 @Composable
 internal fun CardDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 16.dp),
-        color = MaterialTheme.colorScheme.outlineVariant,
-    )
+    // 保留既有调用名以控制改动范围，实际分隔线统一使用设计系统的正文缩进规则。
+    NanobotRowDivider()
 }
 
 @Composable

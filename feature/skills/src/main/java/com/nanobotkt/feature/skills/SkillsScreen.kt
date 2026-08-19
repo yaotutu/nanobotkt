@@ -12,6 +12,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nanobotkt.core.designsystem.NanobotEmptyState
+import com.nanobotkt.core.designsystem.NanobotErrorState
+import com.nanobotkt.core.designsystem.NanobotNavigationRow
+import com.nanobotkt.core.designsystem.NanobotRowDivider
+import com.nanobotkt.core.designsystem.NanobotStatusLabel
+import com.nanobotkt.core.designsystem.NanobotStatusTone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,23 +46,32 @@ fun SkillsScreen(onBack: () -> Unit, viewModel: SkillsViewModel = hiltViewModel(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (state.loading && state.skills == null) item { CircularProgressIndicator() }
-            state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-            items(state.skills?.skills.orEmpty(), key = { it.name }) { s ->
-                ElevatedCard(
-                    onClick = { viewModel.select(s.name) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    ListItem(
-                        headlineContent = { Text(s.name) },
-                        supportingContent = { Text(s.description) },
-                        trailingContent = {
-                            AssistChip(
-                                onClick = {},
-                                label = { Text(if (s.available) "Available" else "Unavailable") },
-                            )
-                        },
+            state.error?.let {
+                item {
+                    NanobotErrorState(
+                        title = "Unable to load skills",
+                        message = it,
+                        retryLabel = "Retry",
+                        onRetry = viewModel::refresh,
                     )
                 }
+            }
+            items(state.skills?.skills.orEmpty(), key = { it.name }) { skill ->
+                NanobotNavigationRow(
+                    headline = skill.name,
+                    supportingText = skill.description,
+                    onClick = { viewModel.select(skill.name) },
+                    trailingContent = {
+                        NanobotStatusLabel(
+                            label = if (skill.available) "Available" else "Unavailable",
+                            tone = if (skill.available) NanobotStatusTone.Success else NanobotStatusTone.Warning,
+                        )
+                    },
+                )
+                NanobotRowDivider()
+            }
+            if (!state.loading && state.error == null && state.skills?.skills?.isEmpty() == true) {
+                item { NanobotEmptyState(title = "No skills available") }
             }
         }
     }

@@ -25,6 +25,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 
 /** Provider 品牌标记与远程 Logo 渲染。 */
 internal enum class ProviderMarkSize {
@@ -53,8 +54,9 @@ internal fun ProviderMark(
             Icon(
                 imageVector = Icons.Outlined.ErrorOutline,
                 contentDescription = null,
-                // “未配置”是需要关注但不等同于保存失败的状态，使用 tertiary 避免滥用 error。
-                tint = MaterialTheme.colorScheme.tertiary,
+                // “未配置”是需要关注但不等同于保存失败的 Warning。统一读取产品状态色，
+                // 不再由 Settings 私自借用 tertiary 品牌角色。
+                tint = NanobotThemeDefaults.statusColors.warning,
                 modifier = Modifier.size(if (size == ProviderMarkSize.LIST) 20.dp else 16.dp),
             )
         }

@@ -23,7 +23,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -50,6 +49,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nanobotkt.core.designsystem.NanobotEmptyState
+import com.nanobotkt.core.designsystem.NanobotErrorState
+import com.nanobotkt.core.designsystem.NanobotRowDivider
 import com.nanobotkt.core.model.McpPresetInfo
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -63,6 +65,17 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
     var importDialog by remember { mutableStateOf(false) }
     var cursorImportDialog by remember { mutableStateOf(false) }
     var customDialog by remember { mutableStateOf(false) }
+    // 搜索结果在列表组合前一次性派生，保证空状态与实际渲染使用完全相同的过滤条件。
+    val filteredCliApps = state.cli?.apps.orEmpty().filter { app ->
+        query.isBlank() ||
+            app.displayName.contains(query, true) ||
+            app.description.contains(query, true)
+    }
+    val filteredMcpPresets = state.mcp?.presets.orEmpty().filter { preset ->
+        query.isBlank() ||
+            preset.displayName.contains(query, true) ||
+            preset.description.contains(query, true)
+    }
 
     Scaffold(
         topBar = {
@@ -102,10 +115,11 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                 singleLine = true,
             )
             state.error?.let {
-                Text(
-                    text = it,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.error,
+                NanobotErrorState(
+                    title = "Unable to load apps",
+                    message = it,
+                    retryLabel = "Retry",
+                    onRetry = viewModel::refresh,
                 )
             }
             if (state.loading && state.cli == null) {
@@ -117,15 +131,11 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(
-                        state.cli?.apps.orEmpty().filter {
-                            query.isBlank() ||
-                                it.displayName.contains(query, true) ||
-                                it.description.contains(query, true)
-                        },
+                        filteredCliApps,
                         key = { it.name },
                     ) { app ->
                         val pending = "cli:${app.name}" in state.pending
-                        ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth()) {
                             ListItem(
                                 headlineContent = { Text(app.displayName) },
                                 supportingContent = { Text("${app.description}\n${app.status}") },
@@ -157,6 +167,14 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                                     }
                                 },
                             )
+                            NanobotRowDivider()
+                        }
+                    }
+                    if (state.cli != null && filteredCliApps.isEmpty() && state.error == null) {
+                        item {
+                            NanobotEmptyState(
+                                title = if (query.isBlank()) "No CLI apps available" else "No matching CLI apps",
+                            )
                         }
                     }
                 }
@@ -179,11 +197,7 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                         }
                     }
                     items(
-                        state.mcp?.presets.orEmpty().filter {
-                            query.isBlank() ||
-                                it.displayName.contains(query, true) ||
-                                it.description.contains(query, true)
-                        },
+                        filteredMcpPresets,
                         key = { it.name },
                     ) { preset ->
                         val values = mcpFieldValues[preset.name].orEmpty()
@@ -195,7 +209,7 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                         val showFieldInputs = preset.requiredFields.any { !it.configured }
                         val pending = "mcp:${preset.name}" in state.pending
 
-                        ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth()) {
                             Column {
                                 ListItem(
                                     headlineContent = { Text(preset.displayName) },
@@ -289,8 +303,15 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                                     selections = mcpToolSelections,
                                     viewModel = viewModel,
                                 )
-                                Spacer(Modifier.height(4.dp))
+                                NanobotRowDivider(modifier = Modifier.padding(top = 4.dp))
                             }
+                        }
+                    }
+                    if (state.mcp != null && filteredMcpPresets.isEmpty() && state.error == null) {
+                        item {
+                            NanobotEmptyState(
+                                title = if (query.isBlank()) "No MCP integrations available" else "No matching MCP integrations",
+                            )
                         }
                     }
                 }

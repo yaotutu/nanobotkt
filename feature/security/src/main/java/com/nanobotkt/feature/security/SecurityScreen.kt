@@ -14,7 +14,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +35,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.nanobotkt.core.designsystem.NanobotEmptyState
+import com.nanobotkt.core.designsystem.NanobotErrorState
+import com.nanobotkt.core.designsystem.NanobotStatusLabel
+import com.nanobotkt.core.designsystem.NanobotStatusTone
+import com.nanobotkt.core.designsystem.NanobotSummarySurface
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.PairingRequestInfo
 import kotlinx.coroutines.delay
 
@@ -114,7 +119,14 @@ fun SecurityScreen(
                 Text("This screen polls while it is open. Approvals and denials are always confirmed by the gateway.")
             }
             state.error?.let { error ->
-                item { Text(error, color = MaterialTheme.colorScheme.error) }
+                item {
+                    NanobotErrorState(
+                        title = "Unable to load pairing requests",
+                        message = error,
+                        retryLabel = "Retry",
+                        onRetry = viewModel::refresh,
+                    )
+                }
             }
             if (state.loading && state.payload == null) {
                 item { CircularProgressIndicator() }
@@ -128,15 +140,21 @@ fun SecurityScreen(
                     onDeny = { viewModel.deny(request.code) },
                 )
             }
-            if (state.payload?.requests?.isEmpty() == true) {
-                item { Text("No pending pairing requests") }
+            if (state.payload?.requests?.isEmpty() == true && state.error == null) {
+                item {
+                    NanobotEmptyState(
+                        title = "No pending pairing requests",
+                        description = "New requests will appear here while this screen is open.",
+                    )
+                }
             }
             state.payload?.lastAction?.let { action ->
                 item {
                     Text(
                         action.message,
+                        // 操作成功是业务 Success，不再借用品牌 primary；失败继续复用 Material error。
                         color = if (action.ok) {
-                            MaterialTheme.colorScheme.primary
+                            NanobotThemeDefaults.statusColors.success
                         } else {
                             MaterialTheme.colorScheme.error
                         },
@@ -155,25 +173,19 @@ private fun PairingRequestCard(
     onApprove: () -> Unit,
     onDeny: () -> Unit,
 ) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(request.channel, style = MaterialTheme.typography.titleMedium)
-            Text(request.senderId)
-            Text("Code: ${request.code}")
-            // 同一次重组只计算一次倒计时文本，避免文本和颜色读取到不同的本地时间。
-            val expiryText = pairingExpiryText(request, nowMs)
-            Text(
-                expiryText,
-                color = if (expiryText == "Expired") {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.secondary
-                },
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(enabled = !pending, onClick = onApprove) { Text("Approve") }
-                OutlinedButton(enabled = !pending, onClick = onDeny) { Text("Deny") }
-            }
+    NanobotSummarySurface {
+        Text(request.channel, style = MaterialTheme.typography.titleMedium)
+        Text(request.senderId, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Code: ${request.code}")
+        // 同一次重组只计算一次倒计时文本，避免文本和颜色读取到不同的本地时间。
+        val expiryText = pairingExpiryText(request, nowMs)
+        NanobotStatusLabel(
+            label = expiryText,
+            tone = if (expiryText == "Expired") NanobotStatusTone.Error else NanobotStatusTone.Warning,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(enabled = !pending, onClick = onApprove) { Text("Approve") }
+            OutlinedButton(enabled = !pending, onClick = onDeny) { Text("Deny") }
         }
     }
 }

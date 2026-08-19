@@ -22,7 +22,6 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -51,6 +50,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.nanobotkt.core.model.AutomationSchedule
 import com.nanobotkt.core.model.AutomationUpdatePayload
 import com.nanobotkt.core.model.SessionAutomationJob
+import com.nanobotkt.core.designsystem.NanobotEmptyState
+import com.nanobotkt.core.designsystem.NanobotErrorState
+import com.nanobotkt.core.designsystem.NanobotRowDivider
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -122,10 +124,11 @@ fun AutomationsScreen(
                 }
             }
             state.error?.let {
-                Text(
-                    it,
-                    Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.error,
+                NanobotErrorState(
+                    title = "Unable to load automations",
+                    message = it,
+                    retryLabel = "Retry",
+                    onRetry = viewModel::refresh,
                 )
             }
             LazyColumn(
@@ -142,7 +145,7 @@ fun AutomationsScreen(
                     val canManage = job.protected != true
                     val canRun = canManage && job.origin != null && job.enabled && !isLocalTrigger && !pending
                     val canToggle = canManage && (job.enabled || job.origin != null) && !pending
-                    ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth()) {
                         Column {
                             ListItem(
                                 headlineContent = { Text(job.name) },
@@ -238,7 +241,17 @@ fun AutomationsScreen(
                                     color = if (entry.status == "error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                                 )
                             }
+                            NanobotRowDivider(modifier = Modifier.padding(top = 8.dp))
                         }
+                    }
+                }
+                // 只有 payload 已返回且过滤结果为空时才展示空状态，避免与首次 Loading 或 Error 混淆。
+                if (state.payload != null && jobs.isEmpty() && state.error == null) {
+                    item {
+                        NanobotEmptyState(
+                            title = "No automations found",
+                            description = "Try another filter or create an automation from a supported entry point.",
+                        )
                     }
                 }
             }

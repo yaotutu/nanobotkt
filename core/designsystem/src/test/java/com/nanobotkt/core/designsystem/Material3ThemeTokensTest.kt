@@ -8,20 +8,23 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 /**
- * 锁定第一阶段的设计令牌契约。
+ * 锁定 NanobotKT 在 Material 3 之上的增量令牌契约。
  *
- * 这些测试不渲染 UI，只验证主题入口不会悄悄退回旧的品牌色、非 MD3 间距或不完整的 type scale。
+ * 这些测试不渲染 UI，只验证主题入口不会悄悄退回模板紫色、旧品牌橙色、非 MD3 间距
+ * 或不完整的 type scale。
  * 具体组件截图仍需要在 Compose Preview/模拟器中由设计评审确认。
  */
 class Material3ThemeTokensTest {
     @Test
-    fun colorSchemesUseTheMaterial3BaselineRoles() {
-        assertEquals(Color(0xFF6750A4), NanobotLightColorScheme.primary)
-        assertEquals(Color(0xFFD0BCFF), NanobotDarkColorScheme.primary)
-        assertEquals(Color(0xFFFFFBFE), NanobotLightColorScheme.background)
-        assertEquals(Color(0xFF1C1B1F), NanobotDarkColorScheme.background)
+    fun colorSchemesUseTheNanobotBrandRoles() {
+        // 品牌主色使用低彩度靛蓝，浅色与深色分别使用同一 tonal palette 的不同角色。
+        assertEquals(Color(0xFF415F91), NanobotLightColorScheme.primary)
+        assertEquals(Color(0xFFAAC7FF), NanobotDarkColorScheme.primary)
+        assertEquals(Color(0xFFF9F9FF), NanobotLightColorScheme.background)
+        assertEquals(Color(0xFF111318), NanobotDarkColorScheme.background)
 
-        // 旧版 Nanobot 的橙色强调色不再出现在全局 tertiary role 中。
+        // Material 模板紫色和旧版 Nanobot 橙色都不应重新成为全局强调角色。
+        assertNotEquals(Color(0xFF6750A4), NanobotLightColorScheme.primary)
         assertNotEquals(Color(0xFFEF8E30), NanobotLightColorScheme.tertiary)
         assertNotEquals(Color(0xFFEF8E30), NanobotDarkColorScheme.tertiary)
     }

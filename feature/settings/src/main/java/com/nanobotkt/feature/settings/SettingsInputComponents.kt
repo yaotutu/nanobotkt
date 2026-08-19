@@ -32,7 +32,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +48,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 
 /** 版本检查、模型选择、密钥和数值输入组件。 */
 @Composable
@@ -81,7 +81,9 @@ internal fun VersionCheckRow(
                     if (updateText != null) {
                         MaterialTheme.colorScheme.primary
                     } else {
-                        MaterialTheme.colorScheme.tertiary
+                        // “已是最新版本”是成功结果，使用统一 Success 状态色；有可用更新时
+                        // 仍保留 primary，表示一个可继续执行的产品动作。
+                        NanobotThemeDefaults.statusColors.success
                     },
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -342,34 +344,5 @@ internal fun NumberStepper(
         ) {
             Icon(imageVector = Icons.Rounded.Add, contentDescription = "Increase")
         }
-    }
-}
-
-/**
- * 只读状态标签没有对应的可点击 Material chip 语义，因此保留 Material Surface 作为语义容器，
- * 但颜色、形状和文字层级全部来自 MaterialTheme，避免维护第二套成功/中性色板。
- */
-@Composable
-internal fun StatusPill(text: String, positive: Boolean) {
-    Surface(
-        shape = MaterialTheme.shapes.small,
-        color =
-            if (positive) {
-                MaterialTheme.colorScheme.tertiaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHighest
-            },
-        contentColor =
-            if (positive) {
-                MaterialTheme.colorScheme.onTertiaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelMedium,
-        )
     }
 }

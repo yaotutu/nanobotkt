@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.WorkspaceAccessMode
 import com.nanobotkt.core.model.WorkspaceControls
 import com.nanobotkt.core.model.WorkspaceScope
@@ -111,8 +112,9 @@ internal fun WorkspaceControls(
                     } else {
                         MaterialTheme.colorScheme.surface
                     }
-                // FULL 权限仍然保留警示语义，但使用主题 tertiary 角色，不重新引入旧橙色。
-                val accentColor = MaterialTheme.colorScheme.tertiary
+                // FULL 权限是明确的高权限 Warning。颜色来自 Design System 的业务状态扩展，
+                // 避免 Feature 自行选择 tertiary 或硬编码橙色，保证所有主题下语义一致。
+                val accentColor = NanobotThemeDefaults.statusColors.warning
                 val labelColor =
                     if (heroStyle && full) {
                         accentColor
@@ -147,7 +149,7 @@ internal fun WorkspaceControls(
                                 modifier = Modifier.size(14.dp),
                                 tint =
                                     if (heroStyle) accentColor
-                                    else MaterialTheme.colorScheme.tertiary,
+                                    else NanobotThemeDefaults.statusColors.warning,
                             )
                         }
                         Text(
@@ -184,7 +186,7 @@ internal fun WorkspaceControls(
                                 Icons.Rounded.WarningAmber,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.tertiary,
+                                tint = NanobotThemeDefaults.statusColors.warning,
                             )
                     },
                     trailingIcon = {
@@ -355,7 +357,7 @@ internal fun WorkspaceAccessDialog(
                     enabled = !disabled && controls?.canUseFullAccess != false,
                     color =
                         if (scope.accessMode == WorkspaceAccessMode.FULL) {
-                            MaterialTheme.colorScheme.tertiaryContainer
+                            NanobotThemeDefaults.statusColors.warningContainer
                         } else {
                             MaterialTheme.colorScheme.surface
                         },
@@ -365,7 +367,12 @@ internal fun WorkspaceAccessDialog(
                         Text(
                             stringResource(R.string.workspace_access_full),
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.tertiary,
+                            color =
+                                if (scope.accessMode == WorkspaceAccessMode.FULL) {
+                                    NanobotThemeDefaults.statusColors.onWarningContainer
+                                } else {
+                                    NanobotThemeDefaults.statusColors.warning
+                                },
                         )
                         Text(
                             stringResource(R.string.workspace_access_full_description),

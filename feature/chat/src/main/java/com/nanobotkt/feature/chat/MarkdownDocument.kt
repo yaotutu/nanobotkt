@@ -239,12 +239,12 @@ internal fun MarkdownDocument(
 @Composable
 private fun MarkdownHeading(block: MarkdownBlock.Heading, modifier: Modifier = Modifier) {
     // Material 默认 headline 对聊天正文偏大。这里保留清晰层级，但把尺寸收敛到移动端
-    // 文档阅读更舒适的 18–24sp，并移除不适合中英文混排的额外字距。
+    // 文档阅读更舒适的 17–23sp，并移除不适合中英文混排的额外字距。
     val style =
         when (block.level) {
-            1 -> MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp, lineHeight = 32.sp)
-            2 -> MaterialTheme.typography.titleLarge.copy(fontSize = 21.sp, lineHeight = 29.sp)
-            3 -> MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 26.sp)
+            1 -> MaterialTheme.typography.headlineSmall.copy(fontSize = 23.sp, lineHeight = 31.sp)
+            2 -> MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
+            3 -> MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 25.sp)
             else -> MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
         }.copy(letterSpacing = 0.sp)
     Text(

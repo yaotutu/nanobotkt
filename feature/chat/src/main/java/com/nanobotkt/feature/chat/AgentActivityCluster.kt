@@ -41,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.ToolProgressEvent
 import com.nanobotkt.core.model.UiCliAppAttachment
 import com.nanobotkt.core.model.UiFileEdit
@@ -232,12 +233,13 @@ internal fun AgentActivityCluster(
             statusText
         }
     val emphasized = displayMode == ActivityDisplayMode.Emphasized
+    val statusColors = NanobotThemeDefaults.statusColors
     val containerColor =
         when (status) {
             ActivityStatus.Failed -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.56f)
-            ActivityStatus.Waiting -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.56f)
-            ActivityStatus.Running -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.52f)
-            ActivityStatus.Completed -> MaterialTheme.colorScheme.surface
+            ActivityStatus.Waiting -> statusColors.warningContainer.copy(alpha = 0.56f)
+            ActivityStatus.Running -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
+            ActivityStatus.Completed -> MaterialTheme.colorScheme.surfaceContainerLowest
         }
 
     Surface(
@@ -366,7 +368,7 @@ private fun ActivityStateIcon(status: ActivityStatus) {
                 Icons.Rounded.Schedule,
                 contentDescription = null,
                 modifier = Modifier.size(19.dp),
-                tint = MaterialTheme.colorScheme.tertiary,
+                tint = NanobotThemeDefaults.statusColors.warning,
             )
         ActivityStatus.Failed ->
             Icon(
@@ -380,7 +382,7 @@ private fun ActivityStateIcon(status: ActivityStatus) {
                 Icons.Rounded.Check,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = NanobotThemeDefaults.statusColors.success,
             )
     }
 }

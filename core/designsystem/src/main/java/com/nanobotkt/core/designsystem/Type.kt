@@ -1,4 +1,4 @@
-﻿package com.nanobotkt.core.designsystem
+package com.nanobotkt.core.designsystem
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
@@ -21,7 +21,7 @@ val NanobotShapes = Shapes(
     small = RoundedCornerShape(8.dp),
     medium = RoundedCornerShape(12.dp),
     large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
 private fun material3TextStyle(
@@ -41,7 +41,8 @@ private fun material3TextStyle(
  * 完整 Material 3 type scale。
  *
  * 显式填满 15 个层级，避免 Compose 默认 Typography 与局部 copy() 混用后出现标题、正文、标签
- * 的字重/行高漂移。FontFamily.SansSerif 在 Android 上映射到系统无衬线字体（默认通常为 Roboto）。
+ * 的字重/行高漂移。正文主动移除 Material 英文基线中偏宽的字距，使中文和中英混排更自然；
+ * 标签仍保留极轻微字距以维持短文本识别度。FontFamily.SansSerif 继续使用 Android 系统字体。
  */
 val NanobotTypography = Typography(
     displayLarge = material3TextStyle(57.sp, 64.sp, letterSpacing = (-0.25).sp),
@@ -53,10 +54,10 @@ val NanobotTypography = Typography(
     titleLarge = material3TextStyle(22.sp, 28.sp),
     titleMedium = material3TextStyle(16.sp, 24.sp, FontWeight.Medium, 0.15.sp),
     titleSmall = material3TextStyle(14.sp, 20.sp, FontWeight.Medium, 0.1.sp),
-    bodyLarge = material3TextStyle(16.sp, 24.sp, letterSpacing = 0.5.sp),
-    bodyMedium = material3TextStyle(14.sp, 20.sp, letterSpacing = 0.25.sp),
-    bodySmall = material3TextStyle(12.sp, 16.sp, letterSpacing = 0.4.sp),
+    bodyLarge = material3TextStyle(16.sp, 24.sp),
+    bodyMedium = material3TextStyle(14.sp, 20.sp),
+    bodySmall = material3TextStyle(12.sp, 16.sp),
     labelLarge = material3TextStyle(14.sp, 20.sp, FontWeight.Medium, 0.1.sp),
-    labelMedium = material3TextStyle(12.sp, 16.sp, FontWeight.Medium, 0.5.sp),
-    labelSmall = material3TextStyle(11.sp, 16.sp, FontWeight.Medium, 0.5.sp),
+    labelMedium = material3TextStyle(12.sp, 16.sp, FontWeight.Medium, 0.1.sp),
+    labelSmall = material3TextStyle(11.sp, 16.sp, FontWeight.Medium, 0.1.sp),
 )

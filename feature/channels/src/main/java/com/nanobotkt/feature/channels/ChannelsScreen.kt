@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,12 +23,12 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,6 +55,10 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
+import com.nanobotkt.core.designsystem.NanobotEmptyState
+import com.nanobotkt.core.designsystem.NanobotErrorState
+import com.nanobotkt.core.designsystem.NanobotRowDivider
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.ChannelConnectPayload
 import com.nanobotkt.core.model.ChannelSetupContractField
 import com.nanobotkt.core.model.NanobotChannelInstanceInfo
@@ -114,49 +120,60 @@ fun ChannelsScreen(
         ) {
             if (state.loading && state.payload == null) item { CircularProgressIndicator() }
             state.error?.let { error ->
-                item { Text(error, color = MaterialTheme.colorScheme.error) }
-            }
-            items(channels, key = { it.key }) { channel ->
-                val pending = channelPending(state, channel.feature.name, channel.instanceId)
-                ElevatedCard(
-                    onClick = { selected = channel },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    ListItem(
-                        headlineContent = { Text(channel.displayName) },
-                        supportingContent = {
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(
-                                    "${channel.feature.status} · " +
-                                        (channel.runtimeStatus
-                                            ?: if (channel.configured) "configured" else "needs setup"),
-                                )
-                                (channel.instance?.runtimeError ?: channel.feature.runtimeError)
-                                    ?.takeIf(String::isNotBlank)
-                                    ?.let { runtimeError ->
-                                        Text(runtimeError, color = MaterialTheme.colorScheme.error)
-                                    }
-                                channel.feature.error
-                                    ?.takeIf(String::isNotBlank)
-                                    ?.let { featureError ->
-                                        Text(featureError, color = MaterialTheme.colorScheme.error)
-                                    }
-                            }
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = channel.enabled,
-                                onCheckedChange = {
-                                    viewModel.enabled(channel.feature.name, it, channel.instanceId)
-                                },
-                                enabled = !pending,
-                            )
-                        },
+                item {
+                    NanobotErrorState(
+                        title = "Unable to load channels",
+                        message = error,
+                        retryLabel = "Retry",
+                        onRetry = viewModel::refresh,
                     )
                 }
             }
-            if (channels.isEmpty() && !state.loading) {
-                item { Text("No channel integrations are exposed by this gateway.") }
+            items(channels, key = { it.key }) { channel ->
+                val pending = channelPending(state, channel.feature.name, channel.instanceId)
+                // Channel 是可进入详情的平面能力行；Switch 只改变启用态，整行点击仍打开配置。
+                ListItem(
+                    modifier = Modifier.fillMaxWidth().clickable { selected = channel },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = { Text(channel.displayName) },
+                    supportingContent = {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "${channel.feature.status} · " +
+                                    (channel.runtimeStatus
+                                        ?: if (channel.configured) "configured" else "needs setup"),
+                            )
+                            (channel.instance?.runtimeError ?: channel.feature.runtimeError)
+                                ?.takeIf(String::isNotBlank)
+                                ?.let { runtimeError ->
+                                    Text(runtimeError, color = MaterialTheme.colorScheme.error)
+                                }
+                            channel.feature.error
+                                ?.takeIf(String::isNotBlank)
+                                ?.let { featureError ->
+                                    Text(featureError, color = MaterialTheme.colorScheme.error)
+                                }
+                        }
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = channel.enabled,
+                            onCheckedChange = {
+                                viewModel.enabled(channel.feature.name, it, channel.instanceId)
+                            },
+                            enabled = !pending,
+                        )
+                    },
+                )
+                NanobotRowDivider()
+            }
+            if (channels.isEmpty() && !state.loading && state.error == null) {
+                item {
+                    NanobotEmptyState(
+                        title = "No channels available",
+                        description = "This gateway does not expose channel integrations.",
+                    )
+                }
             }
         }
     }
@@ -250,7 +267,9 @@ private fun ChannelDialog(
                     item {
                         Text(
                             "Gateway restart required for this change to take effect.",
-                            color = MaterialTheme.colorScheme.tertiary,
+                            // 重启要求是需要用户注意、但尚未失败的业务 Warning；不得借用
+                            // tertiary 品牌角色，否则品牌主题变化会改变提示的业务含义。
+                            color = NanobotThemeDefaults.statusColors.warning,
                         )
                     }
                 }

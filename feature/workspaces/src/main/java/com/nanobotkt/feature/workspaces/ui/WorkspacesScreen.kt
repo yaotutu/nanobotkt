@@ -13,7 +13,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -21,7 +20,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nanobotkt.core.designsystem.NanobotErrorState
+import com.nanobotkt.core.designsystem.NanobotSectionHeader
+import com.nanobotkt.core.designsystem.NanobotStatusLabel
+import com.nanobotkt.core.designsystem.NanobotStatusTone
+import com.nanobotkt.core.designsystem.NanobotSummarySurface
 import com.nanobotkt.core.model.DefaultAccessMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,31 +80,44 @@ fun WorkspacesScreen(
                 CircularProgressIndicator()
             }
             state.error?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = viewModel::refresh) { Text("Retry") }
+                NanobotErrorState(
+                    title = "Unable to load workspace",
+                    message = message,
+                    retryLabel = "Retry",
+                    onRetry = viewModel::refresh,
+                )
             }
             payload?.let { workspace ->
-                Text("Default workspace", style = MaterialTheme.typography.titleMedium)
-                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(workspace.defaultScope.projectName ?: workspace.defaultScope.projectPath)
+                NanobotSectionHeader(text = "Default workspace")
+                NanobotSummarySurface {
+                    Text(
+                        workspace.defaultScope.projectName ?: workspace.defaultScope.projectPath,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        workspace.defaultScope.projectPath,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    NanobotStatusLabel(
+                        label = "Scope: ${workspace.defaultScope.accessMode.wireLabel()}",
+                        tone = NanobotStatusTone.Active,
+                    )
+                    Text(
+                        "Restrict to workspace: " +
+                            (workspace.defaultScope.restrictToWorkspace ?: false),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    workspace.defaultScope.sandboxStatus?.let {
                         Text(
-                            workspace.defaultScope.projectPath,
+                            it.summary,
                             style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Text("Current scope: ${workspace.defaultScope.accessMode.wireLabel()}")
-                        Text(
-                            "Restrict to workspace: " +
-                                (workspace.defaultScope.restrictToWorkspace ?: false),
-                        )
-                        workspace.defaultScope.sandboxStatus?.let { Text(it.summary) }
                     }
                 }
 
-                Text("Default access mode", style = MaterialTheme.typography.titleMedium)
+                NanobotSectionHeader(text = "Default access mode")
                 Text(
                     "This setting applies to new workspace scopes. It does not change the current chat session.",
                     style = MaterialTheme.typography.bodySmall,
@@ -134,7 +150,7 @@ fun WorkspacesScreen(
                 }
 
                 Spacer(Modifier.height(4.dp))
-                Text("Controls", style = MaterialTheme.typography.titleMedium)
+                NanobotSectionHeader(text = "Controls")
                 Text("Change project: ${workspace.controls.canChangeProject}")
                 Text("Full access: ${workspace.controls.canUseFullAccess}")
             }

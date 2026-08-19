@@ -30,19 +30,21 @@ import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotNavigationRow
+import com.nanobotkt.core.designsystem.NanobotStatusLabel
+import com.nanobotkt.core.designsystem.NanobotStatusTone
+import com.nanobotkt.core.designsystem.NanobotSummarySurface
 
 /**
  * Settings Home 只承担状态摘要和分组导航，不直接复制各详情页的复杂表单。
@@ -283,115 +285,90 @@ private fun GatewaySummaryCard(
     val providerConfigured = payload?.providers?.firstOrNull { it.name == provider }?.configured == true
     val model = agent?.model?.takeIf(String::isNotBlank)?.takeIf { providerConfigured }
         ?: stringResource(R.string.settings_not_configured)
-    // runtime.gatewayHost/runtime.gatewayPort 描述的是服务端进程自己的监听端点，
-    // 可能是 127.0.0.1 等 Android 无法访问的内部地址。首页只展示 app 组合根传入的
-    // 真实客户端入口，确保连接摘要与 HTTP、Bootstrap、WebSocket 的实际配置一致。
-    val gateway =
-        gatewayEndpointLabel(
-            gatewayEndpoint = gatewayEndpoint,
-            emptyLabel = stringResource(R.string.settings_gateway_endpoint_unavailable),
-        )
-    val connected = connectionStatus.equals("Connected", ignoreCase = true)
-    // connectionStatus 是 app 组合根传入的稳定英文状态值。使用 ignoreCase 比较而不是
-    // 依赖当前 Locale 的 lowercase 转换，避免土耳其语等 Locale 改写字母 I 后匹配失败。
-    val localizedConnectionStatus =
-        when {
-            connectionStatus.equals("Connected", ignoreCase = true) ->
-                stringResource(R.string.settings_connection_connected)
-            connectionStatus.equals("Connecting", ignoreCase = true) ->
-                stringResource(R.string.settings_connection_connecting)
-            connectionStatus.equals("Disconnected", ignoreCase = true) ->
-                stringResource(R.string.settings_connection_disconnected)
-            else -> stringResource(R.string.settings_connection_unknown)
+    val gateway = gatewayEndpointLabel(
+        gatewayEndpoint = gatewayEndpoint,
+        emptyLabel = stringResource(R.string.settings_gateway_endpoint_unavailable),
+    )
+    // connectionStatus 是 app 组合根传入的稳定英文状态值。这里一次完成显示文案与产品语义映射，
+    // 避免状态点、文字和容器色分别判断后出现“显示连接中但使用错误色”的分叉。
+    val statusPresentation = when {
+        connectionStatus.equals("Connected", ignoreCase = true) ->
+            stringResource(R.string.settings_connection_connected) to NanobotStatusTone.Success
+        connectionStatus.equals("Connecting", ignoreCase = true) ->
+            stringResource(R.string.settings_connection_connecting) to NanobotStatusTone.Warning
+        connectionStatus.equals("Disconnected", ignoreCase = true) ->
+            stringResource(R.string.settings_connection_disconnected) to NanobotStatusTone.Error
+        else ->
+            stringResource(R.string.settings_connection_unknown) to NanobotStatusTone.Neutral
+    }
+
+    NanobotSummarySurface {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_gateway_system),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = gateway,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            NanobotStatusLabel(
+                label = statusPresentation.first,
+                tone = statusPresentation.second,
+            )
         }
 
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors =
-            CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+        // “管理”是稳定主路径；“重新连接”只在恢复连接时使用，因此保持较低视觉权重。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(10.dp),
-                    shape = androidx.compose.foundation.shape.CircleShape,
-                    color = if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                ) {}
-                Column(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                    Text(
-                        text = stringResource(R.string.settings_gateway_status, localizedConnectionStatus),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = gateway,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
-                    )
-                }
+            TextButton(onClick = onReconnect) {
+                Icon(imageVector = Icons.Outlined.Sync, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.settings_reconnect))
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButton(onClick = onManage) {
-                    Icon(imageVector = Icons.Outlined.SettingsSuggest, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.settings_manage))
-                }
-                Spacer(Modifier.size(8.dp))
-                OutlinedButton(onClick = onReconnect) {
-                    Icon(imageVector = Icons.Outlined.Sync, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.settings_reconnect))
-                }
-            }
-            Card(
-                onClick = onOpenModels,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                    ),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.SmartToy,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(
-                            text = stringResource(R.string.settings_current_model),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        Text(
-                            text = model,
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 1,
-                        )
-                    }
-                    if (!provider.isNullOrBlank()) {
-                        ProviderMark(
-                            provider = provider,
-                            showBrandLogos = showBrandLogos,
-                            size = ProviderMarkSize.PICKER,
-                            fallbackIcon = Icons.Outlined.Language,
-                        )
-                    }
-                }
+            Spacer(Modifier.width(4.dp))
+            FilledTonalButton(onClick = onManage) {
+                Icon(imageVector = Icons.Outlined.SettingsSuggest, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.settings_manage))
             }
         }
+
+        // 当前模型属于 Gateway 摘要的一部分，但不再嵌套 Card；整行点击仍保留原有模型入口语义。
+        NanobotNavigationRow(
+            headline = model,
+            supportingText = stringResource(R.string.settings_current_model),
+            modifier = Modifier.clip(MaterialTheme.shapes.medium),
+            onClick = onOpenModels,
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.SmartToy,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            trailingContent = {
+                if (!provider.isNullOrBlank()) {
+                    ProviderMark(
+                        provider = provider,
+                        showBrandLogos = showBrandLogos,
+                        size = ProviderMarkSize.PICKER,
+                        fallbackIcon = Icons.Outlined.Language,
+                    )
+                }
+            },
+        )
     }
 }

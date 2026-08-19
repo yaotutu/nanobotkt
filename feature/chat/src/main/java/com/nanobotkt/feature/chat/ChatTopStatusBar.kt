@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 
 /**
  * 聊天页唯一的顶部常驻区域。
@@ -217,9 +218,12 @@ private fun HeaderStatusLabel(
     val color =
         when (status) {
             ChatHeaderStatus.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant
-            ChatHeaderStatus.WAITING_FOR_USER -> MaterialTheme.colorScheme.tertiary
+            // 等待用户和重连都属于需要注意、但尚未失败的业务 Warning。这里使用产品扩展
+            // 状态色，而不是借用 tertiary 品牌角色，避免主题调整后状态语义随装饰色漂移。
+            ChatHeaderStatus.WAITING_FOR_USER,
+            ChatHeaderStatus.RECONNECTING,
+            -> NanobotThemeDefaults.statusColors.warning
             ChatHeaderStatus.RUNNING -> MaterialTheme.colorScheme.primary
-            ChatHeaderStatus.RECONNECTING -> MaterialTheme.colorScheme.tertiary
             ChatHeaderStatus.DISCONNECTED -> MaterialTheme.colorScheme.error
         }
     Row(

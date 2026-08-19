@@ -1,31 +1,20 @@
-﻿package com.nanobotkt.core.designsystem
+package com.nanobotkt.core.designsystem
 
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,14 +23,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 
 /**
- * 供设计评审使用的 Material 3 基础视觉样板。
+ * 供设计评审使用的 NanobotKT Material 3 增量样板。
  *
- * 该样板只展示颜色、字体、形状、间距、组件状态和明暗主题，不连接任何业务 ViewModel，
- * 因此不会改变导航、会话、网络或 WebSocket 行为。确认基线时可直接在 Android Studio
- * 的 Compose Preview 中并排查看 Light/Dark 两个预览，后续页面改造再复用同一套 token。
+ * Material 3 已定义 Button、TextField、Switch 等基础组件，本样板不会重新枚举完整组件目录；
+ * 它重点展示 NanobotKT 在 Material 3 之上补充的状态语义和跨 Feature 固定组合。末尾只保留少量
+ * Material 基础组件，用于确认定制 Theme 没有破坏系统组件的明暗主题与交互状态。
+ *
+ * 样板不连接任何业务 ViewModel，因此不会改变导航、会话、网络或 WebSocket 行为。
  */
 @Composable
 fun Material3BaselineShowcase(darkTheme: Boolean = false) {
@@ -54,133 +44,140 @@ fun Material3BaselineShowcase(darkTheme: Boolean = false) {
 private fun Material3BaselineShowcaseContent() {
     val spacing = NanobotThemeDefaults.spacing
     val colors = MaterialTheme.colorScheme
-    var text by remember { mutableStateOf("") }
-    var outlinedText by remember { mutableStateOf("Material 3") }
-    var checked by remember { mutableStateOf(true) }
-    var switched by remember { mutableStateOf(false) }
+    var input by remember { mutableStateOf("Material 3") }
+    var switched by remember { mutableStateOf(true) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(colors.background)
             .verticalScroll(rememberScrollState())
-            .padding(spacing.md),
+            .padding(vertical = spacing.md),
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-            Text("Material 3 基础视觉样板", style = MaterialTheme.typography.headlineSmall)
+        Column(
+            modifier = Modifier.padding(horizontal = spacing.md),
+            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            Text("NanobotKT Material 3 Overlay", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "固定色彩角色、完整 type scale、统一形状与 4/8dp 间距基线。",
+                "Material 3 负责基础组件；这里仅验证 Quiet Technical 主题、业务状态和产品组合。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant,
             )
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
-        ) {
-            Column(
-                modifier = Modifier.padding(spacing.md),
-                verticalArrangement = Arrangement.spacedBy(spacing.xs),
+        Column {
+            NanobotSectionHeader(text = "状态语义")
+            Row(
+                modifier = Modifier.padding(horizontal = spacing.md),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
             ) {
-                Text("颜色层级", style = MaterialTheme.typography.titleMedium)
+                NanobotStatusLabel("运行中", NanobotStatusTone.Active)
+                NanobotStatusLabel("已连接", NanobotStatusTone.Success)
+                NanobotStatusLabel("等待配置", NanobotStatusTone.Warning)
+            }
+            Row(
+                modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                NanobotStatusLabel("失败", NanobotStatusTone.Error)
+                NanobotStatusLabel("已归档", NanobotStatusTone.Neutral)
+            }
+        }
+
+        Column(modifier = Modifier.padding(horizontal = spacing.md)) {
+            NanobotSummarySurface {
+                Text("Gateway", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Surface / Surface Variant / Primary Container / Error Container",
+                    "紧凑摘要只承载关键状态和操作，不再制造 Hero Card 或多层 Card 嵌套。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.onSurfaceVariant,
                 )
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                AssistChip(
-                    onClick = {},
-                    label = { Text("辅助状态") },
-                )
+                NanobotStatusLabel("已连接", NanobotStatusTone.Success)
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                    Button(onClick = {}) { Text("管理") }
+                    TextButton(onClick = {}) { Text("重新连接") }
+                }
             }
         }
 
-        Text("组件状态", style = MaterialTheme.typography.titleLarge)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Button(onClick = {}) { Text("主要") }
-            OutlinedButton(onClick = {}) { Text("次要") }
-            TextButton(onClick = {}) { Text("文字") }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-            TextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Filled input") },
-                placeholder = { Text("输入内容") },
-                singleLine = true,
+        Column {
+            NanobotSectionHeader(text = "平面导航")
+            NanobotNavigationRow(
+                headline = "Models",
+                supportingText = "配置 Provider 与默认模型",
+                onClick = {},
             )
-            OutlinedTextField(
-                value = outlinedText,
-                onValueChange = { outlinedText = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Outlined input") },
-                singleLine = true,
+            NanobotRowDivider()
+            NanobotNavigationRow(
+                headline = "当前会话",
+                supportingText = "选中态使用轻量 tonal surface",
+                selected = true,
+                onClick = {},
             )
         }
 
-        HorizontalDivider()
+        // Empty 与 Error 是互斥的页面状态，这里并排展示只是为了让 Preview 能统一校验内容层级。
+        Column {
+            NanobotSectionHeader(text = "页面状态")
+            NanobotEmptyState(
+                title = "暂无 Skills",
+                description = "安装或启用能力后会显示在这里。",
+            )
+            NanobotErrorState(
+                title = "无法加载能力",
+                message = "保留状态层提供的真实错误信息，并给出明确恢复入口。",
+                retryLabel = "重试",
+                onRetry = {},
+            )
+        }
 
-        Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
-            Text("交互状态", style = MaterialTheme.typography.titleMedium)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = checked, onCheckedChange = { checked = it })
-                Text("已选中", style = MaterialTheme.typography.bodyLarge)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = !checked, onClick = { checked = false })
-                Text("未选中", style = MaterialTheme.typography.bodyLarge)
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+        Column {
+            NanobotSectionHeader(text = "Material 3 基础组件回归")
+            Column(
+                modifier = Modifier.padding(horizontal = spacing.md),
+                verticalArrangement = Arrangement.spacedBy(spacing.xs),
             ) {
-                Text("开关状态", style = MaterialTheme.typography.bodyLarge)
-                Switch(checked = switched, onCheckedChange = { switched = it })
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Theme input") },
+                    singleLine = true,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("使用固定品牌主题", style = MaterialTheme.typography.bodyLarge)
+                    Switch(checked = switched, onCheckedChange = { switched = it })
+                }
             }
-            Spacer(Modifier.height(spacing.xxs))
-            Text(
-                "错误状态示例：这是一条使用 errorContainer / onErrorContainer 的提示。",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.errorContainer, MaterialTheme.shapes.medium)
-                    .padding(spacing.sm),
-                color = colors.onErrorContainer,
-                style = MaterialTheme.typography.bodyMedium,
-            )
         }
     }
 }
 
-/** 浅色预览：用于确认固定 scheme 的背景、层级和默认组件状态。 */
+/** 浅色预览：确认固定品牌 scheme、状态扩展和产品组合的默认层级。 */
 @Preview(
-    name = "Material 3 Light",
+    name = "Nanobot Overlay Light",
     showBackground = true,
     widthDp = 390,
-    heightDp = 844,
+    heightDp = 1200,
 )
 @Composable
 private fun Material3LightPreview() {
     Material3BaselineShowcase(darkTheme = false)
 }
 
-/** 深色预览：用于确认深色 tonal role 与文字对比度没有沿用浅色硬编码。 */
+/** 深色预览：确认 tonal surface 与 Success/Warning 扩展没有沿用浅色硬编码。 */
 @Preview(
-    name = "Material 3 Dark",
+    name = "Nanobot Overlay Dark",
     showBackground = true,
     uiMode = Configuration.UI_MODE_NIGHT_YES,
     widthDp = 390,
-    heightDp = 844,
+    heightDp = 1200,
 )
 @Composable
 private fun Material3DarkPreview() {

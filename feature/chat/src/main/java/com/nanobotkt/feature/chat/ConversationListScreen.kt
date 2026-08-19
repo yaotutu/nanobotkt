@@ -55,11 +55,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotNavigationRow
+import com.nanobotkt.core.designsystem.NanobotSectionHeader
 
 /**
  * 会话列表只依赖这个轻量 UI 模型，避免聊天 feature 反向依赖 app 的 Root 状态或 Sidebar UI。
@@ -156,7 +159,7 @@ fun ConversationListSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (archivedMode) {
@@ -288,7 +291,7 @@ private fun ConversationListContent(
             onValueChange = { query = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+                .padding(horizontal = 16.dp, vertical = 2.dp),
             singleLine = true,
             placeholder = { Text(stringResource(R.string.conversation_search_hint)) },
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
@@ -385,22 +388,12 @@ private fun ArchivedConversationsEntry(
     count: Int,
     onClick: () -> Unit,
 ) {
-    // 归档入口本质上是标准导航列表项，交由 ListItem 提供高度、排版和状态层语义。
-    ListItem(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        headlineContent = {
-            Text(
-                stringResource(R.string.conversation_archived_title),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        },
-        supportingContent = {
-            Text(
-                count.toString(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
+    // 归档入口是会话导航的一部分，复用统一平面导航行；数量作为低强调尾部元数据。
+    NanobotNavigationRow(
+        headline = stringResource(R.string.conversation_archived_title),
+        supportingText = count.toString(),
+        modifier = Modifier.padding(horizontal = 8.dp),
+        onClick = onClick,
         leadingContent = {
             Icon(
                 Icons.Rounded.Archive,
@@ -408,10 +401,6 @@ private fun ArchivedConversationsEntry(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
-        colors =
-            ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
     )
 }
 
@@ -420,12 +409,7 @@ private fun ConversationSectionHeader(
     text: String,
     modifier: Modifier = Modifier,
 ) {
-    Text(
-        text = text,
-        modifier = modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-    )
+    NanobotSectionHeader(text = text, modifier = modifier)
 }
 
 @Composable
@@ -456,16 +440,18 @@ private fun ConversationRow(
      * 尾部更多按钮仍单独消费点击，避免打开管理菜单时误触会话切换。
      */
     ListItem(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors =
-            ListItemDefaults.colors(
-                containerColor =
-                    if (selected) {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-            ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
         headlineContent = {
             Text(
                 text = item.title,
@@ -484,7 +470,7 @@ private fun ConversationRow(
                         text = item.preview,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -517,9 +503,11 @@ private fun ConversationRow(
                         strokeWidth = 2.dp,
                     )
                     item.unread -> Box(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .background(MaterialTheme.colorScheme.tertiary, CircleShape),
+                        modifier =
+                            Modifier.size(9.dp)
+                                // 未读点属于需要用户继续处理的 Active 元数据，统一使用 primary，
+                                // 不把 tertiary 装饰色解释为业务状态。
+                                .background(MaterialTheme.colorScheme.primary, CircleShape),
                     )
                 }
                 ConversationActionsMenu(
@@ -543,7 +531,7 @@ private fun ConversationRow(
         },
     )
     HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 24.dp),
+        modifier = Modifier.padding(start = 64.dp, end = 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
     )
 }

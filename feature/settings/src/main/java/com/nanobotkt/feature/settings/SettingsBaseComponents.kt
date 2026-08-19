@@ -1,11 +1,9 @@
 package com.nanobotkt.feature.settings
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -22,13 +20,8 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,6 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nanobotkt.core.designsystem.NanobotNavigationRow
+import com.nanobotkt.core.designsystem.NanobotSectionHeader
 
 /** Settings 页面分组、行、说明块与基础表单布局。 */
 /** Settings 页面共享表单组件，避免各能力页重复视觉和输入规则。 */
@@ -63,19 +58,10 @@ internal fun OpenSectionPage(
 
 @Composable
 internal fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Text(
-        text = title,
-        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
-        color = MaterialTheme.colorScheme.primary,
-        style = MaterialTheme.typography.labelLarge,
-    )
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
-        Column(content = content)
-    }
+    // Settings 分组只通过标题、留白和行分隔线建立层级；不再为每组内容额外创建大圆角 Card。
+    // 复杂表单仍可在自身组件中使用 Surface，但不能让整页退化成重复的卡片堆叠。
+    NanobotSectionHeader(text = title)
+    Column(modifier = Modifier.fillMaxWidth(), content = content)
 }
 
 @Composable
@@ -93,43 +79,11 @@ internal fun SettingsRow(
     /** 可选的尾部操作，避免为了增加编辑/排序按钮而改变整行点击语义。 */
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
-    val rowModifier =
-        Modifier.fillMaxWidth()
-            .defaultMinSize(minHeight = 64.dp)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-
-    ListItem(
-        modifier = rowModifier,
-        colors =
-            ListItemDefaults.colors(
-                containerColor =
-                    if (selected) {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainer
-                    },
-            ),
-        headlineContent = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        supportingContent =
-            if (subtitle.isNullOrBlank()) {
-                null
-            } else {
-                {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            },
+    NanobotNavigationRow(
+        headline = title,
+        supportingText = subtitle,
+        selected = selected,
+        onClick = onClick,
         leadingContent = {
             if (!leadingProvider.isNullOrBlank()) {
                 ProviderMark(
@@ -139,53 +93,52 @@ internal fun SettingsRow(
                     fallbackIcon = icon,
                 )
             } else {
-                Surface(
-                    modifier = Modifier.size(40.dp),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(imageVector = icon, contentDescription = null)
-                    }
-                }
+                // 普通 Settings 图标保持裸图标，避免每一行都出现同权重的彩色方块。
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         trailingContent = {
-            if (
-                !valueLogoProvider.isNullOrBlank() &&
-                    showBrandLogos &&
-                    providerBrand(valueLogoProvider) != null
-            ) {
-                ProviderMark(
-                    provider = valueLogoProvider,
-                    showBrandLogos = true,
-                    size = ProviderMarkSize.PICKER,
-                    fallbackIcon = icon,
-                    hideWhenUnavailable = true,
-                )
-                Spacer(Modifier.width(8.dp))
-            }
-            if (!value.isNullOrBlank()) {
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            trailingContent?.let {
-                Spacer(Modifier.width(4.dp))
-                it()
-            }
-            if (showChevron) {
-                Spacer(Modifier.width(4.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (
+                    !valueLogoProvider.isNullOrBlank() &&
+                        showBrandLogos &&
+                        providerBrand(valueLogoProvider) != null
+                ) {
+                    ProviderMark(
+                        provider = valueLogoProvider,
+                        showBrandLogos = true,
+                        size = ProviderMarkSize.PICKER,
+                        fallbackIcon = icon,
+                        hideWhenUnavailable = true,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                if (!value.isNullOrBlank()) {
+                    Text(
+                        text = value,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                trailingContent?.let {
+                    Spacer(Modifier.width(4.dp))
+                    it()
+                }
+                if (showChevron) {
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
     )
