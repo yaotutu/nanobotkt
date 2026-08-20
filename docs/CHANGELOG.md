@@ -1,9 +1,13 @@
-# NanobotKT 0.1.15
+# NanobotKT 0.1.16
 
-> 自动构建发布，提交：`fb26cd1`。
+> 自动构建发布，提交：`a41847e`。
 
 ## 变更
 
+- refactor(chat): refine timeline visual hierarchy (`a41847e`)
+- docs(readme): add README preview screenshots from real Gateway runs (`e9c641e`)
+- docs(readme): introduce NanobotKT project overview and rationale (`0f9085b`)
+- chore(dev): prepare v0.1.15 (`f2a18ce`)
 - refactor(ui): align product surfaces with Material 3 (`fb26cd1`)
 - chore(codex): add dev release workflow skill (`444918b`)
 - chore(dev): prepare v0.1.14 (`98d26e0`)
