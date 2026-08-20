@@ -53,9 +53,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nanobotkt.core.model.UiMessage
 
-// 用户气泡只用于区分说话方，不应成为占满时间轴的大色块。76% 在手机端仍能容纳正常段落，
-// 同时为 Assistant 的文档式内容保留明显的宽度层级。
-private const val USER_BUBBLE_MAX_WIDTH_FRACTION = 0.76f
+// 用户气泡只用于区分说话方，不应强制铺满时间轴；短消息仍由内容自然决定宽度。上限放宽到 84%，
+// 是为了降低长技术 Prompt 在窄屏上的无效换行和纵向占用，同时继续为 Assistant 的平面文档流
+// 保留清晰的左右层级，避免双方内容看起来像同一种全宽正文。
+private const val USER_BUBBLE_MAX_WIDTH_FRACTION = 0.84f
 private const val COLLAPSIBLE_USER_MESSAGE_CHARS = 900
 private const val COLLAPSIBLE_USER_MESSAGE_LINES = 14
 

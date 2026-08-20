@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -233,13 +234,21 @@ internal fun AgentActivityCluster(
             statusText
         }
     val emphasized = displayMode == ActivityDisplayMode.Emphasized
+    val compactExpanded = displayMode == ActivityDisplayMode.Compact && expanded
     val statusColors = NanobotThemeDefaults.statusColors
     val containerColor =
         when (status) {
             ActivityStatus.Failed -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.56f)
             ActivityStatus.Waiting -> statusColors.warningContainer.copy(alpha = 0.56f)
             ActivityStatus.Running -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
-            ActivityStatus.Completed -> MaterialTheme.colorScheme.surfaceContainerLowest
+            // 已完成且折叠的 Activity 只是可复查的执行元数据，不再使用整块 tonal 容器抢占
+            // Assistant 正文层级；用户主动展开后才恢复轻量背景，以界定详情内容的阅读边界。
+            ActivityStatus.Completed ->
+                if (compactExpanded) {
+                    MaterialTheme.colorScheme.surfaceContainerLowest
+                } else {
+                    Color.Transparent
+                }
         }
 
     Surface(
@@ -253,11 +262,18 @@ internal fun AgentActivityCluster(
             Row(
                 modifier =
                     Modifier.fillMaxWidth()
-                        .heightIn(min = 40.dp)
+                        // 强调状态保留稳定的 40dp 状态入口；完成摘要压缩为 36dp 左右的元数据行，
+                        // 但整行仍可点击展开，不依赖较小的尾部箭头作为唯一触控目标。
+                        .heightIn(min = if (emphasized) 40.dp else 36.dp)
                         .clickable { userExpandedOverride = !expanded }
                         .padding(
-                            horizontal = if (emphasized) 12.dp else 4.dp,
-                            vertical = if (emphasized) 8.dp else 4.dp,
+                            horizontal =
+                                when {
+                                    emphasized -> 12.dp
+                                    compactExpanded -> 8.dp
+                                    else -> 2.dp
+                                },
+                            vertical = if (emphasized) 8.dp else 2.dp,
                         ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -291,8 +307,8 @@ internal fun AgentActivityCluster(
                     modifier =
                         Modifier.fillMaxWidth()
                             .padding(
-                                start = if (emphasized) 12.dp else 4.dp,
-                                end = if (emphasized) 12.dp else 4.dp,
+                                start = if (emphasized) 12.dp else 8.dp,
+                                end = if (emphasized) 12.dp else 8.dp,
                                 bottom = 10.dp,
                             ),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -381,8 +397,9 @@ private fun ActivityStateIcon(status: ActivityStatus) {
             Icon(
                 Icons.Rounded.Check,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = NanobotThemeDefaults.statusColors.success,
+                modifier = Modifier.size(16.dp),
+                // 完成图标保留成功语义，但降低饱和度，避免历史 Activity 与正在执行的状态竞争。
+                tint = NanobotThemeDefaults.statusColors.success.copy(alpha = 0.78f),
             )
     }
 }

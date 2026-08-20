@@ -101,7 +101,9 @@ internal fun ChatTopStatusBar(
             )
             if (hasSecondaryRow) {
                 Row(
-                    modifier = Modifier.padding(top = 2.dp),
+                    // 所有非空状态共用固定的最小行高，避免 Running、Queue 或连接状态在文字
+                    // lineHeight 不同时造成顶部栏细微跳动；只压缩标题间距，不缩小两侧 48dp 触控区。
+                    modifier = Modifier.padding(top = 1.dp).heightIn(min = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

@@ -98,4 +98,57 @@ class ChatTopStatusBarUiTest {
         check(titleBounds.left < systemSettingsBounds.left)
         check(systemSettingsBounds.left < sessionSettingsBounds.left)
     }
+
+    @Test
+    fun longTitleAndRunningStatusKeepRightActionsReachable() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val longTitle = "这是一个用于验证顶部栏在窄屏中仍然稳定显示操作入口的超长会话标题"
+        val statusClickCount = AtomicInteger(0)
+
+        composeRule.setContent {
+            NanobotTheme(darkTheme = false, dynamicColor = false) {
+                ChatTopStatusBar(
+                    title = longTitle,
+                    status = ChatHeaderStatus.RUNNING,
+                    queuedPrompts = emptyList(),
+                    queueOpen = false,
+                    configMenuOpen = false,
+                    hasPromptNavigator = false,
+                    hasSessionInfo = false,
+                    hasAccessSettings = false,
+                    onOpenConversationList = {},
+                    onOpenSettings = {},
+                    onStatusClick = { statusClickCount.incrementAndGet() },
+                    onQueueOpenChange = {},
+                    onConfigMenuOpenChange = {},
+                    onQueuedPromptClick = {},
+                    onOpenPromptNavigator = {},
+                    onOpenSessionInfo = {},
+                    onOpenModel = {},
+                    onOpenAccess = {},
+                )
+            }
+        }
+
+        val titleNode = composeRule.onNodeWithText(longTitle)
+        val statusNode = composeRule.onNodeWithText(context.getString(R.string.chat_status_running))
+        val systemSettingsNode =
+            composeRule.onNodeWithContentDescription(context.getString(R.string.system_settings))
+        val sessionSettingsNode =
+            composeRule.onNodeWithContentDescription(context.getString(R.string.current_session_settings))
+
+        titleNode.assertIsDisplayed()
+        statusNode.assertIsDisplayed().assertHasClickAction().performClick()
+        systemSettingsNode.assertIsDisplayed().assertHasClickAction()
+        sessionSettingsNode.assertIsDisplayed().assertHasClickAction()
+        composeRule.runOnIdle { assertEquals(1, statusClickCount.get()) }
+
+        // Text 的语义仍保留完整标题，因此这里通过真实布局边界锁定 ellipsis 的结果：标题可被压缩，
+        // 但不得覆盖或挤出右侧应用级、会话级操作。避免使用固定像素宽度，以兼容不同测试密度。
+        val titleBounds = titleNode.fetchSemanticsNode().boundsInRoot
+        val systemSettingsBounds = systemSettingsNode.fetchSemanticsNode().boundsInRoot
+        val sessionSettingsBounds = sessionSettingsNode.fetchSemanticsNode().boundsInRoot
+        check(titleBounds.right <= systemSettingsBounds.left)
+        check(systemSettingsBounds.left < sessionSettingsBounds.left)
+    }
 }
