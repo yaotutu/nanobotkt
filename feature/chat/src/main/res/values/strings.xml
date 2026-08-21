@@ -217,4 +217,33 @@
     <string name="chat_load_failed_title">Could not load this conversation</string>
     <string name="chat_load_failed_body">Check the connection and try again.</string>
     <string name="timeline_error_title">Tool result unavailable</string>
+
+    <!-- Chat Composer 上方的产品化错误反馈；原始内部错误码不会直接显示给用户。 -->
+    <string name="dismiss_chat_error">Dismiss error</string>
+    <string name="chat_error_message_too_big_title">Message is too long</string>
+    <string name="chat_error_message_too_big_body">Shorten the message or remove some content, then send it again.</string>
+    <string name="chat_error_workspace_scope_title">Workspace access was rejected</string>
+    <string name="chat_error_workspace_scope_body">The last confirmed workspace scope is still active.</string>
+    <string name="chat_error_turn_rejected_title">Message was not accepted</string>
+    <string name="chat_error_turn_rejected_body">Review the message and try sending it again.</string>
+    <string name="chat_error_attachment_count_title">Too many attachments</string>
+    <string name="chat_error_attachment_count_body">Remove some attachments before adding more.</string>
+    <string name="chat_error_attachment_size_title">Attachment is too large</string>
+    <string name="chat_error_attachment_size_body">Choose a smaller file or remove other attachments.</string>
+    <string name="chat_error_attachment_type_title">Unsupported attachment</string>
+    <string name="chat_error_attachment_type_body">Choose a supported image, document, or MP4 file.</string>
+    <string name="chat_error_attachment_empty_title">Attachment is empty</string>
+    <string name="chat_error_attachment_empty_body">Choose a non-empty file.</string>
+    <string name="chat_error_model_title">Couldn’t change model</string>
+    <string name="chat_error_model_body">The previous model remains active. Try again later.</string>
+    <string name="chat_error_connection_title">Connection problem</string>
+    <string name="chat_error_connection_body">Check the connection and try again.</string>
+    <string name="chat_error_new_conversation_title">Couldn’t create a new conversation</string>
+    <string name="chat_error_new_conversation_body">Try again after the connection is restored.</string>
+    <string name="chat_error_fork_title">Couldn’t fork this conversation</string>
+    <string name="chat_error_fork_body">The current conversation was not changed.</string>
+    <string name="chat_error_timeline_title">Conversation was interrupted</string>
+    <string name="chat_error_timeline_body">The current response could not continue. You can send a new message.</string>
+    <string name="chat_error_generic_title">Action couldn’t be completed</string>
+    <string name="chat_error_generic_body">Try again. If the problem continues, check the connection.</string>
 </resources>

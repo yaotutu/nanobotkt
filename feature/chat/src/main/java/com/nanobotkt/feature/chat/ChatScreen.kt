@@ -23,15 +23,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +48,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nanobotkt.core.designsystem.NanobotEmptyState
+import com.nanobotkt.core.designsystem.NanobotErrorState
 import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.transport.TransportStatus
@@ -82,7 +81,6 @@ fun ChatScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val composer by viewModel.composer.collectAsStateWithLifecycle()
     val spacing = NanobotThemeDefaults.spacing
-    val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     val forkTitle = stringResource(R.string.fork_title, title)
     var quoteDraft by remember { mutableStateOf<String?>(null) }
@@ -91,6 +89,9 @@ fun ChatScreen(
     var modelDialogOpen by remember { mutableStateOf(false) }
     var accessDialogOpen by remember { mutableStateOf(false) }
     var configMenuOpen by remember { mutableStateOf(false) }
+    // 关闭错误条只影响当前页面的视觉反馈，不清理 ViewModel 或 Repository 中的业务错误。
+    // key 绑定会话，避免用户切换会话后旧页面的关闭选择错误地隐藏新会话反馈。
+    var dismissedInlineErrorKey by remember(state.sessionKey) { mutableStateOf<String?>(null) }
     // 这是纯 UI 临时状态，不进入 AppViewModel/SavedStateHandle；会话业务选择仍由 Root
     // 的 SessionSelection 负责，避免把 Bottom Sheet 的动画生命周期混入会话竞态保护。
     var conversationSheetOpen by rememberSaveable { mutableStateOf(false) }
@@ -104,10 +105,6 @@ fun ChatScreen(
         }
 
     LaunchedEffect(state.sessionKey) { state.sessionKey?.let(onSessionCreated) }
-
-    LaunchedEffect(state.error, state.model.error, composer.error) {
-        (composer.error ?: state.model.error ?: state.error)?.let { snackbar.showSnackbar(it) }
-    }
 
     LaunchedEffect(state.sessionKey) {
         // 会话配置弹层绑定当前会话；切换时统一关闭，避免用户误把旧配置操作应用到新会话。
@@ -264,6 +261,26 @@ fun ChatScreen(
     val hero = state.chatId == null
     val fullLoadFailed =
         !state.loading && state.chatId != null && state.messages.isEmpty() && state.error != null
+    val inlineError =
+        remember(composer.error, state.model.error, state.error, fullLoadFailed) {
+            selectChatInlineError(
+                composerError = composer.error,
+                modelError = state.model.error,
+                timelineError = state.error,
+                fullLoadFailed = fullLoadFailed,
+            )
+        }
+    val visibleInlineError =
+        inlineError?.takeUnless { error -> error.key == dismissedInlineErrorKey }
+    val inlineErrorPresentation =
+        remember(visibleInlineError) { visibleInlineError?.let(::resolveChatErrorPresentation) }
+
+    LaunchedEffect(inlineError?.key) {
+        // 错误清除或切换为另一条错误后，允许未来再次展示同一类别。这里不能直接清理
+        // ViewModel error，否则可能改变发送失败后的草稿恢复与模型回滚状态。
+        if (inlineError?.key != dismissedInlineErrorKey) dismissedInlineErrorKey = null
+    }
+
     val composerContent: @Composable () -> Unit = {
         Composer(
             state = composer,
@@ -369,13 +386,6 @@ fun ChatScreen(
                 )
             }
 
-            SnackbarHost(
-                hostState = snackbar,
-                modifier =
-                    Modifier.align(Alignment.BottomCenter)
-                        .padding(horizontal = spacing.md, vertical = spacing.sm),
-            )
-
             JumpToLatestMessagesVisibility(
                 visible = !state.loading && !hero && listState.canScrollForward,
                 unreadCount = unreadTurnCount,
@@ -402,6 +412,16 @@ fun ChatScreen(
         }
 
         if (!state.loading) {
+            inlineErrorPresentation?.let { presentation ->
+                ChatInlineErrorNotice(
+                    presentation = presentation,
+                    onDismiss = {
+                        // 只记录当前信号的 key；底层状态保留到原有用户操作或状态转换自然清理。
+                        dismissedInlineErrorKey = visibleInlineError?.key
+                    },
+                    modifier = Modifier.padding(start = spacing.md, top = spacing.sm, end = spacing.md),
+                )
+            }
             composerContent()
         }
     }
@@ -620,36 +640,26 @@ private fun ChatLoadFailure(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = stringResource(R.string.chat_load_failed_title),
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleMedium,
+    // NanobotErrorState 本身既可用于页面也可用于局部区域；外层 Box 只负责把完整加载失败
+    // 放回时间轴中心，不改变共享组件的默认布局语义。
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        NanobotErrorState(
+            title = stringResource(R.string.chat_load_failed_title),
+            message = stringResource(R.string.chat_load_failed_body),
+            retryLabel = stringResource(R.string.refresh),
+            onRetry = onRetry,
         )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = stringResource(R.string.chat_load_failed_body),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onRetry) { Text(stringResource(R.string.refresh)) }
     }
 }
 
 @Composable
 internal fun EmptyChat(modifier: Modifier = Modifier) {
-    // 空会话只是时间轴尚无内容，不应抢过输入框成为视觉主角；居中使用 titleMedium 即可，
-    // 同时保留足够留白，引导用户自然把注意力移向底部输入区。
+    // 空会话只是时间轴尚无内容，不应抢过输入框成为视觉主角。标题下补充一行低强调说明，
+    // 让用户明确这是可开始输入的新会话，而不是加载失败或数据缺失。
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Text(
-            text = stringResource(R.string.empty_title),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.titleMedium,
+        NanobotEmptyState(
+            title = stringResource(R.string.empty_title),
+            description = stringResource(R.string.empty_body),
         )
     }
 }
