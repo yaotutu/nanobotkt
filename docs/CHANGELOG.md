@@ -1,9 +1,12 @@
-# NanobotKT 0.1.18
+# NanobotKT 0.1.19
 
-> 自动构建发布，提交：`5ff3156`。
+> 自动构建发布，提交：`e7ce8b9`。
 
 ## 变更
 
+- Merge branch 'codex/chat-ui-state-polish' into dev (`e7ce8b9`)
+- feat(chat): polish state feedback (`cefa18b`)
+- chore(dev): prepare v0.1.18 (`535c9c9`)
 - feat(settings): add rate-limit dev update fallback (`5ff3156`)
 - chore(dev): prepare v0.1.17 (`ba72271`)
 - fix(chat): preserve drafts across background recovery (`d8dc519`)
