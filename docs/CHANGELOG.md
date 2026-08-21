@@ -1,9 +1,11 @@
-# NanobotKT 0.1.17
+# NanobotKT 0.1.18
 
-> 自动构建发布，提交：`d8dc519`。
+> 自动构建发布，提交：`5ff3156`。
 
 ## 变更
 
+- feat(settings): add rate-limit dev update fallback (`5ff3156`)
+- chore(dev): prepare v0.1.17 (`ba72271`)
 - fix(chat): preserve drafts across background recovery (`d8dc519`)
 - chore(dev): prepare v0.1.16 (`ee911fe`)
 - refactor(chat): refine timeline visual hierarchy (`a41847e`)
