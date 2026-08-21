@@ -1,9 +1,11 @@
-# NanobotKT 0.1.16
+# NanobotKT 0.1.17
 
-> 自动构建发布，提交：`a41847e`。
+> 自动构建发布，提交：`d8dc519`。
 
 ## 变更
 
+- fix(chat): preserve drafts across background recovery (`d8dc519`)
+- chore(dev): prepare v0.1.16 (`ee911fe`)
 - refactor(chat): refine timeline visual hierarchy (`a41847e`)
 - docs(readme): add README preview screenshots from real Gateway runs (`e9c641e`)
 - docs(readme): introduce NanobotKT project overview and rationale (`0f9085b`)
