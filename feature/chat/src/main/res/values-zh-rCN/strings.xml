@@ -73,13 +73,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">添加消息到队列…</string>
-    <string name="queued_prompts_label">已排队</string>
-    <string name="queued_count">已排队 %1$d</string>
-    <string name="queued_prompts_title">排队消息</string>
-    <string name="remove_queued_prompt">移除排队消息</string>
-    <string name="queued_attachment_count">%1$d 个附件</string>
-    <string name="queued_prompt_fallback">排队消息</string>
     <string name="slash_commands_label">斜杠命令</string>
     <string name="slash_command_suggestion">%1$s。%2$s</string>
     <string name="skills_mentions_label">技能</string>
@@ -198,7 +191,6 @@
     <string name="prompt_navigator_empty">当前会话还没有可定位的 Prompt。</string>
     <string name="quote_action">引用</string>
     <string name="view_message">查看</string>
-    <string name="message_queued">排队中</string>
     <string name="message_failed">发送失败</string>
     <string name="user_message_detail">消息</string>
     <string name="assistant_message_detail">回复</string>

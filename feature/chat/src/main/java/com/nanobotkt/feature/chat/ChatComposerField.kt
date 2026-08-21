@@ -48,6 +48,7 @@ internal fun ComposerTextField(
     placeholder: String,
     textColor: Color,
     mutedColor: Color,
+    sendAllowed: Boolean,
     onTextChange: (String, Int) -> Unit,
     onSend: () -> Unit,
 ) {
@@ -100,7 +101,13 @@ internal fun ComposerTextField(
         enabled = !state.sending,
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-        keyboardActions = KeyboardActions(onSend = { if (hasDraft && !state.sending) onSend() }),
+        keyboardActions =
+            KeyboardActions(
+                onSend = {
+                    // Active turn 期间输入法仍可编辑 Draft，但不得绕过 Stop-only 产品约束发消息。
+                    if (sendAllowed && hasDraft && !state.sending) onSend()
+                }
+            ),
         maxLines = 5,
         decorationBox = { innerTextField ->
             Box(

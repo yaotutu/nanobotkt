@@ -47,14 +47,6 @@ class MessageActionPolicyTest {
                 canFork = true,
             ),
         )
-        assertEquals(
-            listOf(MessageAction.COPY, MessageAction.QUOTE, MessageAction.VIEW),
-            availableMessageActions(
-                role = "user",
-                deliveryState = UserMessageDeliveryState.QUEUED,
-                canFork = true,
-            ),
-        )
     }
 
     private fun message(

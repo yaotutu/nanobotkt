@@ -112,10 +112,10 @@ internal fun MessageList(
                             resolveUrl = resolveMediaUrl,
                             playbackCoordinator = playbackCoordinator,
                             onQuote = { onQuote(item.message.content) },
-                            // Queue 是本地待发送状态，历史用户消息也没有稳定的 beforeUserIndex；
+                            // 未成功进入历史的本地消息没有稳定的 beforeUserIndex；
                             // 在后端语义未确认前不伪造用户消息 Fork 入口。
                             onFork = null,
-                            // 重新发送只对真实 FAILED 用户消息开放；成功历史和 Queue 不暴露该入口。
+                            // 重新发送只对真实 FAILED 用户消息开放；成功历史不暴露该入口。
                             onRetry =
                                 if (item.deliveryState == UserMessageDeliveryState.FAILED) {
                                     { onRetry(item.message.id) }

@@ -76,7 +76,7 @@ internal fun parseStructuredTimelineError(content: String): StructuredTimelineEr
 /**
  * 用户消息使用右侧轻量气泡，正常状态不显示头像、用户名、时间或“已发送”。
  *
- * 排队和失败属于单条消息状态，因此紧贴气泡展示；失败时只有右侧 Retry 是常驻操作。复制、引用、
+ * 失败属于单条消息状态，因此紧贴气泡展示；失败时只有右侧 Retry 是常驻操作。复制、引用、
  * Fork 与查看统一收进长按悬浮菜单，避免低频动作长期占据时间轴。
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -116,7 +116,7 @@ internal fun UserTimelineMessage(
                 hasContent = hasText,
             )
         }
-    // Prompt/Queue 导航落点需要明显但短暂。仅切换相近容器色在动态主题下可能难以辨认，
+    // Prompt 导航落点需要明显但短暂。仅切换相近容器色在动态主题下可能难以辨认，
     // 因此同时动画过渡背景并增加 primary 描边；状态结束后恢复普通用户气泡，不改变布局。
     val bubbleColor by
         animateColorAsState(
@@ -266,12 +266,6 @@ internal fun UserTimelineMessage(
                 }
             }
             when (deliveryState) {
-                UserMessageDeliveryState.QUEUED ->
-                    Text(
-                        text = stringResource(R.string.message_queued),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
                 UserMessageDeliveryState.FAILED ->
                     Text(
                         text = stringResource(R.string.message_failed),

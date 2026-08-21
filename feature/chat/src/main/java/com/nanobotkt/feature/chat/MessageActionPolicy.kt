@@ -14,7 +14,6 @@ internal enum class MessageAction {
  * 根据消息状态裁剪菜单项，避免展示点击后无法完成的伪操作。
  *
  * - 失败消息只允许复制和查看，重试由消息右侧常驻按钮承担。
- * - 排队消息不能 Fork，但可以引用已经展示在时间轴中的原文。
  * - 流式 Assistant 允许复制当前内容、引用和查看，但必须等完成后才能 Fork。
  */
 internal fun availableMessageActions(
@@ -31,7 +30,7 @@ internal fun availableMessageActions(
     return buildList {
         add(MessageAction.COPY)
         add(MessageAction.QUOTE)
-        if (canFork && !streaming && deliveryState != UserMessageDeliveryState.QUEUED) {
+        if (canFork && !streaming) {
             add(MessageAction.FORK)
         }
         add(MessageAction.VIEW)

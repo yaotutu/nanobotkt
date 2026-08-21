@@ -37,8 +37,6 @@ class ChatTopStatusBarUiTest {
                 ChatTopStatusBar(
                     title = "Test conversation",
                     status = ChatHeaderStatus.IDLE,
-                    queuedPrompts = emptyList(),
-                    queueOpen = false,
                     configMenuOpen = false,
                     hasPromptNavigator = false,
                     hasSessionInfo = false,
@@ -46,11 +44,9 @@ class ChatTopStatusBarUiTest {
                     onOpenConversationList = { conversationOpenCount.incrementAndGet() },
                     onOpenSettings = { settingsOpenCount.incrementAndGet() },
                     onStatusClick = {},
-                    onQueueOpenChange = {},
                     onConfigMenuOpenChange = { open ->
                         if (open) sessionMenuOpenCount.incrementAndGet()
                     },
-                    onQueuedPromptClick = {},
                     onOpenPromptNavigator = {},
                     onOpenSessionInfo = {},
                     onOpenModel = {},
@@ -110,8 +106,6 @@ class ChatTopStatusBarUiTest {
                 ChatTopStatusBar(
                     title = longTitle,
                     status = ChatHeaderStatus.RUNNING,
-                    queuedPrompts = emptyList(),
-                    queueOpen = false,
                     configMenuOpen = false,
                     hasPromptNavigator = false,
                     hasSessionInfo = false,
@@ -119,9 +113,7 @@ class ChatTopStatusBarUiTest {
                     onOpenConversationList = {},
                     onOpenSettings = {},
                     onStatusClick = { statusClickCount.incrementAndGet() },
-                    onQueueOpenChange = {},
                     onConfigMenuOpenChange = {},
-                    onQueuedPromptClick = {},
                     onOpenPromptNavigator = {},
                     onOpenSessionInfo = {},
                     onOpenModel = {},

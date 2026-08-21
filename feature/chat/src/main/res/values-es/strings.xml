@@ -40,11 +40,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">Añade un mensaje a la cola…</string>
-    <string name="queued_prompts_label">En cola</string>
-    <string name="remove_queued_prompt">Eliminar mensaje en cola</string>
-    <string name="queued_attachment_count">%1$d archivo(s) adjunto(s)</string>
-    <string name="queued_prompt_fallback">Mensaje en cola</string>
     <string name="slash_commands_label">Comandos con barra</string>
     <string name="slash_command_suggestion">%1$s. %2$s</string>
     <string name="skills_mentions_label">Habilidades</string>

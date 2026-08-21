@@ -40,11 +40,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">Ajouter un message à la file…</string>
-    <string name="queued_prompts_label">En attente</string>
-    <string name="remove_queued_prompt">Supprimer le message en attente</string>
-    <string name="queued_attachment_count">%1$d pièce(s) jointe(s)</string>
-    <string name="queued_prompt_fallback">Message en attente</string>
     <string name="slash_commands_label">Commandes slash</string>
     <string name="slash_command_suggestion">%1$s. %2$s</string>
     <string name="skills_mentions_label">Compétences</string>

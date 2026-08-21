@@ -65,8 +65,8 @@ fun filterPrompts(
 
 
 /**
- * Prompt 导航只收录已经进入会话历史的用户指令。失败消息和仍在本地 Queue 中的内容不属于可稳定
- * 跳转的历史锚点；Automation 指令仍然是 role=user，因此会自然保留并由 UI 展示来源标签。
+ * Prompt 导航只收录已经进入会话历史的用户指令。尚未被服务端接受或已经失败的消息不属于
+ * 可稳定跳转的历史锚点；Automation 指令仍然是 role=user，因此会自然保留并由 UI 展示来源标签。
  */
 private fun UiMessage.isPromptNavigatorEntry(): Boolean {
     if (role != "user" || kind == "trace") return false

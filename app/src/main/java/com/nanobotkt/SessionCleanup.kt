@@ -1,5 +1,6 @@
 package com.nanobotkt
 
+import com.nanobotkt.core.persistence.ComposerDraftStore
 import com.nanobotkt.feature.apps.AppsRepository
 import com.nanobotkt.feature.automations.AutomationsRepository
 import com.nanobotkt.feature.channels.ChannelsRepository
@@ -30,6 +31,7 @@ class SessionCleanup @Inject constructor(
     private val securityRepository: SecurityRepository,
     private val workspacesRepository: WorkspacesRepository,
     private val settingsRepository: SettingsRepository,
+    private val composerDraftStore: ComposerDraftStore,
 ) {
     /**
      * 在认证状态进入 Ready 后启动需要 Token 的会话级加载。
@@ -39,6 +41,17 @@ class SessionCleanup @Inject constructor(
      */
     fun onAuthenticated(sessionEpoch: Long) {
         chatRepository.onAuthenticated(sessionEpoch)
+    }
+
+    /**
+     * 删除与当前认证主体绑定的持久化 Composer Draft。
+     *
+     * 该操作必须在认证仓库真正 logout 前完成：数据库中的消息正文、引用和附件 data URL 都属于
+     * 当前账号的本地私有数据，若保留到下一账号会造成跨账号内容泄漏。方法保持 suspend，避免在
+     * 主线程使用 runBlocking；调用方通过 finally 保证即使数据库清理失败也仍会完成认证注销。
+     */
+    suspend fun clearPersistedChatInput() {
+        composerDraftStore.deleteAll()
     }
 
     /**

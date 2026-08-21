@@ -40,11 +40,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">メッセージをキューに追加…</string>
-    <string name="queued_prompts_label">送信待ち</string>
-    <string name="remove_queued_prompt">送信待ちメッセージを削除</string>
-    <string name="queued_attachment_count">添付ファイル %1$d 件</string>
-    <string name="queued_prompt_fallback">送信待ちメッセージ</string>
     <string name="slash_commands_label">スラッシュコマンド</string>
     <string name="slash_command_suggestion">%1$s。%2$s</string>
     <string name="skills_mentions_label">スキル</string>

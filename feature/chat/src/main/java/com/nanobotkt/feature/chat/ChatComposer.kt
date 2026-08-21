@@ -146,7 +146,7 @@ internal fun ConversationComposer(
  * Chat 输入区的唯一视觉骨架。
  *
  * 这里把“附件/引用等临时上下文”和“可编辑输入框”分成两个层级：上层只承载当前草稿上下文，
- * 下层负责输入与主操作。Queue 已上移到顶部状态栏，Composer 不再保留常驻队列区域。
+ * 下层负责输入与主操作。当前产品不提供消息队列，Composer 始终只维护一份可恢复 Draft。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -174,10 +174,21 @@ internal fun ComposerLayout(
         state.text.isNotBlank() ||
             state.attachments.isNotEmpty() ||
             !state.quotedContext.isNullOrBlank()
-    val stopButton = active && !hasDraft
+    // 产品取舍：只要服务端 turn 仍在运行，主操作始终是 Stop。即使用户已经输入下一份
+    // Draft，也不能把按钮切回 Send，否则又需要维护第二条待发送消息及其结果归属状态。
+    val stopButton = active
+    // acceptance 等待期使用同一个不可编辑边界，避免按钮、IME、附件与引用对“当前 Draft
+    // 是否还能变化”产生不一致判断。Active turn 和 hydration 期间仍允许输入；Coordinator 会让
+    // hydration 期间产生的新 revision 优先于磁盘旧草稿。
+    val draftEditable = !state.sending
     val sendEnabled =
-        stopButton ||
-            (!state.sending && !state.voice.isRecording && !state.voice.isTranscribing && hasDraft)
+        !active &&
+            draftEditable &&
+            // hydration 期间仍允许编辑，但发送必须等磁盘 revision 收敛后再开放。
+            !state.hydrating &&
+            !state.voice.isRecording &&
+            !state.voice.isTranscribing &&
+            hasDraft
     val slashSuggestions =
         if (state.slashMenuDismissed) emptyList()
         else visibleSlashCommands(state.text, slashCommands, active)
@@ -261,7 +272,11 @@ internal fun ComposerLayout(
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             style = MaterialTheme.typography.bodySmall,
                         )
-                        IconButton(onClick = onClearQuote, modifier = Modifier.size(48.dp)) {
+                        IconButton(
+                            onClick = onClearQuote,
+                            enabled = draftEditable,
+                            modifier = Modifier.size(48.dp),
+                        ) {
                             Icon(
                                 Icons.Rounded.Close,
                                 contentDescription = stringResource(R.string.remove_quoted_context),
@@ -279,6 +294,7 @@ internal fun ComposerLayout(
                     state.attachments.take(3).forEachIndexed { index, attachment ->
                         AssistChip(
                             onClick = { onRemoveAttachment(index) },
+                            enabled = draftEditable,
                             label = {
                                 Text(
                                     attachment.name,
@@ -324,7 +340,7 @@ internal fun ComposerLayout(
                 ) {
                     AttachmentMenuButton(
                         enabled =
-                            !state.sending &&
+                            draftEditable &&
                                 !state.voice.isRecording &&
                                 !state.voice.isTranscribing,
                         onPickImages = onPickImages,
@@ -333,14 +349,12 @@ internal fun ComposerLayout(
                     ComposerTextField(
                         state = state,
                         modifier = Modifier.weight(1f),
-                        placeholder =
-                            if (active && !hasDraft) {
-                                stringResource(R.string.composer_placeholder_streaming)
-                            } else {
-                                placeholder
-                            },
+                        // Active turn 期间仍允许准备下一条 Draft，但它不会被排队或自动发送，
+                        // 因此沿用普通输入提示，避免向用户暗示存在已删除的 Queue 能力。
+                        placeholder = placeholder,
                         textColor = MaterialTheme.colorScheme.onSurface,
                         mutedColor = mutedColor,
+                        sendAllowed = sendEnabled,
                         onTextChange = onTextChange,
                         onSend = onSend,
                     )

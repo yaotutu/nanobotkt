@@ -40,11 +40,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">Thêm tin nhắn vào hàng đợi…</string>
-    <string name="queued_prompts_label">Đang chờ</string>
-    <string name="remove_queued_prompt">Xóa tin nhắn đang chờ</string>
-    <string name="queued_attachment_count">%1$d tệp đính kèm</string>
-    <string name="queued_prompt_fallback">Tin nhắn đang chờ</string>
     <string name="slash_commands_label">Lệnh dấu gạch chéo</string>
     <string name="slash_command_suggestion">%1$s. %2$s</string>
     <string name="skills_mentions_label">Kỹ năng</string>

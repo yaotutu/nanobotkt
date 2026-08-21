@@ -40,11 +40,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">Adicione uma mensagem à fila…</string>
-    <string name="queued_prompts_label">Na fila</string>
-    <string name="remove_queued_prompt">Remover mensagem da fila</string>
-    <string name="queued_attachment_count">%1$d anexo(s)</string>
-    <string name="queued_prompt_fallback">Mensagem na fila</string>
     <string name="slash_commands_label">Comandos de barra</string>
     <string name="slash_command_suggestion">%1$s. %2$s</string>
     <string name="skills_mentions_label">Habilidades</string>

@@ -8,6 +8,7 @@ import com.nanobotkt.core.model.SlashCommand
 import com.nanobotkt.core.model.UiCliAppAttachment
 import com.nanobotkt.core.model.UiMcpPresetAttachment
 import com.nanobotkt.core.model.WorkspaceScope
+import com.nanobotkt.core.persistence.ComposerDraftStore
 import com.nanobotkt.core.persistence.ComposerRecentsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -23,15 +24,14 @@ constructor(
     private val attachmentEncoder: AttachmentEncoding,
     private val voiceRecorder: VoiceRecorder,
     private val composerRecentsStore: ComposerRecentsStore,
+    private val composerDraftStore: ComposerDraftStore,
 ) : ViewModel() {
     val state: StateFlow<ChatUiState> = repository.state
 
-    // Composer、Queue 和 Voice 各自只持有本职责内的可变状态；ViewModel 只编排用户事件和仓储调用。
+    // Composer 只保存一条可恢复 Draft；ViewModel 负责发送编排，Repository 负责服务端状态。
     private val composerCoordinator =
-        ComposerStateCoordinator(viewModelScope, composerRecentsStore)
+        ComposerStateCoordinator(viewModelScope, composerRecentsStore, composerDraftStore)
     val composer: StateFlow<ComposerUiState> = composerCoordinator.state
-    private val queueCoordinator =
-        ChatQueueCoordinator(initialTurnActive = state.value.activeTurnId != null)
     private val voiceCoordinator =
         ChatVoiceCoordinator(
             scope = viewModelScope,
@@ -41,21 +41,6 @@ constructor(
         )
 
     private var openedSessionKey: String? = null
-
-    init {
-        viewModelScope.launch {
-            state.collect { chatState ->
-                if (
-                    queueCoordinator.onChatStateChanged(
-                        turnActive = chatState.activeTurnId != null,
-                        composer = composerCoordinator.value,
-                    )
-                ) {
-                    flushNextQueuedPrompt()
-                }
-            }
-        }
-    }
 
     fun open(
         sessionKey: String,
@@ -67,8 +52,7 @@ constructor(
         repository.clearFilePreview()
         if (openedSessionKey != sessionKey) {
             voiceCoordinator.reset()
-            composerCoordinator.resetForSession()
-            queueCoordinator.reset(turnActive = state.value.activeTurnId != null)
+            composerCoordinator.switchScope(existingComposerScope(sessionKey, chatId))
             openedSessionKey = sessionKey
         }
         repository.openSession(sessionKey, chatId, workspaceScope, modelPreset)
@@ -77,8 +61,7 @@ constructor(
     fun startNewTopic() {
         repository.clearFilePreview()
         voiceCoordinator.reset()
-        composerCoordinator.resetForSession()
-        queueCoordinator.reset(turnActive = state.value.activeTurnId != null)
+        composerCoordinator.switchScope(newTopicComposerScope(state.value.workspaceScope?.projectPath))
         openedSessionKey = null
         repository.startNewTopic()
     }
@@ -110,6 +93,7 @@ constructor(
     fun loadOlder() = repository.loadOlder()
 
     fun setQuotedContext(content: String) {
+        if (!canEditDraft()) return
         val normalized = normalizeQuotedContext(content)
         composerCoordinator.value =
             composerCoordinator.value.copy(
@@ -119,10 +103,12 @@ constructor(
     }
 
     fun clearQuotedContext() {
+        if (!canEditDraft()) return
         composerCoordinator.value = composerCoordinator.value.copy(quotedContext = null)
     }
 
     fun updateText(text: String, cursorPosition: Int = text.length) {
+        if (!canEditDraft()) return
         composerCoordinator.value =
             composerCoordinator.value.copy(
                 text = text,
@@ -137,19 +123,11 @@ constructor(
         val turnActive = state.value.activeTurnId != null
         val stopActiveTurn = command.command == "/stop" || command.lifecycle == "stop_active_turn"
         if (turnActive && stopActiveTurn) {
-            composerCoordinator.value =
-                composerCoordinator.value.copy(
-                    text = "",
-                    cursorPosition = 0,
-                    attachments = emptyList(),
-                    quotedContext = null,
-                    slashMenuDismissed = true,
-                    mentionMenuDismissed = false,
-                    error = null,
-                )
+            // Active turn 的唯一提交动作是 Stop；停止服务端 turn 不应清空用户正在编辑的 Draft。
             stop()
             return
         }
+        if (!canEditDraft()) return
 
         composerCoordinator.recordRecentCommand(command.command)
         val nextText = if (command.acceptsArgs) "${command.command} " else command.command
@@ -164,6 +142,7 @@ constructor(
     }
 
     fun selectSkillMention(candidate: SkillMentionCandidate) {
+        if (!canEditDraft()) return
         val current = composerCoordinator.value
         val query = skillMentionQuery(current.text, current.cursorPosition) ?: return
         val next = insertSkillMention(current.text, query, candidate)
@@ -179,6 +158,7 @@ constructor(
     }
 
     fun selectCapabilityMention(candidate: CapabilityMentionCandidate) {
+        if (!canEditDraft()) return
         val current = composerCoordinator.value
         val query = capabilityMentionQuery(current.text, current.cursorPosition) ?: return
         val next = insertCapabilityMention(current.text, query, candidate)
@@ -193,6 +173,7 @@ constructor(
     }
 
     fun removeAttachment(index: Int) {
+        if (!canEditDraft()) return
         composerCoordinator.value =
             composerCoordinator.value.copy(
                 attachments =
@@ -203,7 +184,7 @@ constructor(
     }
 
     fun addAttachments(uris: List<Uri>) {
-        if (uris.isEmpty()) return
+        if (uris.isEmpty() || !canEditDraft()) return
 
         // 在启动协程前捕获 epoch，避免用户切换会话后协程才开始执行时，
         // 错把旧会话的附件任务绑定到新会话的 composer。
@@ -269,14 +250,19 @@ constructor(
 
     fun send() {
         val current = composerCoordinator.value
+        // 产品取舍：服务端仍有 active turn 时，主按钮和业务入口都只允许 Stop。
+        // 这里的业务 guard 不能只依赖 UI，否则 IME Send、无障碍动作或迟到点击仍可能绕过按钮。
         if (
-            current.sending ||
+            state.value.activeTurnId != null ||
+                current.sending ||
+                // hydration 完成前磁盘可能持有更大的 revision。此时允许编辑但禁止发送，避免
+                // 较小 revision 的同步保存被 Room 拒绝后仍调用网络，导致 acceptance 后旧草稿复活。
+                current.hydrating ||
                 current.encodingCount > 0 ||
                 (current.text.isBlank() &&
                     current.attachments.isEmpty() &&
                     current.quotedContext.isNullOrBlank())
-        )
-            return
+        ) return
 
         val capabilityPayloads =
             activeCapabilityMentionPayloads(
@@ -284,14 +270,17 @@ constructor(
                 cliApps = state.value.cliApps,
                 mcpPresets = state.value.mcpPresets,
             )
-        val prompt =
-            QueuedPrompt(
-                id = queueCoordinator.nextPromptId(),
-                text = current.text,
-                attachments = current.attachments,
-                quotedContext = current.quotedContext,
+        val requestEpoch = composerCoordinator.epoch
+        val snapshotRevision = current.revision
+        val text = current.text
+        val attachments = current.attachments
+        val quotedContext = current.quotedContext
+        val options =
+            ChatSendOptions(
+                retainFailureInTimeline = false,
                 cliApps = capabilityPayloads.cliApps,
                 mcpPresets = capabilityPayloads.mcpPresets,
+                capabilityPayloadsResolved = true,
                 workspaceScope = state.value.workspaceScope,
                 sessionGuard =
                     ChatSessionGuard(
@@ -299,71 +288,59 @@ constructor(
                         chatId = state.value.chatId,
                     ),
             )
-        val turnActive = state.value.activeTurnId != null
-        val hasPlainTextCommandPayload =
-            current.attachments.isEmpty() &&
-                capabilityPayloads.cliApps.isEmpty() &&
-                capabilityPayloads.mcpPresets.isEmpty()
-        val lifecycle =
-            if (hasPlainTextCommandPayload) {
-                slashCommandLifecycle(current.text.trim(), state.value.slashCommands)
-            } else {
-                null
-            }
-        if (turnActive && lifecycle == ResolvedSlashCommandLifecycle.STOP_ACTIVE_TURN) {
-            composerCoordinator.value =
-                current.copy(
-                    text = "",
-                    cursorPosition = 0,
-                    attachments = emptyList(),
-                    quotedContext = null,
-                    slashMenuDismissed = true,
-                    error = null,
-                )
-            stop()
-            return
-        }
-        if (turnActive && !current.text.trimStart().startsWith('/')) {
-            composerCoordinator.value =
-                current.copy(
-                    text = "",
-                    cursorPosition = 0,
-                    attachments = emptyList(),
-                    quotedContext = null,
-                    queuedPrompts = current.queuedPrompts + prompt,
-                    error = null,
-                )
-            return
-        }
 
-        queueCoordinator.onDirectSendStarted()
-        composerCoordinator.value =
-            current.copy(
-                text = "",
-                cursorPosition = 0,
-                quotedContext = null,
-                queuedPrompts = emptyList(),
-                sending = true,
-                error = null,
-            )
-        submitPrompt(
-            prompt = prompt,
-            options =
-                ChatSendOptions(
-                    sideChannel = lifecycle.isSideChannel(),
-                    cliApps = prompt.cliApps,
-                    mcpPresets = prompt.mcpPresets,
-                    sessionGuard = prompt.sessionGuard,
-                ),
-            restoreDraftOnFailure = true,
-            requeueOnFailure = false,
-        )
+        // acceptance 返回前保持正文、引用和附件可见，但文本框进入只读，避免同一 revision
+        // 同时代表“正在发送的内容”和“下一份草稿”而重新引入双状态同步问题。
+        composerCoordinator.value = current.copy(sending = true, error = null)
+        viewModelScope.launch {
+            try {
+                // Room 是网络发送的前置条件。若本地保存失败，绝不调用 Repository，Composer 原样保留。
+                val stillCurrent =
+                    composerCoordinator.persistDraftForSend(requestEpoch, snapshotRevision)
+                if (!stillCurrent) return@launch
+
+                when (
+                    val outcome =
+                        repository.send(
+                            text = text,
+                            media = attachments.map { it.outbound },
+                            quotedContext = quotedContext,
+                            options = options,
+                        )
+                ) {
+                    ChatSendOutcome.Accepted -> {
+                        // 只有明确 acceptance 才清空；条件 revision 防止迟到结果误删其他会话或新输入。
+                        composerCoordinator.clearAfterAcceptance(requestEpoch, snapshotRevision)
+                    }
+                    is ChatSendOutcome.FailedRetained -> {
+                        finishSendFailure(requestEpoch, outcome.reason)
+                    }
+                }
+            } catch (error: CancellationException) {
+                // 取消可能发生在 WebSocket 已写出之后。磁盘 Draft 保持原样，恢复后由用户决定是否重发。
+                throw error
+            } catch (error: Exception) {
+                finishSendFailure(requestEpoch, error.message ?: "message_send_failed")
+            }
+        }
     }
 
-    fun removeQueuedPrompt(id: String) {
+    /**
+     * 发送 acceptance 等待期禁止修改 payload。
+     *
+     * UI 会同步禁用文本、附件和引用入口，这里的业务 guard 负责兜住 IME、无障碍动作、迟到
+     * callback 与测试直接调用，避免发送快照和可见 Draft 再次分裂成两份状态。Active turn 不在
+     * 此限制中：用户仍可编辑下一条，只是主操作固定为 Stop。
+     */
+    private fun canEditDraft(): Boolean = !composerCoordinator.value.sending
+
+    /** 发送失败只解除只读并展示错误；正文、引用、附件和磁盘 Draft 都保持不变。 */
+    private fun finishSendFailure(requestEpoch: Long, reason: String) {
+        if (requestEpoch != composerCoordinator.epoch) return
         composerCoordinator.value =
             composerCoordinator.value.copy(
-                queuedPrompts = composerCoordinator.value.queuedPrompts.filterNot { it.id == id }
+                sending = false,
+                error = reason,
             )
     }
 
@@ -423,29 +400,25 @@ constructor(
         }
     }
 
-    fun startVoiceRecording(permissionGranted: Boolean) =
-        voiceCoordinator.start(permissionGranted)
+    fun startVoiceRecording(permissionGranted: Boolean) {
+        if (canEditDraft()) voiceCoordinator.start(permissionGranted)
+    }
 
     fun stopVoiceRecording(cancelled: Boolean = false, maxReached: Boolean = false) =
         voiceCoordinator.stop(cancelled, maxReached)
 
-    /**
-     * Activity 进入 STOPPED（锁屏、HOME 或切到其他应用）时立即取消正在录制的麦克风。
-     *
-     * ViewModel 与 Compose 树在后台通常仍然存活，不能等待 onCleared/dispose；同时不自动恢复录音，
-     * 避免用户解锁后在没有明确操作的情况下继续采集声音。
-     */
+    /** 锁屏、HOME 或切到其他应用时停止录音，并绕过 debounce 尽力保存最后一次输入。 */
     fun onAppBackgrounded() {
         voiceCoordinator.stop(cancelled = true)
+        viewModelScope.launch {
+            // 发送中的 payload 已在网络调用前同步保存；这里主要覆盖尚未点击发送的最后几百毫秒输入。
+            runCatching { composerCoordinator.persistCurrentDraftNow() }
+        }
     }
 
     fun stop() {
-        // Repository 先同步抢占当前 turn 的停止权；只有第一次点击成功后才清 Queue。
-        // 这样重复点击既不会重复发送 `/stop`，也不会重复触发本地队列状态转换或提示。
-        if (!repository.stop()) return
-        val current = composerCoordinator.value
-        queueCoordinator.onStop(hasQueuedPrompts = current.queuedPrompts.isNotEmpty())
-        composerCoordinator.value = current.copy(queuedPrompts = emptyList())
+        // Stop 只停止当前服务端 turn，绝不修改用户正在编辑的下一份 Draft。
+        repository.stop()
     }
 
     fun clearError() = repository.clearError()
@@ -466,93 +439,4 @@ constructor(
         super.onCleared()
     }
 
-    private fun flushNextQueuedPrompt() {
-        val current = composerCoordinator.value
-        if (current.sending || state.value.activeTurnId != null) return
-        val next = current.queuedPrompts.firstOrNull() ?: return
-        queueCoordinator.onQueueFlushStarted()
-        composerCoordinator.value =
-            current.copy(
-                queuedPrompts = current.queuedPrompts.drop(1),
-                sending = true,
-                error = null,
-            )
-        submitPrompt(
-            prompt = next,
-            options = ChatSendOptions(retainFailureInTimeline = false),
-            restoreDraftOnFailure = false,
-            requeueOnFailure = true,
-        )
-    }
-
-    private fun submitPrompt(
-        prompt: QueuedPrompt,
-        options: ChatSendOptions = ChatSendOptions(),
-        restoreDraftOnFailure: Boolean,
-        requeueOnFailure: Boolean,
-    ) {
-        val requestEpoch = composerCoordinator.epoch
-        viewModelScope.launch {
-            runCatching {
-                    repository.send(
-                        text = prompt.text,
-                        media = prompt.attachments.map { it.outbound },
-                        quotedContext = prompt.quotedContext,
-                        options =
-                            options.copy(
-                                cliApps = prompt.cliApps,
-                                mcpPresets = prompt.mcpPresets,
-                                capabilityPayloadsResolved = true,
-                                workspaceScope = prompt.workspaceScope,
-                            ),
-                    )
-                }
-                .onSuccess { outcome ->
-                    if (requestEpoch == composerCoordinator.epoch) {
-                        composerCoordinator.value =
-                            composerCoordinator.value.copy(
-                                attachments =
-                                    if (restoreDraftOnFailure) emptyList()
-                                    else composerCoordinator.value.attachments,
-                                sending = false,
-                                // FailedRetained 已经通过时间轴气泡提供可操作反馈；底部不再重复
-                                // 展示全局错误。Accepted 同样清除上一轮 Composer 错误。
-                                error = null,
-                            )
-                        // 如果 turn-end 发生在 acceptance 返回之前，状态收集器已经把本次
-                        // flush 延后。必须在 sending=false 之后补做一次，否则不会再出现新的
-                        // active→idle 边沿，剩余排队消息会一直停在顶部和时间轴中。
-                        if (queueCoordinator.onSubmitSucceeded()) {
-                            flushNextQueuedPrompt()
-                        }
-                    }
-                }
-                .onFailure { error ->
-                    if (requestEpoch == composerCoordinator.epoch) {
-                        // Queue acceptance 失败会把当前 prompt 插回队首并等待用户处理；不能沿用
-                        // 较早的 turn-end 信号立即重试，否则会形成无上限的自动失败循环。
-                        queueCoordinator.onSubmitFailed()
-                        val current = composerCoordinator.value
-                        composerCoordinator.value =
-                            current.copy(
-                                text = if (restoreDraftOnFailure) prompt.text else current.text,
-                                cursorPosition =
-                                    if (restoreDraftOnFailure) prompt.text.length
-                                    else current.cursorPosition,
-                                attachments =
-                                    if (restoreDraftOnFailure) prompt.attachments
-                                    else current.attachments,
-                                quotedContext =
-                                    if (restoreDraftOnFailure) prompt.quotedContext
-                                    else current.quotedContext,
-                                queuedPrompts =
-                                    if (requeueOnFailure) listOf(prompt) + current.queuedPrompts
-                                    else current.queuedPrompts,
-                                sending = false,
-                                error = error.message ?: "message_send_failed",
-                            )
-                    }
-                }
-        }
-    }
 }

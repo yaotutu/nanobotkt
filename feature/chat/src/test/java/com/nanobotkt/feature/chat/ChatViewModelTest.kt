@@ -9,6 +9,9 @@ import com.nanobotkt.core.model.SkillSummary
 import com.nanobotkt.core.model.SlashCommand
 import com.nanobotkt.core.model.WorkspaceAccessMode
 import com.nanobotkt.core.model.WorkspaceScope
+import com.nanobotkt.core.persistence.ComposerDraftPayload
+import com.nanobotkt.core.persistence.ComposerDraftRecord
+import com.nanobotkt.core.persistence.ComposerDraftStore
 import com.nanobotkt.core.persistence.ComposerRecentsStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -42,9 +46,10 @@ class ChatViewModelTest {
     }
     private val voiceRecorder = FakeVoiceRecorder()
     private val composerRecentsStore = FakeComposerRecentsStore()
+    private val composerDraftStore = FakeComposerDraftStore()
 
     @Test
-    fun `opening a different session resets composer and active recording`() {
+    fun `opening a different session resets composer and active recording`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
         viewModel.updateText("draft")
@@ -53,6 +58,7 @@ class ChatViewModelTest {
         val cancelCountBeforeSwitch = voiceRecorder.cancelCount
 
         viewModel.open("websocket:b", "b")
+        runCurrent()
 
         assertEquals(ComposerUiState(), viewModel.composer.value)
         assertTrue(voiceRecorder.cancelCount > cancelCountBeforeSwitch)
@@ -84,6 +90,7 @@ class ChatViewModelTest {
         assertEquals(1, viewModel.composer.value.encodingCount)
 
         viewModel.open("websocket:b", "b")
+        runCurrent()
         assertEquals(ComposerUiState(), viewModel.composer.value)
 
         // 旧会话编码完成后，结果必须被 epoch guard 丢弃，不能写入 B 的 composer。
@@ -106,6 +113,7 @@ class ChatViewModelTest {
         assertEquals(1, viewModel.composer.value.encodingCount)
 
         viewModel.startNewTopic()
+        runCurrent()
         assertEquals(ComposerUiState(), viewModel.composer.value)
 
         encoder.pending.single().completion.completeExceptionally(IllegalStateException("old_failure"))
@@ -199,30 +207,13 @@ class ChatViewModelTest {
         val scope = workspaceScope("/srv/project", WorkspaceAccessMode.RESTRICTED)
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a", scope)
+        runCurrent()
         viewModel.updateText("question")
 
         viewModel.send()
         advanceUntilIdle()
 
         assertEquals(scope, repository.sentPrompts.single().options.workspaceScope)
-    }
-
-    @Test
-    fun `queued prompt retains enqueue time workspace scope`() = runTest {
-        val queuedScope = workspaceScope("/srv/queued", WorkspaceAccessMode.RESTRICTED)
-        val laterScope = workspaceScope("/srv/later", WorkspaceAccessMode.FULL)
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a", queuedScope)
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("queued question")
-        viewModel.send()
-
-        repository.setWorkspaceScopeState(laterScope)
-        repository.setActiveTurn(null)
-        advanceUntilIdle()
-
-        assertEquals(queuedScope, repository.sentPrompts.single().options.workspaceScope)
     }
 
     @Test
@@ -278,234 +269,319 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `send forwards quote and clears composer after socket acceptance`() = runTest {
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        viewModel.updateText("question")
-        viewModel.setQuotedContext("answer")
-
-        viewModel.send()
-        assertTrue(viewModel.composer.value.sending)
-        advanceUntilIdle()
-
-        assertEquals("question", repository.lastSentText)
-        assertEquals("answer", repository.lastQuotedContext)
-        assertEquals(ComposerUiState(), viewModel.composer.value)
-    }
-
-    @Test
-    fun `active turn queues prompt and clears its draft context`() = runTest {
+    fun `active turn blocks send and keeps the complete draft`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
         runCurrent()
         repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("queued question")
+        viewModel.updateText("next question", cursorPosition = 4)
         viewModel.setQuotedContext("quoted answer")
 
         viewModel.send()
+        runCurrent()
 
         assertTrue(repository.sentPrompts.isEmpty())
+        assertEquals("next question", viewModel.composer.value.text)
+        assertEquals(4, viewModel.composer.value.cursorPosition)
+        assertEquals("quoted answer", viewModel.composer.value.quotedContext)
+        assertFalse(viewModel.composer.value.sending)
+    }
+
+    @Test
+    fun `send persists draft before repository and keeps composer visible until acceptance`() = runTest {
+        val acceptanceGate = CompletableDeferred<Unit>()
+        val viewModel = viewModel()
+        viewModel.open("websocket:a", "a")
+        runCurrent()
+        viewModel.updateText("a very long question", cursorPosition = 7)
+        viewModel.setQuotedContext("quoted answer")
+        repository.sendBlock = { _, _, _ -> acceptanceGate.await() }
+
+        viewModel.send()
+        runCurrent()
+
+        val stored = composerDraftStore.records.getValue("session:websocket:a:a")
+        assertEquals("a very long question", stored.payload.text)
+        assertEquals(7, stored.payload.cursorPosition)
+        assertEquals("quoted answer", stored.payload.quotedContext)
+        assertEquals("a very long question", viewModel.composer.value.text)
+        assertEquals("quoted answer", viewModel.composer.value.quotedContext)
+        assertTrue(viewModel.composer.value.sending)
+
+        // acceptance 等待期间所有业务入口都必须遵守只读边界，不能制造第二份 revision。
+        viewModel.updateText("must be ignored")
+        viewModel.clearQuotedContext()
+        assertEquals("a very long question", viewModel.composer.value.text)
+        assertEquals("quoted answer", viewModel.composer.value.quotedContext)
+
+        acceptanceGate.complete(Unit)
+        advanceUntilIdle()
+
         assertEquals("", viewModel.composer.value.text)
         assertNull(viewModel.composer.value.quotedContext)
-        assertEquals(1, viewModel.composer.value.queuedPrompts.size)
-        assertEquals("queued question", viewModel.composer.value.queuedPrompts.single().text)
-        assertEquals("quoted answer", viewModel.composer.value.queuedPrompts.single().quotedContext)
+        assertFalse(viewModel.composer.value.sending)
+        assertTrue(composerDraftStore.records.isEmpty())
     }
 
     @Test
-    fun `turn end flushes only the first queued prompt`() = runTest {
-        val viewModel = viewModel()
+    fun `local draft save failure never calls repository and retains complete payload`() = runTest {
+        val attachment = composerAttachment(TestUri("test://attachments/report.txt"), "report.txt")
+        val encoder = ImmediateAttachmentEncoder(attachment)
+        val viewModel = viewModel(encoder)
         viewModel.open("websocket:a", "a")
         runCurrent()
-        repository.setActiveTurn("turn-1")
+        viewModel.updateText("thousands of words", cursorPosition = 5)
+        viewModel.setQuotedContext("quoted")
+        viewModel.addAttachments(listOf(attachment.uri))
         runCurrent()
-        viewModel.updateText("first")
-        viewModel.send()
-        viewModel.updateText("second")
-        viewModel.send()
+        composerDraftStore.saveFailure = IllegalStateException("local_disk_unavailable")
 
-        repository.setActiveTurn(null)
+        viewModel.send()
         advanceUntilIdle()
 
-        assertEquals(listOf("first"), repository.sentPrompts.map(SentPrompt::text))
-        assertFalse(repository.sentPrompts.single().options.retainFailureInTimeline)
-        assertEquals(listOf("second"), viewModel.composer.value.queuedPrompts.map(QueuedPrompt::text))
+        assertTrue(repository.sentPrompts.isEmpty())
+        assertEquals("thousands of words", viewModel.composer.value.text)
+        assertEquals(5, viewModel.composer.value.cursorPosition)
+        assertEquals("quoted", viewModel.composer.value.quotedContext)
+        assertEquals(listOf(attachment), viewModel.composer.value.attachments)
+        assertEquals("local_disk_unavailable", viewModel.composer.value.error)
         assertFalse(viewModel.composer.value.sending)
     }
 
     @Test
-    fun `fast queued turn end during acceptance continues flushing remaining prompts`() = runTest {
-        val firstAcceptance = CompletableDeferred<Unit>()
-        repository.sendBlock = { text, _, _ ->
-            if (text == "first") firstAcceptance.await()
-        }
+    fun `failed retained outcome keeps draft and permits manual resend`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
         runCurrent()
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("first")
-        viewModel.send()
-        viewModel.updateText("second")
-        viewModel.send()
+        viewModel.updateText("retry me")
+        viewModel.setQuotedContext("context")
+        repository.sendOutcome = ChatSendOutcome.FailedRetained("local:turn-1", "server_rejected")
 
-        // 原 turn 结束后开始 flush 第一条；仓储 acceptance 仍挂起，因此 Composer 保持
-        // sending=true，同时第二条仍在 Queue 中。
-        repository.setActiveTurn(null)
-        runCurrent()
-        assertTrue(viewModel.composer.value.sending)
-        assertEquals(listOf("second"), viewModel.composer.value.queuedPrompts.map(QueuedPrompt::text))
-
-        // 模拟服务端极快完成第一条排队消息：turn-2 在 acceptance 返回前已经开始并结束。
-        // 旧逻辑会在这里因为 sending=true 放弃 flush，并让 second 永久卡在 Queue。
-        repository.setActiveTurn("turn-2")
-        runCurrent()
-        repository.setActiveTurn(null)
-        runCurrent()
-        firstAcceptance.complete(Unit)
+        viewModel.send()
         advanceUntilIdle()
 
-        assertEquals(listOf("first", "second"), repository.sentPrompts.map(SentPrompt::text))
-        assertTrue(viewModel.composer.value.queuedPrompts.isEmpty())
+        assertEquals("retry me", viewModel.composer.value.text)
+        assertEquals("context", viewModel.composer.value.quotedContext)
+        assertEquals("server_rejected", viewModel.composer.value.error)
         assertFalse(viewModel.composer.value.sending)
+        assertEquals("retry me", composerDraftStore.records.getValue("session:websocket:a:a").payload.text)
     }
 
     @Test
-    fun `failed automatic queue flush reinserts prompt at the front`() = runTest {
+    fun `repository exception keeps durable draft instead of clearing composer`() = runTest {
+        val viewModel = viewModel()
+        viewModel.open("websocket:a", "a")
+        runCurrent()
+        viewModel.updateText("keep after disconnect")
         repository.sendBlock = { _, _, _ -> error("socket_acceptance_failed") }
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        runCurrent()
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("first")
-        viewModel.send()
-        viewModel.updateText("second")
-        viewModel.send()
 
-        repository.setActiveTurn(null)
+        viewModel.send()
         advanceUntilIdle()
 
-        assertEquals(listOf("first"), repository.sentPrompts.map(SentPrompt::text))
-        assertEquals(
-            listOf("first", "second"),
-            viewModel.composer.value.queuedPrompts.map(QueuedPrompt::text),
-        )
+        assertEquals("keep after disconnect", viewModel.composer.value.text)
         assertEquals("socket_acceptance_failed", viewModel.composer.value.error)
         assertFalse(viewModel.composer.value.sending)
+        assertEquals(
+            "keep after disconnect",
+            composerDraftStore.records.getValue("session:websocket:a:a").payload.text,
+        )
     }
 
     @Test
-    fun `stop clears queued prompts and suppresses the following turn-end flush`() = runTest {
+    fun `background final flush persists draft before debounce deadline`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
         runCurrent()
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("do not send")
-        viewModel.send()
+        viewModel.updateText("lock screen now")
 
-        viewModel.stop()
-        repository.setActiveTurn(null)
+        // 不推进 250ms debounce，直接模拟 Activity ON_STOP；final flush 必须立即落盘。
+        viewModel.onAppBackgrounded()
+        runCurrent()
+
+        assertEquals(
+            "lock screen now",
+            composerDraftStore.records.getValue("session:websocket:a:a").payload.text,
+        )
+    }
+
+    @Test
+    fun `new view model restores draft but never sends it automatically`() = runTest {
+        composerDraftStore.save(
+            scopeKey = "session:websocket:a:a",
+            revision = 7L,
+            payload =
+                ComposerDraftPayload(
+                    text = "restored after process death",
+                    cursorPosition = 9,
+                    quotedContext = "quote",
+                    sessionKey = "websocket:a",
+                    chatId = "a",
+                ),
+        )
+        val viewModel = viewModel()
+
+        viewModel.open("websocket:a", "a")
         advanceUntilIdle()
 
-        assertEquals(1, repository.stopCount)
+        assertEquals("restored after process death", viewModel.composer.value.text)
+        assertEquals(9, viewModel.composer.value.cursorPosition)
+        assertEquals("quote", viewModel.composer.value.quotedContext)
         assertTrue(repository.sentPrompts.isEmpty())
-        assertTrue(viewModel.composer.value.queuedPrompts.isEmpty())
+        assertFalse(viewModel.composer.value.sending)
     }
 
     @Test
-    fun `rejected duplicate stop keeps queued prompts unchanged`() = runTest {
+    fun `stop only stops active turn and never clears draft`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
         runCurrent()
         repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("keep queued")
-        viewModel.send()
-        repository.stopResult = false
-
-        viewModel.stop()
-
-        // Repository 返回 false 表示当前 turn 已有停止请求在途；ViewModel 不能再次触发
-        // Queue 的 stop 转换，否则重复点击会把本地状态当作新的停止操作处理。
-        assertEquals(1, repository.stopCount)
-        assertEquals(listOf("keep queued"), viewModel.composer.value.queuedPrompts.map(QueuedPrompt::text))
-    }
-
-    @Test
-    fun `queued prompt can be removed without changing the remaining order`() = runTest {
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        runCurrent()
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("first")
-        viewModel.send()
-        viewModel.updateText("second")
-        viewModel.send()
-        val firstId = viewModel.composer.value.queuedPrompts.first().id
-
-        viewModel.removeQueuedPrompt(firstId)
-
-        assertEquals(listOf("second"), viewModel.composer.value.queuedPrompts.map(QueuedPrompt::text))
-    }
-
-    @Test
-    fun `direct send failure restores text and quote`() = runTest {
-        repository.sendBlock = { _, _, _ -> error("send_failed_remote") }
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        viewModel.updateText("keep me")
+        viewModel.updateText("send after stop")
         viewModel.setQuotedContext("keep quote")
 
-        viewModel.send()
-        advanceUntilIdle()
+        viewModel.stop()
+        runCurrent()
 
-        assertEquals("keep me", viewModel.composer.value.text)
+        assertEquals(1, repository.stopCount)
+        assertEquals("send after stop", viewModel.composer.value.text)
         assertEquals("keep quote", viewModel.composer.value.quotedContext)
-        assertEquals("send_failed_remote", viewModel.composer.value.error)
-        assertFalse(viewModel.composer.value.sending)
+        assertTrue(repository.sentPrompts.isEmpty())
     }
 
     @Test
-    fun `retained send failure keeps failed bubble ownership and does not restore composer`() = runTest {
-        repository.sendOutcome = ChatSendOutcome.FailedRetained("local:turn-1", "send_rejected")
+    fun `session switching restores each sessions own draft`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
-        viewModel.updateText("already represented by failed bubble")
-        viewModel.setQuotedContext("quoted answer")
-
-        viewModel.send()
+        runCurrent()
+        viewModel.updateText("draft a")
+        viewModel.open("websocket:b", "b")
         advanceUntilIdle()
+        viewModel.updateText("draft b")
 
-        // Repository 已持有原始文本、引用和附件供气泡重试；Composer 若再恢复草稿会形成重复内容。
-        assertEquals("", viewModel.composer.value.text)
-        assertNull(viewModel.composer.value.quotedContext)
-        assertTrue(viewModel.composer.value.attachments.isEmpty())
-        assertNull(viewModel.composer.value.error)
-        assertFalse(viewModel.composer.value.sending)
-    }
-
-    @Test
-    fun `opening a different session clears queue and prevents stale flush`() = runTest {
-        val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
-        runCurrent()
-        repository.setActiveTurn("turn-a")
-        runCurrent()
-        viewModel.updateText("old queued prompt")
-        viewModel.send()
+        advanceUntilIdle()
+        assertEquals("draft a", viewModel.composer.value.text)
 
         viewModel.open("websocket:b", "b")
+        advanceUntilIdle()
+        assertEquals("draft b", viewModel.composer.value.text)
+    }
+
+    @Test
+    fun `draft typed during hydration cannot send until disk revision is reconciled`() = runTest {
+        composerDraftStore.save(
+            scopeKey = "session:websocket:a:a",
+            revision = 4L,
+            payload = ComposerDraftPayload(text = "older disk draft", cursorPosition = 4),
+        )
+        val loadGate = CompletableDeferred<Unit>()
+        composerDraftStore.loadGate = loadGate
+        val viewModel = viewModel()
+
+        viewModel.open("websocket:a", "a")
         runCurrent()
-        repository.setActiveTurn(null)
+        viewModel.updateText("new draft")
+        viewModel.send()
+        runCurrent()
+
+        // hydration 尚未确定磁盘 revision 时不允许发送；正文仍可编辑且点击不会进入 sending。
+        assertTrue(repository.sentPrompts.isEmpty())
+        assertEquals("new draft", viewModel.composer.value.text)
+        assertFalse(viewModel.composer.value.sending)
+
+        loadGate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("new draft", viewModel.composer.value.text)
+        assertFalse(viewModel.composer.value.hydrating)
+        assertTrue(repository.sentPrompts.isEmpty())
+
+        // hydration 只解除发送闸门，绝不替用户自动重发；必须再次显式点击才发送。
+        viewModel.send()
+        advanceUntilIdle()
+        assertEquals(listOf("new draft"), repository.sentPrompts.map { it.text })
+        assertEquals("", viewModel.composer.value.text)
+    }
+
+    @Test
+    fun `background final flush waits for hydration and persists the users newer text`() = runTest {
+        composerDraftStore.save(
+            scopeKey = "session:websocket:a:a",
+            revision = 8L,
+            payload = ComposerDraftPayload(text = "stale disk text", cursorPosition = 3),
+        )
+        val loadGate = CompletableDeferred<Unit>()
+        composerDraftStore.loadGate = loadGate
+        val viewModel = viewModel()
+
+        viewModel.open("websocket:a", "a")
+        runCurrent()
+        viewModel.updateText("text typed immediately before lock")
+        viewModel.onAppBackgrounded()
+        runCurrent()
+
+        // 模拟 Room load 与锁屏 final flush 重叠：load 完成后必须先提升 revision，再由 flush 保存
+        // 当前内存正文，不能让旧磁盘记录凭借更大的 revision 在进程重建时重新出现。
+        loadGate.complete(Unit)
         advanceUntilIdle()
 
-        assertTrue(repository.sentPrompts.isEmpty())
-        assertEquals(ComposerUiState(), viewModel.composer.value)
-        assertEquals("websocket:b", repository.state.value.sessionKey)
+        val persisted = composerDraftStore.records.getValue("session:websocket:a:a")
+        assertEquals("text typed immediately before lock", persisted.payload.text)
+        assertTrue(persisted.revision > 8L)
+    }
+
+    @Test
+    fun `clearing a persisted draft removes stale content before process recreation`() = runTest {
+        val firstViewModel = viewModel()
+        firstViewModel.open("websocket:a", "a")
+        runCurrent()
+        firstViewModel.updateText("old text that must not return")
+        advanceTimeBy(250L)
+        advanceUntilIdle()
+        assertEquals(
+            "old text that must not return",
+            composerDraftStore.records.getValue("session:websocket:a:a").payload.text,
+        )
+
+        // 清空动作会产生一个比磁盘记录更新的 revision。持久化层必须按 scope 删除旧记录，
+        // 不能拿新 revision 去匹配旧 revision；否则删除静默失败，进程重建后旧长文本会重新出现。
+        firstViewModel.updateText("")
+        advanceTimeBy(250L)
+        advanceUntilIdle()
+        assertFalse(composerDraftStore.records.containsKey("session:websocket:a:a"))
+
+        val recreatedViewModel = viewModel()
+        recreatedViewModel.open("websocket:a", "a")
+        advanceUntilIdle()
+
+        assertEquals("", recreatedViewModel.composer.value.text)
+        assertFalse(recreatedViewModel.composer.value.hydrating)
+    }
+
+    @Test
+    fun `typing during hydration wins over an older persisted draft`() = runTest {
+        composerDraftStore.save(
+            scopeKey = "session:websocket:a:a",
+            revision = 4L,
+            payload = ComposerDraftPayload(text = "old disk text", cursorPosition = 4),
+        )
+        val loadGate = CompletableDeferred<Unit>()
+        composerDraftStore.loadGate = loadGate
+        val viewModel = viewModel()
+
+        viewModel.open("websocket:a", "a")
+        runCurrent()
+        viewModel.updateText("new local text")
+        loadGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("new local text", viewModel.composer.value.text)
+        assertFalse(viewModel.composer.value.hydrating)
+        advanceTimeBy(250L)
+        advanceUntilIdle()
+        assertEquals(
+            "new local text",
+            composerDraftStore.records.getValue("session:websocket:a:a").payload.text,
+        )
     }
 
     @Test
@@ -576,64 +652,6 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `active stop slash command clears draft and queue without sending`() = runTest {
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        repository.setSlashCommands(listOf(slashCommand("/stop", "stop_active_turn")))
-        runCurrent()
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("queued")
-        viewModel.send()
-        viewModel.updateText("/stop")
-        viewModel.setQuotedContext("quoted")
-
-        viewModel.send()
-        advanceUntilIdle()
-
-        assertEquals(1, repository.stopCount)
-        assertTrue(repository.sentPrompts.isEmpty())
-        assertEquals("", viewModel.composer.value.text)
-        assertNull(viewModel.composer.value.quotedContext)
-        assertTrue(viewModel.composer.value.queuedPrompts.isEmpty())
-        assertTrue(viewModel.composer.value.slashMenuDismissed)
-    }
-
-    @Test
-    fun `side channel slash command sends immediately during active turn`() = runTest {
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        repository.setSlashCommands(listOf(slashCommand("/status", "side_channel")))
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("/status")
-
-        viewModel.send()
-        advanceUntilIdle()
-
-        assertEquals(listOf("/status"), repository.sentPrompts.map(SentPrompt::text))
-        assertTrue(repository.sentPrompts.single().options.sideChannel)
-        assertTrue(viewModel.composer.value.queuedPrompts.isEmpty())
-    }
-
-    @Test
-    fun `agent slash command bypasses active turn queue`() = runTest {
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        repository.setSlashCommands(listOf(slashCommand("/plan", "agent_turn")))
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("/plan")
-
-        viewModel.send()
-        advanceUntilIdle()
-
-        assertEquals(listOf("/plan"), repository.sentPrompts.map(SentPrompt::text))
-        assertFalse(repository.sentPrompts.single().options.sideChannel)
-        assertTrue(viewModel.composer.value.queuedPrompts.isEmpty())
-    }
-
-    @Test
     fun `selecting slash commands inserts expected text and dismisses palette`() {
         val viewModel = viewModel()
         val withArgs = slashCommand("/model", "agent_turn", acceptsArgs = true)
@@ -662,27 +680,9 @@ class ChatViewModelTest {
         viewModel.selectSlashCommand(slashCommand("/halt", "stop_active_turn"))
 
         assertEquals(1, repository.stopCount)
-        assertEquals("", viewModel.composer.value.text)
-        assertNull(viewModel.composer.value.quotedContext)
-        assertTrue(viewModel.composer.value.slashMenuDismissed)
-    }
-
-    @Test
-    fun `failed side channel send restores slash command draft`() = runTest {
-        repository.sendBlock = { _, _, _ -> error("socket_acceptance_failed") }
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        repository.setSlashCommands(listOf(slashCommand("/status", "side_channel")))
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("/status")
-
-        viewModel.send()
-        advanceUntilIdle()
-
-        assertEquals("/status", viewModel.composer.value.text)
-        assertEquals("socket_acceptance_failed", viewModel.composer.value.error)
-        assertTrue(repository.sentPrompts.single().options.sideChannel)
+        // Stop 只影响服务端 turn，不清空用户已经为下一轮准备的 Draft。
+        assertEquals("draft", viewModel.composer.value.text)
+        assertEquals("quote", viewModel.composer.value.quotedContext)
     }
 
     @Test
@@ -716,6 +716,7 @@ class ChatViewModelTest {
     fun `send attaches active cli and mcp mention payloads`() = runTest {
         val viewModel = viewModel()
         viewModel.open("websocket:a", "a")
+        runCurrent()
         repository.setComposerCatalogs(
             cliApps = listOf(cliApp("rg")),
             mcpPresets = listOf(mcpPreset("github")),
@@ -728,42 +729,6 @@ class ChatViewModelTest {
         val options = repository.sentPrompts.single().options
         assertEquals(listOf("rg"), options.cliApps.map { it.name })
         assertEquals(listOf("github"), options.mcpPresets.map { it.name })
-    }
-
-    @Test
-    fun `queued prompt preserves capability payloads captured when enqueued`() = runTest {
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        repository.setComposerCatalogs(cliApps = listOf(cliApp("rg")))
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("Use @rg")
-        viewModel.send()
-        repository.setComposerCatalogs()
-
-        repository.setActiveTurn(null)
-        advanceUntilIdle()
-
-        assertEquals(listOf("rg"), repository.sentPrompts.single().options.cliApps.map { it.name })
-    }
-
-    @Test
-    fun `queued prompt preserves an intentionally empty capability snapshot`() = runTest {
-        val viewModel = viewModel()
-        viewModel.open("websocket:a", "a")
-        repository.setActiveTurn("turn-1")
-        runCurrent()
-        viewModel.updateText("Use @newapp")
-        viewModel.send()
-        repository.setComposerCatalogs(cliApps = listOf(cliApp("newapp")))
-
-        repository.setActiveTurn(null)
-        advanceUntilIdle()
-
-        val options = repository.sentPrompts.single().options
-        assertTrue(options.capabilityPayloadsResolved)
-        assertTrue(options.cliApps.isEmpty())
-        assertTrue(options.mcpPresets.isEmpty())
     }
 
     @Test
@@ -792,6 +757,7 @@ class ChatViewModelTest {
         encoder,
         voiceRecorder,
         composerRecentsStore,
+        composerDraftStore,
     )
 }
 
@@ -834,6 +800,47 @@ private class FakeComposerRecentsStore : ComposerRecentsStore {
         saved += commands
     }
 }
+
+/**
+ * 与 Room 实现保持同样的单 Draft / revision 语义，并提供失败与挂起钩子来稳定覆盖锁屏竞态。
+ */
+private class FakeComposerDraftStore : ComposerDraftStore {
+    val records = linkedMapOf<String, ComposerDraftRecord>()
+    var saveFailure: Throwable? = null
+    var loadGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun load(scopeKey: String): ComposerDraftRecord? {
+        loadGate?.await()
+        return records[scopeKey]
+    }
+
+    override suspend fun save(scopeKey: String, revision: Long, payload: ComposerDraftPayload) {
+        saveFailure?.let { throw it }
+        val current = records[scopeKey]
+        if (current == null || current.revision <= revision) {
+            records[scopeKey] = ComposerDraftRecord(scopeKey, revision, payload)
+        }
+    }
+
+    override suspend fun delete(scopeKey: String, expectedRevision: Long?): Boolean {
+        val current = records[scopeKey] ?: return false
+        if (expectedRevision != null && current.revision != expectedRevision) return false
+        records.remove(scopeKey)
+        return true
+    }
+
+    override suspend fun deleteAll() {
+        records.clear()
+    }
+}
+
+/** 立即返回固定附件，避免可靠性测试依赖 Android ContentResolver。 */
+private class ImmediateAttachmentEncoder(
+    private val attachment: ComposerAttachment,
+) : AttachmentEncoding {
+    override suspend fun encode(uri: Uri, maxFileBytes: Long): ComposerAttachment = attachment
+}
+
 private data class OpenedSession(
     val sessionKey: String,
     val chatId: String,
@@ -858,7 +865,6 @@ private class FakeChatRepository : ChatRepository {
         get() = sentPrompts.lastOrNull()?.quotedContext
     var transcript: String = ""
     var stopCount: Int = 0
-    /** 可控返回值用于验证 Repository 拒绝重复停止时，ViewModel 不会重复清理 Queue。 */
     var stopResult: Boolean = true
     var sendBlock: suspend (String, List<OutboundMedia>, String?) -> Unit = { _, _, _ -> }
     var sendOutcome: ChatSendOutcome = ChatSendOutcome.Accepted

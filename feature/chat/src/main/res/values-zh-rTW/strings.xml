@@ -64,11 +64,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">將訊息加入佇列…</string>
-    <string name="queued_prompts_label">已排隊</string>
-    <string name="remove_queued_prompt">移除排隊訊息</string>
-    <string name="queued_attachment_count">%1$d 個附件</string>
-    <string name="queued_prompt_fallback">排隊訊息</string>
     <string name="slash_commands_label">斜線命令</string>
     <string name="slash_command_suggestion">%1$s。%2$s</string>
     <string name="skills_mentions_label">技能</string>

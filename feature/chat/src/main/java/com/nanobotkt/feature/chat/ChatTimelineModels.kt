@@ -11,7 +11,6 @@ import com.nanobotkt.core.model.UiMessage
  */
 internal enum class UserMessageDeliveryState {
     SENT,
-    QUEUED,
     FAILED,
 }
 

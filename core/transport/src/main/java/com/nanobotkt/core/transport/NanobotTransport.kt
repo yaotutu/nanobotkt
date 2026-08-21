@@ -60,6 +60,8 @@ data class TransportState(
      */
     val canonicalRefreshGeneration: Long = 0L,
     val error: String? = null,
+    /** HTTP 恢复协调器只在用户可见的前台执行规范快照收敛。 */
+    val appForeground: Boolean = true,
 )
 sealed interface TransportError { data class MessageTooBig(val chatId: String? = null, val turnId: String? = null) : TransportError; data class DeliveryUnknown(val chatId: String, val turnId: String) : TransportError; data class TurnRejected(val chatId: String, val turnId: String, val detail: String?, val reason: String?) : TransportError; data class WorkspaceScopeRejected(val chatId: String?, val turnId: String?, val reason: String?) : TransportError }
 data class MessageSendResult(val turnId: String, val accepted: CompletableDeferred<Unit>)
@@ -93,7 +95,7 @@ class NanobotTransport @Inject constructor(
     private var sessionActive = false
     private var networkAvailable = true
     private var backgroundAt: Long? = null
-    private var backgroundCloseJob: Job? = null
+    private var handshakeWatchdog: Job? = null
 
     val state: StateFlow<TransportState> = mutableState.asStateFlow()
     val events: SharedFlow<InboundEvent> = mutableEvents.asSharedFlow()
@@ -113,8 +115,8 @@ class NanobotTransport @Inject constructor(
      * 制造后台重连，同时在连接仍显示 OPEN 时也确实执行一次新的握手。
      */
     @Synchronized fun reconnect() {
-        if (!sessionActive || backgroundAt != null || !networkAvailable) return
-        restartConnection("manual_reconnect")
+        if (!sessionActive || !networkAvailable || !canStartConnectionLocked()) return
+        restartConnection("manual_reconnect", immediate = true)
     }
 
     /**
@@ -124,7 +126,7 @@ class NanobotTransport @Inject constructor(
      * Bootstrap，否则生命周期事件会反向制造无凭据重连和一次性 Token 浪费。
      */
     @Synchronized private fun connectIfEligible() {
-        if (!sessionActive || backgroundAt != null || !networkAvailable || socket != null || credentialJob != null || reconnectJob != null) return
+        if (!sessionActive || !canStartConnectionLocked() || !networkAvailable || socket != null || credentialJob != null || reconnectJob != null) return
         val expectedGeneration = connectionGeneration
         val reconnecting = reconnectAttempt > 0
         mutableState.value = mutableState.value.copy(
@@ -146,9 +148,9 @@ class NanobotTransport @Inject constructor(
             synchronized(this@NanobotTransport) {
                 if (connectionGeneration != expectedGeneration) return@synchronized
                 credentialJob = null
-                if (url != null && socket == null && sessionActive && backgroundAt == null && networkAvailable) {
+                if (url != null && socket == null && sessionActive && canStartConnectionLocked() && networkAvailable) {
                     open(url, reconnecting = reconnecting)
-                } else if (sessionActive && backgroundAt == null && networkAvailable && socket == null) {
+                } else if (sessionActive && canStartConnectionLocked() && networkAvailable && socket == null) {
                     mutableState.value = mutableState.value.copy(
                         status = TransportStatus.RECONNECTING,
                         error = failure?.message ?: "websocket_credentials_unavailable",
@@ -166,8 +168,8 @@ class NanobotTransport @Inject constructor(
         credentialJob = null
         reconnectJob?.cancel()
         reconnectJob = null
-        backgroundCloseJob?.cancel()
-        backgroundCloseJob = null
+        handshakeWatchdog?.cancel()
+        handshakeWatchdog = null
         val active = socket
         socket = null
         rejectPendingOnDisconnect(messageTooBig = false)
@@ -190,47 +192,50 @@ class NanobotTransport @Inject constructor(
 
     @Synchronized fun onBackground() {
         backgroundAt = System.currentTimeMillis()
+        mutableState.value = mutableState.value.copy(appForeground = false)
 
-        // 进入后台后保留已经打开的 Socket 最多 10 秒，给短暂系统弹窗或 Activity 切换留出
-        // grace；但立即取消尚未完成的凭据领取和退避重连。后台不能新发 Bootstrap，也不能
-        // 消费一个尚未用于握手的一次性 WebSocket Token。
+        // 健康 OPEN Socket 不再受任何“后台 10 秒”客户端计时器限制；OkHttp 的 WebSocket ping
+        // 会继续探测真实断线。后台只取消尚未完成的握手、凭据领取和后续重连，避免在系统限制下
+        // 继续制造 Bootstrap 请求；未发送成功的正文和附件由 Composer Draft 独立保存。
+        cancelBackgroundConnectionWorkLocked()
+    }
+
+    @Synchronized fun resume() {
+        backgroundAt = null
+        mutableState.value = mutableState.value.copy(appForeground = true)
+
+        // 回前台是用户可见的恢复边界：如果后台期间 Socket 已真实断开，立即取消旧退避并重新
+        // 领取凭据；如果健康 OPEN Socket 仍在，则原样复用，不能因为离开超过 10 秒主动销毁它。
+        if (!sessionActive) return
+        reconnectAttempt = 0
+        reconnectJob?.cancel()
+        reconnectJob = null
+        connectIfEligible()
+    }
+
+    /**
+     * 普通后台只能保留已经 OPEN 的健康 Socket；任何尚未完成的新连接副作用都必须停止。
+     *
+     * 不能只取消 credential/reconnect Job：OkHttp Socket 可能已创建但仍在握手，若保留该引用，
+     * onOpen 回调仍会在锁屏后把连接打开，绕过后台连接资格。OPEN Socket 则明确保留常驻。
+     */
+    @Synchronized private fun cancelBackgroundConnectionWorkLocked() {
         connectionGeneration += 1L
         credentialJob?.cancel()
         credentialJob = null
         reconnectJob?.cancel()
         reconnectJob = null
-        if (socket == null) {
+        if (mutableState.value.status != TransportStatus.OPEN) {
+            handshakeWatchdog?.cancel()
+            handshakeWatchdog = null
+            val connectingSocket = socket
+            socket = null
+            connectingSocket?.cancel()
             mutableState.value = mutableState.value.copy(status = TransportStatus.CLOSED)
         }
-
-        backgroundCloseJob?.cancel()
-        backgroundCloseJob = scope.launch {
-            delay(10_000L)
-            synchronized(this@NanobotTransport) {
-                if (backgroundAt == null) return@synchronized
-                val active = socket
-                socket = null
-                rejectPendingOnDisconnect(messageTooBig = false)
-                active?.cancel()
-                markCanonicalRefreshNeededLocked { current ->
-                    current.copy(status = TransportStatus.CLOSED)
-                }
-            }
-        }
     }
 
-    @Synchronized fun resume() {
-        val awayFor = backgroundAt?.let { System.currentTimeMillis() - it } ?: 0L
-        backgroundAt = null
-        backgroundCloseJob?.cancel()
-        backgroundCloseJob = null
-
-        // 前台恢复只恢复“已经激活的认证会话”。如果 AuthState 仍在登录页或已经 logout，
-        // 此处必须保持关闭，等待组合根在 Ready 后显式调用 connect()。
-        if (!sessionActive) return
-        val stale = mutableState.value.lastActivityAt?.let { System.currentTimeMillis() - it > 45_000L } ?: false
-        if ((awayFor > 10_000L || stale) && socket != null) restartConnection("resume_stale") else connectIfEligible()
-    }
+    @Synchronized private fun canStartConnectionLocked(): Boolean = backgroundAt == null
 
     @Synchronized fun setNetworkAvailable(available: Boolean) {
         if (networkAvailable == available) return
@@ -242,6 +247,8 @@ class NanobotTransport @Inject constructor(
             credentialJob = null
             reconnectJob?.cancel()
             reconnectJob = null
+            handshakeWatchdog?.cancel()
+            handshakeWatchdog = null
             val active = socket
             socket = null
             rejectPendingOnDisconnect(messageTooBig = false)
@@ -307,18 +314,19 @@ class NanobotTransport @Inject constructor(
         startsNewRun: Boolean = true,
         acceptanceTimeoutMs: Long = 20_000,
     ): MessageSendResult {
-        val turnId = UUID.randomUUID().toString()
-        val frame = OutboundFrame.Message(chatId, content, media.takeIf(List<*>::isNotEmpty), cliApps.takeIf(List<*>::isNotEmpty), mcpPresets.takeIf(List<*>::isNotEmpty), quotedContext, workspaceScope, turnId, webui = true)
+        // 服务端协议仍要求每条消息携带 turnId；客户端不持久化该标识，也不基于它自动重发。
+        val resolvedTurnId = UUID.randomUUID().toString()
+        val frame = OutboundFrame.Message(chatId, content, media.takeIf(List<*>::isNotEmpty), cliApps.takeIf(List<*>::isNotEmpty), mcpPresets.takeIf(List<*>::isNotEmpty), quotedContext, workspaceScope, resolvedTurnId, webui = true)
         val encodedBytes = json.encodeToString(OutboundFrame.serializer(), frame).toByteArray().size
         val maxBytes = credentials.maxFrameBytes()
         val accepted = CompletableDeferred<Unit>()
         if (maxBytes != null && encodedBytes > maxBytes) {
             accepted.completeExceptionally(IllegalArgumentException("message_too_big"))
-            mutableErrors.tryEmit(TransportError.MessageTooBig(chatId, turnId))
-            return MessageSendResult(turnId, accepted)
+            mutableErrors.tryEmit(TransportError.MessageTooBig(chatId, resolvedTurnId))
+            return MessageSendResult(resolvedTurnId, accepted)
         }
-        val key = messageKey(chatId, turnId)
-        val pending = PendingTransportMessage(chatId, turnId, accepted, startsNewRun)
+        val key = messageKey(chatId, resolvedTurnId)
+        val pending = PendingTransportMessage(chatId, resolvedTurnId, accepted, startsNewRun)
         requests.registerMessage(key, pending)
         synchronized(this) { knownChats += chatId; enqueue("message:$key", frame) }
         scope.launch {
@@ -338,17 +346,17 @@ class NanobotTransport @Inject constructor(
                 // 未捕获异常泄漏到 Transport scope 或后续测试/生命周期。
             }
         }
-        return MessageSendResult(turnId, accepted)
+        return MessageSendResult(resolvedTurnId, accepted)
     }
 
     suspend fun sendSystemCommand(chatId: String, command: String, timeoutMs: Long = 5_000) {
         check(networkAvailable) { "network_unavailable" }
-        val turnId = SYSTEM_TURN_PREFIX + UUID.randomUUID()
+        val resolvedTurnId = SYSTEM_TURN_PREFIX + UUID.randomUUID()
         val pending = CompletableDeferred<Unit>()
-        requests.registerSystemCommand(turnId, pending)
-        synchronized(this) { enqueue("system:$turnId", OutboundFrame.Message(chatId, command.trim(), turnId = turnId, webui = true)) }
+        requests.registerSystemCommand(resolvedTurnId, pending)
+        synchronized(this) { enqueue("system:$resolvedTurnId", OutboundFrame.Message(chatId, command.trim(), turnId = resolvedTurnId, webui = true)) }
         awaitWithTimeout(pending, timeoutMs, "system command timeout") {
-            if (requests.removeSystemCommand(turnId, pending)) removeQueued("system:$turnId")
+            if (requests.removeSystemCommand(resolvedTurnId, pending)) removeQueued("system:$resolvedTurnId")
         }
     }
 
@@ -404,8 +412,27 @@ class NanobotTransport @Inject constructor(
     }
 
     @Synchronized private fun open(url: String, reconnecting: Boolean) {
-        mutableState.value = mutableState.value.copy(status = if (reconnecting) TransportStatus.RECONNECTING else TransportStatus.CONNECTING, error = null)
-        socket = client.newWebSocket(Request.Builder().url(url).build(), Listener())
+        mutableState.value = mutableState.value.copy(
+            status = if (reconnecting) TransportStatus.RECONNECTING else TransportStatus.CONNECTING,
+            error = null,
+        )
+        val expectedGeneration = connectionGeneration
+        val openingSocket = client.newWebSocket(Request.Builder().url(url).build(), Listener())
+        socket = openingSocket
+        handshakeWatchdog?.cancel()
+        handshakeWatchdog = scope.launch {
+            delay(HANDSHAKE_TIMEOUT_MS)
+            synchronized(this@NanobotTransport) {
+                if (socket !== openingSocket || connectionGeneration != expectedGeneration) return@synchronized
+                socket = null
+                openingSocket.cancel()
+                rejectPendingOnDisconnect(messageTooBig = false)
+                markCanonicalRefreshNeededLocked { current ->
+                    current.copy(status = TransportStatus.RECONNECTING, error = "websocket_handshake_timeout")
+                }
+                if (sessionActive && networkAvailable && canStartConnectionLocked()) scheduleReconnect()
+            }
+        }
     }
 
     @Synchronized private fun enqueue(id: String, frame: OutboundFrame) {
@@ -530,7 +557,7 @@ class NanobotTransport @Inject constructor(
         }
     }
 
-    @Synchronized private fun restartConnection(reason: String) {
+    @Synchronized private fun restartConnection(reason: String, immediate: Boolean = false) {
         connectionGeneration += 1L
         credentialJob?.cancel()
         credentialJob = null
@@ -541,15 +568,22 @@ class NanobotTransport @Inject constructor(
         val active = socket
         socket = null
         rejectPendingOnDisconnect(messageTooBig = false)
+        handshakeWatchdog?.cancel()
+        handshakeWatchdog = null
         active?.cancel()
         markCanonicalRefreshNeededLocked { current ->
             current.copy(status = TransportStatus.RECONNECTING, error = reason)
         }
-        scheduleReconnect()
+        if (immediate) {
+            reconnectAttempt = 0
+            connectIfEligible()
+        } else {
+            scheduleReconnect()
+        }
     }
 
     @Synchronized private fun scheduleReconnect() {
-        if (reconnectJob != null || !sessionActive || backgroundAt != null || !networkAvailable) return
+        if (reconnectJob != null || !sessionActive || !canStartConnectionLocked() || !networkAvailable) return
         val delayMs = min(30_000L, 1_000L shl min(reconnectAttempt, 5))
         reconnectAttempt += 1
         val expectedGeneration = connectionGeneration
@@ -577,9 +611,9 @@ class NanobotTransport @Inject constructor(
                     // close、切后台、网络断开或显式 reconnect 都会推进代数。凭据请求即使
                     // 无法及时响应协程取消，迟到的一次性 URL 也只能被丢弃，不能打开旧连接。
                     if (connectionGeneration != expectedGeneration) return@synchronized
-                    if (url != null && socket == null && sessionActive && backgroundAt == null && networkAvailable) {
+                    if (url != null && socket == null && sessionActive && canStartConnectionLocked() && networkAvailable) {
                         open(url, reconnecting = true)
-                    } else if (url == null && sessionActive && backgroundAt == null && networkAvailable) {
+                    } else if (url == null && sessionActive && canStartConnectionLocked() && networkAvailable) {
                         retryAfterFailure = true
                     }
                 }
@@ -592,7 +626,7 @@ class NanobotTransport @Inject constructor(
                         retryAfterFailure &&
                         connectionGeneration == expectedGeneration &&
                         sessionActive &&
-                        backgroundAt == null &&
+                        canStartConnectionLocked() &&
                         networkAvailable &&
                         socket == null
                     ) {
@@ -618,6 +652,8 @@ class NanobotTransport @Inject constructor(
         override fun onOpen(webSocket: WebSocket, response: Response) {
             synchronized(this@NanobotTransport) {
                 if (socket !== webSocket) return
+                handshakeWatchdog?.cancel()
+                handshakeWatchdog = null
                 reconnectAttempt = 0
                 val now = System.currentTimeMillis()
                 mutableState.value = mutableState.value.copy(status = TransportStatus.OPEN, lastOpenedAt = now, lastActivityAt = now, error = null)
@@ -638,9 +674,11 @@ class NanobotTransport @Inject constructor(
     @Synchronized private fun handleClosed(closedSocket: WebSocket, code: Int, cause: Throwable?) {
         if (socket !== closedSocket) return
         socket = null
+        handshakeWatchdog?.cancel()
+        handshakeWatchdog = null
         val tooBig = code == 1009
         rejectPendingOnDisconnect(tooBig)
-        val canReconnect = sessionActive && backgroundAt == null && networkAvailable
+        val canReconnect = sessionActive && canStartConnectionLocked() && networkAvailable
         markCanonicalRefreshNeededLocked { current ->
             current.copy(
                 status = if (canReconnect) TransportStatus.RECONNECTING else TransportStatus.CLOSED,
@@ -655,6 +693,7 @@ class NanobotTransport @Inject constructor(
 }
 
 private const val SYSTEM_TURN_PREFIX = "webui-system:"
+private const val HANDSHAKE_TIMEOUT_MS = 20_000L
 
 private fun InboundEvent.turnIdOrNull(): String? = when (this) {
     is InboundEvent.MessageAccepted -> turnId

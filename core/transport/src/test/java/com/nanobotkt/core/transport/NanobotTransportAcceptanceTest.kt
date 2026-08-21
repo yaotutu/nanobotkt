@@ -169,6 +169,41 @@ class NanobotTransportAcceptanceTest {
     }
 
     @Test
+    fun `healthy socket remains open beyond ten seconds in ordinary background`() = runBlocking {
+        connectWebSocket()
+        val credentialCallsBeforeBackground = credentials.reauthCalls.get()
+
+        transport.onBackground()
+        delay(10_500)
+
+        // 客户端不能再用历史 10 秒计时器主动关闭健康 Socket，也不能偷偷领取新凭据。
+        assertEquals(TransportStatus.OPEN, transport.state.value.status)
+        assertFalse(transport.state.value.appForeground)
+        assertEquals(credentialCallsBeforeBackground, credentials.reauthCalls.get())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `ordinary background disconnect waits for foreground before reconnecting`() = runBlocking {
+        connectWebSocket()
+        val credentialCallsBeforeDisconnect = credentials.reauthCalls.get()
+        transport.onBackground()
+
+        serverSocket.get()!!.close(1000, "background_disconnect")
+        withTimeout(2_000) { transport.state.first { it.status == TransportStatus.CLOSED } }
+        delay(1_300)
+
+        // 没有 active-turn FGS 时，后台断线只记录 CLOSED，不领取 Bootstrap/WS 凭据。
+        assertEquals(credentialCallsBeforeDisconnect, credentials.reauthCalls.get())
+        assertEquals(1, server.requestCount)
+
+        server.enqueue(webSocketUpgrade())
+        transport.resume()
+        withTimeout(2_000) { transport.state.first { it.status == TransportStatus.OPEN } }
+        assertEquals(credentialCallsBeforeDisconnect + 1, credentials.reauthCalls.get())
+    }
+
+    @Test
     fun `credential failure does not block a later reconnect`() = runBlocking {
         connectWebSocket()
         credentials.failNextReauthentication()

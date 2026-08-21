@@ -40,11 +40,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">Tambahkan pesan ke antrean…</string>
-    <string name="queued_prompts_label">Dalam antrean</string>
-    <string name="remove_queued_prompt">Hapus pesan antrean</string>
-    <string name="queued_attachment_count">%1$d lampiran</string>
-    <string name="queued_prompt_fallback">Pesan antrean</string>
     <string name="slash_commands_label">Perintah garis miring</string>
     <string name="slash_command_suggestion">%1$s. %2$s</string>
     <string name="skills_mentions_label">Keahlian</string>

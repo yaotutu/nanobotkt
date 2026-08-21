@@ -100,8 +100,8 @@ data class ChatSendOptions(
     val capabilityPayloadsResolved: Boolean = false,
     val workspaceScope: WorkspaceScope? = null,
     /**
-     * 普通直接发送失败时保留时间轴气泡；Queue 自动 flush 失败仍由 ViewModel 放回队首，不能同时
-     * 留下一条 FAILED 消息，否则用户会看到同一 prompt 两份。
+     * 普通调用默认在时间轴保留 FAILED 气泡。Composer 直发会关闭该选项，因为失败时完整 Draft
+     * 仍留在输入框中；同一正文若再生成失败气泡，会形成两份可重试入口并增加重复发送风险。
      */
     val retainFailureInTimeline: Boolean = true,
     /**
@@ -113,7 +113,7 @@ data class ChatSendOptions(
 sealed interface ChatSendOutcome {
     data object Accepted : ChatSendOutcome
 
-    /** acceptance 失败，但原始发送载荷已经安全保存在本地 FAILED 消息中。 */
+    /** acceptance 失败；messageId 供保留 FAILED 气泡的调用方定位消息，Composer 直发只使用 reason。 */
     data class FailedRetained(
         val messageId: String,
         val reason: String,
@@ -666,7 +666,7 @@ class DefaultChatRepository @Inject constructor(
 
     /**
      * acceptance 是“服务端已经接管该消息”的边界。只有越过该边界才把本地消息视为正常发送；
-     * acceptance 失败时，普通消息保留 FAILED 气泡，而 Queue 自动 flush 仍抛给 ViewModel 重新排队。
+     * acceptance 失败时是否保留 FAILED 气泡由调用方决定；Composer 直发关闭气泡并保留原 Draft。
      */
     private suspend fun awaitAcceptance(pending: PendingLocalSend): ChatSendOutcome {
         val result = pending.result
@@ -698,8 +698,8 @@ class DefaultChatRepository @Inject constructor(
                 mutableState.value = current.copy(
                     sendingTurnIds = current.sendingTurnIds - result.turnId,
                     activeTurnId = current.activeTurnId.takeUnless { it == result.turnId },
-                    // 普通发送已经通过 FAILED 气泡提供局部反馈，不再额外弹全局 Snackbar；
-                    // Queue flush 不保留气泡，异常继续抛给 ViewModel 统一提示并重新入队。
+                    // 保留 FAILED 气泡时由时间轴提供局部反馈，不再额外弹全局 Snackbar；
+                    // Composer 直发不保留气泡，由仍在输入框中的 Draft 和底部错误统一反馈。
                     error = if (retainFailure) null else reason,
                 )
                 publishLocked()
@@ -717,7 +717,7 @@ class DefaultChatRepository @Inject constructor(
             val chatId = current.chatId ?: return false
             val activeTurnId = current.activeTurnId ?: return false
             // 第一次点击同步写入 pending；后续点击即使发生在网络协程真正启动前，也会在这里被拒绝，
-            // 从而保证一个活动 turn 最多发送一条 `/stop`，并避免重复清空本地 Queue。
+            // 从而保证一个活动 turn 最多发送一条 `/stop`，并避免重复执行停止后的状态收敛。
             if (current.stoppingTurnId == activeTurnId) return false
             mutableState.value = current.copy(
                 stoppingTurnId = activeTurnId,
@@ -1195,7 +1195,7 @@ class DefaultChatRepository @Inject constructor(
                     val isAwaitingAcceptance = turnId in current.sendingTurnIds
                     mutableState.value = current.copy(
                         // optimistic 必须保留到 awaitAcceptance 决定 FAILED 或删除；先删除会让普通
-                        // side-channel 失败丢失可重试气泡，也会破坏 Queue 失败的统一回滚路径。
+                        // side-channel 失败丢失可重试气泡，也会破坏 acceptance 失败的统一回滚路径。
                         error =
                             if (isAwaitingAcceptance) {
                                 current.error
@@ -1355,10 +1355,15 @@ private data class CanonicalRefreshTrigger(
     val generation: Long,
     val status: TransportStatus,
     val networkAvailable: Boolean,
+    val appForeground: Boolean,
 ) {
-    /** 后台 CLOSED 状态不发 HTTP；等前台恢复并重新 OPEN 后再开始规范快照收敛。 */
+    /**
+     * HTTP latest 是 WebSocket 事件缺口的独立恢复通道，不能再要求 WebSocket 已经 OPEN。
+     * 只要应用在前台且网络可用就持续尝试规范快照，从而打破“WS 重连失败
+     * → HTTP 永远不跑 → activeTurn 永远不清”的假死环。
+     */
     val canRefresh: Boolean
-        get() = needed && networkAvailable && status == TransportStatus.OPEN
+        get() = needed && networkAvailable && appForeground
 }
 
 private fun TransportState.toCanonicalRefreshTrigger(): CanonicalRefreshTrigger =
@@ -1367,6 +1372,7 @@ private fun TransportState.toCanonicalRefreshTrigger(): CanonicalRefreshTrigger 
         generation = canonicalRefreshGeneration,
         status = status,
         networkAvailable = networkAvailable,
+        appForeground = appForeground,
     )
 
 private data class CanonicalRefreshResult(

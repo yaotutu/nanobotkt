@@ -90,7 +90,6 @@ fun ChatScreen(
     var sessionInfoOpen by remember { mutableStateOf(false) }
     var modelDialogOpen by remember { mutableStateOf(false) }
     var accessDialogOpen by remember { mutableStateOf(false) }
-    var queueOpen by remember { mutableStateOf(false) }
     var configMenuOpen by remember { mutableStateOf(false) }
     // 这是纯 UI 临时状态，不进入 AppViewModel/SavedStateHandle；会话业务选择仍由 Root
     // 的 SessionSelection 负责，避免把 Bottom Sheet 的动画生命周期混入会话竞态保护。
@@ -111,20 +110,18 @@ fun ChatScreen(
     }
 
     LaunchedEffect(state.sessionKey) {
-        // Queue 和会话配置弹层都绑定当前会话；切换时统一关闭，避免旧会话状态覆盖到
-        // 新会话之上，也避免用户误把旧配置操作应用到新会话。附件菜单不携带会话数据。
+        // 会话配置弹层绑定当前会话；切换时统一关闭，避免用户误把旧配置操作应用到新会话。
         promptNavigatorOpen = false
         sessionInfoOpen = false
         modelDialogOpen = false
         accessDialogOpen = false
-        queueOpen = false
         configMenuOpen = false
     }
 
     val hasUserPrompts =
         remember(state.messages) {
-            // 顶部菜单只在 Prompt 导航实际存在可定位条目时启用；失败和仍在 Queue 的消息
-            // 不属于已执行 Prompt，不能仅凭 role=user 就错误显示入口。
+            // 顶部菜单只在 Prompt 导航实际存在可定位条目时启用；失败消息不属于
+            // 已执行 Prompt，不能仅凭 role=user 就错误显示入口。
             extractPromptAnchors(state.messages).isNotEmpty()
         }
     val listState = rememberLazyListState()
@@ -138,14 +135,9 @@ fun ChatScreen(
             )
         }
     val visibleTimelineItems =
-        remember(timelineItems, composer.queuedPrompts) {
-            // LazyColumn、Prompt 跳转、Queue 定位和“回到底部”必须共享同一份可见时间轴。
-            // 先剔除成功后应隐藏的纯 reasoning Activity，再把 Composer 本地 Queue 追加为
-            // 带 QUEUED 状态的用户消息；Queue 不写回 Repository，也不改变服务端历史。
-            appendQueuedPromptsToTimeline(
-                timelineItems = visibleChatTimelineItems(timelineItems),
-                queuedPrompts = composer.queuedPrompts,
-            )
+        remember(timelineItems) {
+            // Active turn 期间不再接受排队发送，因此时间轴只展示 Repository 的服务端事实。
+            visibleChatTimelineItems(timelineItems)
         }
     val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
     var jumpTargetKey by remember { mutableStateOf<String?>(null) }
@@ -205,7 +197,7 @@ fun ChatScreen(
             if (timelineIndex >= 0) {
                 val headerOffset = if (state.hasMoreBefore) 1 else 0
                 listState.animateScrollToItem(headerOffset + timelineIndex)
-                // Prompt/Queue 定位完成后仅短暂强调目标用户消息，帮助用户建立导航反馈；
+                // Prompt 定位完成后仅短暂强调目标用户消息，帮助用户建立导航反馈；
                 // Agent Activity 定位没有消息气泡，因此不设置高亮。
                 val targetMessageId =
                     (visibleTimelineItems[timelineIndex] as? ChatTimelineItem.UserMessage)
@@ -320,8 +312,6 @@ fun ChatScreen(
         ChatTopStatusBar(
             title = title,
             status = headerStatus,
-            queuedPrompts = composer.queuedPrompts,
-            queueOpen = queueOpen,
             configMenuOpen = configMenuOpen,
             hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
             hasSessionInfo = state.sessionKey != null,
@@ -342,12 +332,7 @@ fun ChatScreen(
                         ?.let { item -> jumpTargetKey = item.key }
                 }
             },
-            onQueueOpenChange = { queueOpen = it },
             onConfigMenuOpenChange = { configMenuOpen = it },
-            onQueuedPromptClick = { prompt ->
-                queueOpen = false
-                jumpTargetKey = "user:${prompt.id}"
-            },
             onOpenPromptNavigator = { promptNavigatorOpen = true },
             onOpenSessionInfo = { sessionInfoOpen = true },
             onOpenModel = { modelDialogOpen = true },

@@ -25,6 +25,7 @@ class AppViewModelLogoutTest {
             },
             clearAttachments = { events += "transport-clear-attachments" },
             closeTransport = { events += "transport-close" },
+            clearComposerDrafts = { events += "composer-drafts" },
             logout = {
                 authLogoutStarted = true
                 events += "auth-logout"
@@ -45,8 +46,41 @@ class AppViewModelLogoutTest {
 
         runCurrent()
 
-        // 当前会话已全部失效后，才允许认证仓库开始清理 secret/bootstrap。
+        // 当前会话先清除持久化消息载荷，再允许认证仓库清理 secret/bootstrap。
         assertTrue(authLogoutStarted)
+        assertEquals(
+            listOf(
+                "root",
+                "session-state",
+                "transport-clear-attachments",
+                "transport-close",
+                "composer-drafts",
+                "auth-logout",
+            ),
+            events,
+        )
+    }
+
+    @Test
+    fun `composer draft cleanup failure cannot prevent auth logout`() = runTest {
+        val events = mutableListOf<String>()
+
+        scheduleLogoutCleanup(
+            scope = this,
+            resetRootUiState = { events += "root" },
+            resetSessionState = { events += "session-state" },
+            clearAttachments = { events += "transport-clear-attachments" },
+            closeTransport = { events += "transport-close" },
+            clearComposerDrafts = {
+                events += "composer-drafts-failed"
+                error("database unavailable")
+            },
+            logout = { events += "auth-logout" },
+        )
+
+        // 数据库异常由编排层隔离，认证注销仍必须执行且测试作用域不能被异常击穿。
+        runCurrent()
+
         assertEquals("auth-logout", events.last())
     }
 }

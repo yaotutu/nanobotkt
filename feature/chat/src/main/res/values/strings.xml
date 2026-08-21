@@ -81,13 +81,6 @@
         <item quantity="one">%d tool</item>
         <item quantity="other">%d tools</item>
     </plurals>
-    <string name="composer_placeholder_streaming">Add a message to the queue…</string>
-    <string name="queued_prompts_label">Queued</string>
-    <string name="queued_count">%1$d queued</string>
-    <string name="queued_prompts_title">Queued prompts</string>
-    <string name="remove_queued_prompt">Remove queued message</string>
-    <string name="queued_attachment_count">%1$d attachment(s)</string>
-    <string name="queued_prompt_fallback">Queued message</string>
     <string name="slash_commands_label">Slash commands</string>
     <string name="slash_command_suggestion">%1$s. %2$s</string>
     <string name="skills_mentions_label">Skills</string>
@@ -214,7 +207,6 @@
     <string name="prompt_navigator_empty">No prompts in this conversation yet.</string>
     <string name="quote_action">Quote</string>
     <string name="view_message">View</string>
-    <string name="message_queued">Queued</string>
     <string name="message_failed">Failed to send</string>
     <string name="user_message_detail">Message</string>
     <string name="assistant_message_detail">Response</string>

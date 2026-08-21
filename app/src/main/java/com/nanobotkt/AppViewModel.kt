@@ -17,6 +17,7 @@ import com.nanobotkt.feature.auth.GatewayConfigurationResult
 import com.nanobotkt.feature.auth.GatewayConnectionConfig
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -127,7 +128,7 @@ internal fun RootUiState.navigateBackState(): RootUiState = when {
 }
 
 /**
- * 执行退出登录时的同步清理，并把认证仓库的异步注销排到清理之后。
+ * 执行退出登录时的同步清理，并把持久化消息清理和认证注销排到同步失效之后。
  *
  * 将这段编排单独抽成无 Android 依赖的函数，既保持 AppViewModel 的真实执行顺序，
  * 也让单元测试能够稳定验证“旧账号状态先失效、认证注销后触发”的不变量，避免为了
@@ -139,13 +140,26 @@ internal fun scheduleLogoutCleanup(
     resetSessionState: () -> Unit,
     clearAttachments: () -> Unit,
     closeTransport: () -> Unit,
+    clearComposerDrafts: suspend () -> Unit,
     logout: suspend () -> Unit,
 ) {
     resetRootUiState()
     resetSessionState()
     clearAttachments()
     closeTransport()
-    scope.launch { logout() }
+    scope.launch {
+        try {
+            // Draft 含正文、引用和完整附件载荷，必须在切换认证主体前删除。
+            clearComposerDrafts()
+        } catch (error: Exception) {
+            // 数据库故障不能让 logout 协程异常退出并把用户永久困在旧登录态；协程取消仍须
+            // 保留结构化并发语义，由 finally 尝试完成认证仓库清理后继续向上传播。
+            if (error is CancellationException) throw error
+        } finally {
+            // 无论本地消息删除成功或失败，认证仓库都必须清理 secret/bootstrap。
+            logout()
+        }
+    }
 }
 
 private fun SavedStateHandle.writeRootUiState(value: RootUiState) {
@@ -278,6 +292,7 @@ class AppViewModel @Inject constructor(
             // 登记，避免新账号建立 WebSocket 时自动恢复旧账号的会话。
             clearAttachments = transport::clearAttachments,
             closeTransport = transport::close,
+            clearComposerDrafts = sessionCleanup::clearPersistedChatInput,
             logout = authRepository::logout,
         )
     }

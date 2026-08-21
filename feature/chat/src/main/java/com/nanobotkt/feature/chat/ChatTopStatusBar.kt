@@ -42,14 +42,12 @@ import com.nanobotkt.core.designsystem.NanobotThemeDefaults
  *
  * 顶部承载“会话导航、标题、运行/连接状态、系统设置、当前会话菜单”。会话列表属于页面导航，
  * 固定放在标题左侧；系统设置与当前会话菜单仍保持右侧独立入口，避免把应用级和会话级操作混在
- * 同一个菜单中。空闲时不渲染状态文案；出现运行、等待、连接或队列状态时才增加第二行。
+ * 同一个菜单中。空闲时不渲染状态文案；出现运行、等待或连接状态时才增加第二行。
  */
 @Composable
 internal fun ChatTopStatusBar(
     title: String,
     status: ChatHeaderStatus,
-    queuedPrompts: List<QueuedPrompt>,
-    queueOpen: Boolean,
     configMenuOpen: Boolean,
     hasPromptNavigator: Boolean,
     hasSessionInfo: Boolean,
@@ -57,16 +55,14 @@ internal fun ChatTopStatusBar(
     onOpenConversationList: () -> Unit,
     onOpenSettings: () -> Unit,
     onStatusClick: () -> Unit,
-    onQueueOpenChange: (Boolean) -> Unit,
     onConfigMenuOpenChange: (Boolean) -> Unit,
-    onQueuedPromptClick: (QueuedPrompt) -> Unit,
     onOpenPromptNavigator: () -> Unit,
     onOpenSessionInfo: () -> Unit,
     onOpenModel: () -> Unit,
     onOpenAccess: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    val hasSecondaryRow = status != ChatHeaderStatus.IDLE || queuedPrompts.isNotEmpty()
+    val hasSecondaryRow = status != ChatHeaderStatus.IDLE
 
     Row(
         modifier =
@@ -101,25 +97,14 @@ internal fun ChatTopStatusBar(
             )
             if (hasSecondaryRow) {
                 Row(
-                    // 所有非空状态共用固定的最小行高，避免 Running、Queue 或连接状态在文字
+                    // 所有非空状态共用固定的最小行高，避免 Running 或连接状态在文字
                     // lineHeight 不同时造成顶部栏细微跳动；只压缩标题间距，不缩小两侧 48dp 触控区。
                     modifier = Modifier.padding(top = 1.dp).heightIn(min = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Queue 是用户主动提交、并且仍等待处理的独立状态，不能被 Running/Waiting
-                    // 覆盖。两者并列后，用户在长回复期间仍能立即确认排队数量，并点击查看摘要；
-                    // 每个状态仍保持独立点击区域，避免把“定位运行记录”和“打开队列”混成一个入口。
                     if (status != ChatHeaderStatus.IDLE) {
                         HeaderStatusLabel(status = status, onClick = onStatusClick)
-                    }
-                    if (queuedPrompts.isNotEmpty()) {
-                        QueueStatusMenu(
-                            prompts = queuedPrompts,
-                            expanded = queueOpen,
-                            onExpandedChange = onQueueOpenChange,
-                            onPromptClick = onQueuedPromptClick,
-                        )
                     }
                 }
             }
@@ -240,61 +225,6 @@ private fun HeaderStatusLabel(
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
         )
-    }
-}
-
-/**
- * Queue 弹层是只读的轻量摘要。这里明确不提供删除、编辑或移除按钮，避免顶部状态承担会话管理职责。
- * 点击某一项后交由上层定位时间轴中的排队用户消息，并立即关闭弹层。
- */
-@Composable
-private fun QueueStatusMenu(
-    prompts: List<QueuedPrompt>,
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    onPromptClick: (QueuedPrompt) -> Unit,
-) {
-    Box {
-        Text(
-            text = stringResource(R.string.queued_count, prompts.size),
-            modifier = Modifier.clickable { onExpandedChange(true) },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 1,
-        )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { onExpandedChange(false) },
-        ) {
-            Text(
-                text = stringResource(R.string.queued_prompts_title),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            prompts.forEachIndexed { index, prompt ->
-                DropdownMenuItem(
-                    text = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                text = "${index + 1}",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                            Text(
-                                text = queuedPromptPreview(prompt),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    },
-                    onClick = {
-                        onExpandedChange(false)
-                        onPromptClick(prompt)
-                    },
-                )
-            }
-        }
     }
 }
 

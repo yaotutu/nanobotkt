@@ -220,13 +220,3 @@ internal fun MentionSuggestionRow(
         }
     }
 }
-
-@Composable
-internal fun queuedPromptPreview(prompt: QueuedPrompt): String =
-    when {
-        prompt.text.isNotBlank() -> prompt.text.trim()
-        !prompt.quotedContext.isNullOrBlank() -> prompt.quotedContext.trim()
-        prompt.attachments.isNotEmpty() ->
-            stringResource(R.string.queued_attachment_count, prompt.attachments.size)
-        else -> stringResource(R.string.queued_prompt_fallback)
-    }
