@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -13,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +33,7 @@ internal fun AppUpdateDialog(
     onDismiss: () -> Unit,
     onCheck: () -> Unit,
     onDownload: () -> Unit,
+    onForceLatestDev: () -> Unit,
     onInstall: () -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -103,6 +106,25 @@ internal fun AppUpdateDialog(
                                 text = status.message,
                                 color = MaterialTheme.colorScheme.error,
                             )
+                        }
+                        if (status.canForceLatestDev) {
+                            item {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.settings_update_force_dev_explanation),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    // 强制更新是用户在 429 后的显式选择；使用完整宽度按钮，避免与“重试/关闭”
+                                    // 挤在 AlertDialog 底部并降低触摸目标可辨识度。
+                                    Button(
+                                        onClick = onForceLatestDev,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text(stringResource(R.string.settings_update_force_dev_button))
+                                    }
+                                }
+                            }
                         }
                         status.update?.let { updateSummaryItems(it) }
                     }

@@ -60,6 +60,11 @@ sealed interface AppUpdateStatus {
         val retryAction: AppUpdateRetryAction,
         val update: AppUpdateInfo? = null,
         val filePath: String? = null,
+        /**
+         * 仅当 GitHub Release 元数据接口明确返回 429/403 限流时开放兜底入口。
+         * 该标记不能用于普通网络错误，否则用户可能在网络不可用时反复触发无意义下载。
+         */
+        val canForceLatestDev: Boolean = false,
     ) : AppUpdateStatus
 }
 

@@ -67,6 +67,83 @@ class AppUpdateRepositoryTest {
         status as AppUpdateStatus.Error
         assertEquals(AppUpdateRetryAction.CHECK, status.retryAction)
         assertTrue(status.message.contains("GitHub"))
+        assertTrue(status.canForceLatestDev)
+    }
+
+    @Test
+    fun `ordinary network failure does not expose forced dev download`() = runBlocking {
+        val service = FakeReleaseService().apply {
+            fetch = { throw GitHubReleaseException.Network(IOException("offline")) }
+        }
+        val repository = repository(service = service)
+
+        repository.check(manual = true)
+
+        val status = repository.state.value.status
+        assertTrue(status is AppUpdateStatus.Error)
+        status as AppUpdateStatus.Error
+        // 普通断网时固定 Dev 地址同样不可达，因此不能把所有检查错误都伪装成可强制更新。
+        assertEquals(AppUpdateRetryAction.CHECK, status.retryAction)
+        assertEquals(false, status.canForceLatestDev)
+    }
+
+    @Test
+    fun `rate limited check can directly download rolling dev asset without another metadata request`() = runBlocking {
+        val service = FakeReleaseService().apply {
+            fetch = { throw GitHubReleaseException.RateLimited() }
+        }
+        val repository = repository(service = service)
+        repository.check(manual = true)
+
+        repository.forceDownloadLatestDev()
+
+        val status = repository.state.value.status
+        assertTrue(status is AppUpdateStatus.Downloaded)
+        status as AppUpdateStatus.Downloaded
+        assertEquals(1, service.fetchCount)
+        assertEquals(1, service.downloadCount)
+        assertEquals("dev-latest", status.update.versionName)
+        assertEquals(AppReleaseChannel.DEV, status.update.channel)
+        assertEquals("app-universal-dev.apk", service.downloadedAsset?.name)
+        assertEquals(FORCED_DEV_DOWNLOAD_URL, service.downloadedAsset?.downloadUrl)
+    }
+
+    @Test
+    fun `forced dev download is ignored outside a rate limited check error`() = runBlocking {
+        val service = FakeReleaseService().apply {
+            fetch = { throw GitHubReleaseException.Network(IOException("offline")) }
+        }
+        val repository = repository(service = service)
+        repository.check(manual = true)
+        val previousStatus = repository.state.value.status
+
+        repository.forceDownloadLatestDev()
+
+        // Repository 自身再次校验限流标记，避免未来其他 UI 入口误调用时绕过正常版本检查。
+        assertSame(previousStatus, repository.state.value.status)
+        assertEquals(0, service.downloadCount)
+    }
+
+    @Test
+    fun `forced dev download failure preserves rolling asset for normal download retry`() = runBlocking {
+        val service = FakeReleaseService().apply {
+            fetch = { throw GitHubReleaseException.RateLimited() }
+            download = { _, _, _ ->
+                throw GitHubReleaseException.Network(IOException("offline"))
+            }
+        }
+        val repository = repository(service = service)
+        repository.check(manual = true)
+
+        repository.forceDownloadLatestDev()
+
+        val status = repository.state.value.status
+        assertTrue(status is AppUpdateStatus.Error)
+        status as AppUpdateStatus.Error
+        assertEquals(AppUpdateRetryAction.DOWNLOAD, status.retryAction)
+        assertEquals("dev-latest", status.update?.versionName)
+        assertEquals(AppReleaseChannel.DEV, status.update?.channel)
+        assertEquals("app-universal-dev.apk", status.update?.asset?.name)
     }
 
     @Test
@@ -131,6 +208,8 @@ class AppUpdateRepositoryTest {
 
     private class FakeReleaseService : GitHubReleaseService {
         var fetchCount: Int = 0
+        var downloadCount: Int = 0
+        var downloadedAsset: GitHubReleaseAsset? = null
         var fetch: suspend (GitHubReleaseChannel) -> GitHubRelease = { release("0.1.5") }
         var download: suspend (GitHubReleaseAsset, File, (Long, Long?) -> Unit) -> Unit =
             { asset, destination, onProgress ->
@@ -149,6 +228,9 @@ class AppUpdateRepositoryTest {
             destination: File,
             onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
         ) {
+            // 记录真实交给网络层的资产，测试才能证明强制路径没有再次依赖 Release 元数据。
+            downloadCount += 1
+            downloadedAsset = asset
             download(asset, destination, onProgress)
         }
     }
@@ -182,6 +264,8 @@ class AppUpdateRepositoryTest {
 
     private companion object {
         const val NOW_MILLIS = 1_800_000_000_000L
+        const val FORCED_DEV_DOWNLOAD_URL =
+            "https://github.com/yaotutu/nanobotkt/releases/download/dev-latest/app-universal-dev.apk"
 
         fun release(version: String): GitHubRelease = GitHubRelease(
             tagName = "v$version",

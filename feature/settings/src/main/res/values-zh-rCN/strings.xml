@@ -117,6 +117,8 @@
     <string name="settings_update_waiting_install">等待安装</string>
     <string name="settings_update_installing">安装中</string>
     <string name="settings_update_retry_available">可重试</string>
+    <string name="settings_update_force_dev_button">强制更新到最新 Dev</string>
+    <string name="settings_update_force_dev_explanation">GitHub 正在限制版本查询。你可以跳过版本信息检查，直接下载 dev-latest 的 universal APK；下载完成后仍需在系统安装器中确认。</string>
 
     <!-- 设置保存状态。 -->
     <string name="settings_saved_restart_ready">已保存，可在方便时重启。</string>

@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import com.nanobotkt.core.network.GitHubReleaseAsset
 import com.nanobotkt.core.network.GitHubReleaseChannel
 import com.nanobotkt.core.network.GitHubReleaseException
 import com.nanobotkt.core.network.GitHubReleaseService
@@ -27,6 +28,7 @@ interface AppUpdateRepository {
 
     suspend fun check(manual: Boolean)
     suspend fun download()
+    suspend fun forceDownloadLatestDev()
     suspend fun requestInstall(): AppUpdateInstallRequest?
     fun onInstallerReturned()
 }
@@ -217,6 +219,8 @@ class DefaultAppUpdateRepository @Inject constructor(
                     AppUpdateStatus.Error(
                         message = error.toUserMessage(checking = true),
                         retryAction = AppUpdateRetryAction.CHECK,
+                        // 只有 API 限流可以被固定 dev-latest 下载地址绕过；其他失败继续走正常重试。
+                        canForceLatestDev = error is GitHubReleaseException.RateLimited,
                     )
                 } else {
                     previousStable
@@ -233,7 +237,22 @@ class DefaultAppUpdateRepository @Inject constructor(
             }
             else -> null
         } ?: return@withLock
+        downloadLocked(update)
+    }
 
+    /**
+     * GitHub API 被限流时，不再继续请求 Release JSON，而是直接下载滚动标签 dev-latest 下
+     * 名称固定的 universal APK。该 URL 仍会经过 core:network 的仓库、HTTPS 和重定向域名校验，
+     * 因此“强制”只跳过版本元数据比较，不会放宽 APK 来源，也不会尝试静默安装。
+     */
+    override suspend fun forceDownloadLatestDev() = actionMutex.withLock {
+        val error = mutable.value.status as? AppUpdateStatus.Error ?: return@withLock
+        if (!error.canForceLatestDev) return@withLock
+        downloadLocked(latestDevFallbackUpdate())
+    }
+
+    /** actionMutex 已由调用方持有；下载、落盘和状态推进必须作为一个不可并发动作执行。 */
+    private suspend fun downloadLocked(update: AppUpdateInfo) {
         val partialFile = storage.preparePartialFile()
         mutable.value = mutable.value.copy(
             status = AppUpdateStatus.Downloading(
@@ -273,6 +292,21 @@ class DefaultAppUpdateRepository @Inject constructor(
             )
         }
     }
+
+    /**
+     * dev-latest 是发布流程维护的唯一滚动 Dev 标签；固定资产名由 CI 生成。
+     * 元数据不可用时无法可信获知实际版本号，因此明确展示标签名，禁止猜测远端版本。
+     */
+    private fun latestDevFallbackUpdate(): AppUpdateInfo = AppUpdateInfo(
+        versionName = FORCED_DEV_VERSION_NAME,
+        channel = AppReleaseChannel.DEV,
+        changelog = "GitHub 版本接口受到限流，已改为直接下载 dev-latest 的 universal APK。",
+        asset = GitHubReleaseAsset(
+            name = FORCED_DEV_ASSET_NAME,
+            downloadUrl = FORCED_DEV_DOWNLOAD_URL,
+            sizeBytes = null,
+        ),
+    )
 
     override suspend fun requestInstall(): AppUpdateInstallRequest? = actionMutex.withLock {
         val (update, filePath) = when (val status = mutable.value.status) {
@@ -355,5 +389,9 @@ class DefaultAppUpdateRepository @Inject constructor(
 
     private companion object {
         const val AUTO_CHECK_INTERVAL_MILLIS = 24L * 60L * 60L * 1_000L
+        const val FORCED_DEV_VERSION_NAME = "dev-latest"
+        const val FORCED_DEV_ASSET_NAME = "app-universal-dev.apk"
+        const val FORCED_DEV_DOWNLOAD_URL =
+            "https://github.com/yaotutu/nanobotkt/releases/download/dev-latest/app-universal-dev.apk"
     }
 }

@@ -219,6 +219,7 @@ fun SettingsScreen(
             onDismiss = viewModel::dismissAppUpdateDialog,
             onCheck = viewModel::checkAppUpdate,
             onDownload = viewModel::downloadAppUpdate,
+            onForceLatestDev = viewModel::forceDownloadLatestDev,
             onInstall = viewModel::installAppUpdate,
             onRetry = viewModel::retryAppUpdate,
         )

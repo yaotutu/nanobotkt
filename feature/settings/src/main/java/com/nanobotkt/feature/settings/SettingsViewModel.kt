@@ -106,6 +106,16 @@ class SettingsViewModel @Inject constructor(
         appUpdateRepository.download()
     }
 
+    /**
+     * 429/403 限流兜底只由 Error 状态中的显式按钮触发。Repository 会再次校验状态并固定下载
+     * dev-latest；下载成功后立即复用正常安装分发，仍由系统权限页和安装器完成最终用户确认。
+     * 下载失败时 requestInstall() 返回 null，因此不会用旧文件或不完整文件启动安装器。
+     */
+    fun forceDownloadLatestDev() = viewModelScope.launch {
+        appUpdateRepository.forceDownloadLatestDev()
+        dispatchInstallRequest(appUpdateRepository.requestInstall())
+    }
+
     fun installAppUpdate() = viewModelScope.launch {
         dispatchInstallRequest(appUpdateRepository.requestInstall())
     }

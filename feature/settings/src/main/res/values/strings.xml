@@ -117,6 +117,8 @@
     <string name="settings_update_waiting_install">Ready to install</string>
     <string name="settings_update_installing">Installing</string>
     <string name="settings_update_retry_available">Retry available</string>
+    <string name="settings_update_force_dev_button">Force update to latest Dev</string>
+    <string name="settings_update_force_dev_explanation">GitHub is rate limiting version checks. You can bypass the metadata check and directly download the universal APK from dev-latest. The system installer will still ask for confirmation.</string>
 
     <!-- 设置保存状态。 -->
     <string name="settings_saved_restart_ready">Saved. Restart when ready.</string>
