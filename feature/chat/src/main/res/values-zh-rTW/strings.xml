@@ -150,4 +150,33 @@
     <string name="recording">錄音中…</string>
     <string name="composer_ready_label">準備就緒</string>
     <string name="timeline_error_title">工具結果無法使用</string>
+
+    <!-- Chat Composer 上方的產品化錯誤回饋；原始內部錯誤碼不會直接顯示給使用者。 -->
+    <string name="dismiss_chat_error">關閉錯誤提示</string>
+    <string name="chat_error_message_too_big_title">訊息內容過長</string>
+    <string name="chat_error_message_too_big_body">請縮短訊息或移除部分內容後重新傳送。</string>
+    <string name="chat_error_workspace_scope_title">工作區存取遭拒</string>
+    <string name="chat_error_workspace_scope_body">仍會保留上次確認的工作區範圍。</string>
+    <string name="chat_error_turn_rejected_title">訊息未被接受</string>
+    <string name="chat_error_turn_rejected_body">請檢查訊息內容後重新傳送。</string>
+    <string name="chat_error_attachment_count_title">附件數量過多</string>
+    <string name="chat_error_attachment_count_body">請移除部分附件後再繼續加入。</string>
+    <string name="chat_error_attachment_size_title">附件過大</string>
+    <string name="chat_error_attachment_size_body">請選擇較小的檔案，或移除其他附件。</string>
+    <string name="chat_error_attachment_type_title">不支援此附件</string>
+    <string name="chat_error_attachment_type_body">請選擇支援的圖片、文件或 MP4 檔案。</string>
+    <string name="chat_error_attachment_empty_title">附件內容為空</string>
+    <string name="chat_error_attachment_empty_body">請選擇包含內容的檔案。</string>
+    <string name="chat_error_model_title">無法切換模型</string>
+    <string name="chat_error_model_body">仍會使用先前的模型，請稍後再試。</string>
+    <string name="chat_error_connection_title">連線發生問題</string>
+    <string name="chat_error_connection_body">請檢查連線後再試。</string>
+    <string name="chat_error_new_conversation_title">無法建立新會話</string>
+    <string name="chat_error_new_conversation_body">連線恢復後請重新嘗試。</string>
+    <string name="chat_error_fork_title">無法建立會話分支</string>
+    <string name="chat_error_fork_body">目前會話沒有發生變更。</string>
+    <string name="chat_error_timeline_title">會話回覆已中斷</string>
+    <string name="chat_error_timeline_body">目前回覆無法繼續，你可以傳送一則新訊息。</string>
+    <string name="chat_error_generic_title">操作未能完成</string>
+    <string name="chat_error_generic_body">請重試；如果問題持續發生，請檢查連線。</string>
 </resources>
