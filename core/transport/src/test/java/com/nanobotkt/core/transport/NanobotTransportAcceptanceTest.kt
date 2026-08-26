@@ -575,10 +575,18 @@ class NanobotTransportAcceptanceTest {
     }
 
     private suspend fun connectWebSocket() {
+        // 客户端与 MockWebServer 各自在独立线程收到 onOpen：Transport 进入 OPEN 时，服务端
+        // listener 可能尚未来得及写入 serverSocket。测试后续若立即 close/send 就会偶发空指针。
+        // 这里按已建立的服务端 Socket 数量等待“本轮”连接完成，而不是只判断引用非空；后者在
+        // 重连场景可能仍指向上一条已关闭连接，无法形成可靠的测试同步边界。
+        val expectedServerSocketCount = serverSockets.size + 1
         server.enqueue(webSocketUpgrade())
         transport.connect()
         withTimeout(2_000) {
             transport.state.first { it.status == TransportStatus.OPEN }
+            while (serverSockets.size < expectedServerSocketCount || serverSocket.get() == null) {
+                delay(10)
+            }
         }
     }
 
