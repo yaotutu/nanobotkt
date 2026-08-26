@@ -169,7 +169,16 @@ class DefaultChatRepositoryTest {
     @Test
     fun `settled remote thread clears stale streaming flags and remains available offline`() = runBlocking {
         val sessionKey = "webui:stale-streaming"
-        val cache = FakeStartupCacheStore()
+        val cacheLoadStarted = CountDownLatch(1)
+        val releaseCacheLoad = CountDownLatch(1)
+        val cache = FakeStartupCacheStore().apply {
+            beforeChatLoadReturn = {
+                cacheLoadStarted.countDown()
+                check(releaseCacheLoad.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    "cache_restore_release_timeout"
+                }
+            }
+        }
         val threadRequests = AtomicInteger(0)
         server.dispatcher = threadDispatcher {
             threadRequests.incrementAndGet()
@@ -187,7 +196,11 @@ class DefaultChatRepositoryTest {
         val repository = newRepository(cache = cache, profileId = "profile-a")
 
         repository.openSession(sessionKey, "settled-chat")
+        assertTrue(cacheLoadStarted.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        // 固定复现 openSession 的 Room 恢复与 onAuthenticated 交错：认证路径先发出首轮请求后，
+        // 才允许本地恢复继续。两条路径必须事先协商刷新所有权，不能各自再发一次 latest 请求。
         repository.onAuthenticated(1L)
+        releaseCacheLoad.countDown()
         val online = awaitState {
             !it.loading && it.messages.singleOrNull()?.id == "settled-assistant"
         }

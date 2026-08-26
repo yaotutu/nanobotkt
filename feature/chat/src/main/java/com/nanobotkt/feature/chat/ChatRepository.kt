@@ -239,6 +239,14 @@ class DefaultChatRepository @Inject constructor(
     private val filePreviewLoader = ChatFilePreviewLoader(api)
     /** 多个 TurnEnd、手动刷新和恢复 dirty 信号可能同时到达；HTTP latest 请求统一串行化。 */
     private val canonicalRefreshMutex = Mutex()
+    /**
+     * 协调“打开会话”和“认证完成”两个可能来自不同协程的边界。
+     *
+     * 冷启动时 openSession 会先恢复 Room，onAuthenticated 随后开放网络；若两边各自只读取
+     * networkReady 再启动刷新，就可能同时发出两次相同的 latest 请求。两条路径必须在同一把锁下
+     * 完成“发布当前会话/开放网络 + 决定由谁刷新”，保证交错顺序无论如何都只有一方负责首轮 HTTP。
+     */
+    private val networkActivationLock = Any()
     /** Bootstrap 完成前只允许读取本地快照；网络与 Transport 副作用在 onAuthenticated 后才开放。 */
     @Volatile private var networkReady = false
     /** 仅在 timelineWriterLock 内读写，用于跳过与本地 settled 快照相同的远端对象替换。 */
@@ -300,9 +308,12 @@ class DefaultChatRepository @Inject constructor(
     }
 
     override fun onAuthenticated(sessionEpoch: Long) {
-        networkReady = true
-        mutableState.value.chatId?.let(transport::attach)
-        if (mutableState.value.sessionKey != null) scope.launch { refreshCanonical() }
+        val sessionAtActivation = synchronized(networkActivationLock) {
+            networkReady = true
+            mutableState.value.takeIf { it.sessionKey != null }
+        }
+        sessionAtActivation?.chatId?.let(transport::attach)
+        if (sessionAtActivation != null) scope.launch { refreshCanonical() }
         val generation: Long
         val job: Job
         synchronized(authenticatedLifecycleLock) {
@@ -341,7 +352,11 @@ class DefaultChatRepository @Inject constructor(
         // 退出登录时必须同时清理服务端会话标识、规范化消息和所有乐观消息，
         // 同时淘汰所有在途文件预览响应，避免旧账号内容回写到新登录会话。
         filePreviewLoader.invalidate()
-        networkReady = false
+        // 与 openSession/onAuthenticated 使用同一同步边界，保证 reset 一旦关闭网络门禁，
+        // 并发中的会话打开不会基于旧的 true 决定启动远端刷新。
+        synchronized(networkActivationLock) {
+            networkReady = false
+        }
         synchronized(authenticatedLifecycleLock) {
             authenticatedSessionEpoch = null
             composerCatalogLoaded = false
@@ -398,27 +413,35 @@ class DefaultChatRepository @Inject constructor(
         activeSessionModelPreset = modelPreset
         turnModelName = null
         val expectedCacheRestoreGeneration: Long
-        synchronized(timelineWriterLock) {
-            clearTimelineLocked()
-            expectedCacheRestoreGeneration = cacheRestoreGeneration
-            mutableState.value = ChatUiState(
-                sessionKey = sessionKey,
-                chatId = chatId,
-                loading = true,
-                limits = limitsProvider.currentIngressLimits(),
-                slashCommands = catalogs.slashCommands,
-                skills = catalogs.skills,
-                cliApps = catalogs.cliApps,
-                mcpPresets = catalogs.mcpPresets,
-                workspaces = catalogs.workspaces,
-                workspaceScope = workspaceScope?.normalized() ?: catalogs.workspaces?.defaultScope?.normalized(),
-                model = buildModelSelection(scopeKey = sessionKey),
-            )
+        val shouldRefreshAfterRestore: Boolean
+        synchronized(networkActivationLock) {
+            synchronized(timelineWriterLock) {
+                clearTimelineLocked()
+                expectedCacheRestoreGeneration = cacheRestoreGeneration
+                mutableState.value = ChatUiState(
+                    sessionKey = sessionKey,
+                    chatId = chatId,
+                    loading = true,
+                    limits = limitsProvider.currentIngressLimits(),
+                    slashCommands = catalogs.slashCommands,
+                    skills = catalogs.skills,
+                    cliApps = catalogs.cliApps,
+                    mcpPresets = catalogs.mcpPresets,
+                    workspaces = catalogs.workspaces,
+                    workspaceScope = workspaceScope?.normalized() ?: catalogs.workspaces?.defaultScope?.normalized(),
+                    model = buildModelSelection(scopeKey = sessionKey),
+                )
+            }
+            // 若认证先完成，openSession 负责在 Room 恢复后刷新；若认证后完成，则由
+            // onAuthenticated 负责。该决定与会话发布共享 networkActivationLock，禁止双请求或漏请求。
+            shouldRefreshAfterRestore = networkReady
         }
-        if (networkReady) transport.attach(chatId)
+        if (shouldRefreshAfterRestore) transport.attach(chatId)
         scope.launch {
             restoreCachedThread(sessionKey, chatId, expectedCacheRestoreGeneration)
-            if (networkReady && mutableState.value.matchesSession(sessionKey, chatId)) refreshCanonical()
+            if (shouldRefreshAfterRestore && mutableState.value.matchesSession(sessionKey, chatId)) {
+                refreshCanonical()
+            }
         }
     }
 
