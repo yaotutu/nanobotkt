@@ -32,9 +32,11 @@ class AuthSessionRepositoryTest {
         val repository = AuthSessionRepository(managerFor(gateway, store))
 
         repository.start()
-        val state = repository.awaitState { it is AuthState.Ready }
+        val state = repository.awaitState {
+            it is AuthState.Ready && it.connection == GatewayConnectionState.ONLINE
+        }
 
-        assertEquals(AuthState.Ready(sessionEpoch = 1L), state)
+        assertReady(state, sessionEpoch = 1L, profileId = TEST_PROFILE)
         assertEquals(listOf(BootstrapRequest(OLD_URL, "stored-secret")), gateway.requests)
     }
 
@@ -48,13 +50,16 @@ class AuthSessionRepositoryTest {
         val repository = AuthSessionRepository(managerFor(gateway, store))
 
         repository.start()
-        val state = repository.awaitState { it is AuthState.Unreachable }
+        val state = repository.awaitState {
+            it is AuthState.Ready && it.connection == GatewayConnectionState.OFFLINE
+        }
 
         assertEquals(
-            AuthState.Unreachable(
+            AuthState.Ready(
+                sessionEpoch = 1L,
+                profileId = TEST_PROFILE,
+                connection = GatewayConnectionState.OFFLINE,
                 error = GatewayConfigurationError.NetworkUnavailable,
-                serverUrl = OLD_URL,
-                sessionEpoch = 0L,
             ),
             state,
         )
@@ -79,6 +84,7 @@ class AuthSessionRepositoryTest {
             AuthState.Configuration(
                 serverUrl = OLD_URL,
                 error = GatewayConfigurationError.AuthenticationRejected,
+                sessionEpoch = 1L,
             ),
             state,
         )
@@ -113,7 +119,7 @@ class AuthSessionRepositoryTest {
         val store = FakeGatewayConfigStore(config(OLD_URL, "old-secret"))
         val repository = AuthSessionRepository(managerFor(gateway, store))
         repository.start()
-        repository.awaitState { it == AuthState.Ready(1L) }
+        repository.awaitState { it.isOnlineReady(1L) }
         var cleanupCalled = false
 
         val result = repository.reconfigure(config(NEW_URL, "new-secret")) { cleanupCalled = true }
@@ -123,7 +129,7 @@ class AuthSessionRepositoryTest {
             result,
         )
         assertFalse(cleanupCalled)
-        assertEquals(AuthState.Ready(1L), repository.state.value)
+        assertReady(repository.state.value, sessionEpoch = 1L)
         assertEquals(config(OLD_URL, "old-secret"), store.config)
     }
 
@@ -137,14 +143,16 @@ class AuthSessionRepositoryTest {
             managerFor(gateway, FakeGatewayConfigStore(config(OLD_URL, "old-secret"))),
         )
         repository.start()
-        repository.awaitState { it == AuthState.Ready(1L) }
+        repository.awaitState { it.isOnlineReady(1L) }
         var cleanupCount = 0
 
         val result = repository.reconfigure(config(NEW_URL, "new-secret")) { cleanupCount += 1 }
 
-        assertEquals(GatewayConfigurationResult.Success(NEW_URL), result)
+        val success = result as GatewayConfigurationResult.Success
+        assertEquals(NEW_URL, success.serverUrl)
+        assertTrue(success.profileId.isNotBlank())
         assertEquals(1, cleanupCount)
-        assertEquals(AuthState.Ready(2L), repository.state.value)
+        assertReady(repository.state.value, sessionEpoch = 2L, profileId = success.profileId)
         assertEquals(NEW_URL, repository.baseUrl)
     }
 
@@ -158,12 +166,12 @@ class AuthSessionRepositoryTest {
         val manager = managerFor(gateway, FakeGatewayConfigStore(), clock)
         val repository = AuthSessionRepository(manager)
         repository.connect(config())
-        assertEquals(AuthState.Ready(1L), repository.state.value)
+        assertReady(repository.state.value, sessionEpoch = 1L)
 
         clock.nowMillis = 30_000L
         assertEquals("token-2", manager.tokenForRequest())
 
-        assertEquals(AuthState.Ready(1L), repository.state.value)
+        assertReady(repository.state.value, sessionEpoch = 1L)
         assertEquals(2, gateway.fetchCount)
     }
 
@@ -173,7 +181,7 @@ class AuthSessionRepositoryTest {
         val store = FakeGatewayConfigStore()
         val repository = AuthSessionRepository(managerFor(gateway, store))
         repository.connect(config(OLD_URL, "secret"))
-        assertEquals(AuthState.Ready(1L), repository.state.value)
+        assertReady(repository.state.value, sessionEpoch = 1L)
 
         repository.logout()
 
@@ -197,7 +205,7 @@ class AuthSessionRepositoryTest {
         val store = FakeGatewayConfigStore(config(OLD_URL, "old-secret"))
         val repository = AuthSessionRepository(managerFor(gateway, store))
         repository.start()
-        repository.awaitState { it == AuthState.Ready(1L) }
+        repository.awaitState { it.isOnlineReady(1L) }
 
         val reconfiguration = async {
             repository.reconfigure(config(NEW_URL, "new-secret")) {}
@@ -214,6 +222,18 @@ class AuthSessionRepositoryTest {
         assertEquals(AuthState.Configuration(DEFAULT_URL, sessionEpoch = 1L), repository.state.value)
         assertNull(store.config)
     }
+
+    private fun assertReady(state: AuthState, sessionEpoch: Long, profileId: String? = null) {
+        val ready = state as AuthState.Ready
+        assertEquals(sessionEpoch, ready.sessionEpoch)
+        assertEquals(GatewayConnectionState.ONLINE, ready.connection)
+        if (profileId != null) assertEquals(profileId, ready.profileId)
+    }
+
+    private fun AuthState.isOnlineReady(sessionEpoch: Long): Boolean =
+        this is AuthState.Ready &&
+            this.sessionEpoch == sessionEpoch &&
+            connection == GatewayConnectionState.ONLINE
 
     private suspend fun AuthSessionRepository.awaitState(
         predicate: (AuthState) -> Boolean,
@@ -291,7 +311,7 @@ class AuthSessionRepositoryTest {
     private fun config(
         serverUrl: String = DEFAULT_URL,
         secret: String = "secret",
-    ) = GatewayConnectionConfig(serverUrl, secret)
+    ) = GatewayConnectionConfig(serverUrl, secret, profileId = TEST_PROFILE)
 
     private fun testBootstrap(
         apiToken: String = "api-token",
@@ -308,5 +328,6 @@ class AuthSessionRepositoryTest {
         const val DEFAULT_URL = "http://test-server"
         const val OLD_URL = "http://old-server"
         const val NEW_URL = "https://new-server.example/gateway"
+        const val TEST_PROFILE = "profile-auth-test"
     }
 }

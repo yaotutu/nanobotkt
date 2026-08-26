@@ -32,6 +32,7 @@ data class UserPreferences(
 
 /** DataStore 内的一次性 Gateway 配置记录；地址和加密 Secret 只能成对出现。 */
 internal data class EncryptedGatewayConfigRecord(
+    val profileId: String,
     val serverUrl: String,
     val encryptedSecret: String,
 )
@@ -52,16 +53,21 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
      * 读取新的完整 Gateway 配置记录。
      *
      * 旧版本分离保存的 server_url/bootstrap_secret_ciphertext 不再参与恢复。项目明确不做
-     * 兼容迁移，因此只有同一次 DataStore 事务写入的 v2 地址和密文才构成有效活动配置。
+     * 兼容迁移，因此只有同一次 DataStore 事务写入的 v3 profileId、地址和密文才构成有效活动配置。
      */
     internal suspend fun readEncryptedGatewayConfig(): EncryptedGatewayConfigRecord? =
         context.nanobotDataStore.data.map { values ->
+            val profileId = values[Keys.gatewayProfileId]
             val serverUrl = values[Keys.gatewayServerUrl]
             val encryptedSecret = values[Keys.gatewaySecretCiphertext]
-            if (serverUrl.isNullOrBlank() || encryptedSecret.isNullOrBlank()) {
+            if (profileId.isNullOrBlank() || serverUrl.isNullOrBlank() || encryptedSecret.isNullOrBlank()) {
                 null
             } else {
-                EncryptedGatewayConfigRecord(serverUrl = serverUrl, encryptedSecret = encryptedSecret)
+                EncryptedGatewayConfigRecord(
+                    profileId = profileId,
+                    serverUrl = serverUrl,
+                    encryptedSecret = encryptedSecret,
+                )
             }
         }.firstValue()
 
@@ -71,10 +77,17 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
      * DataStore 的 edit 要么整体提交地址和密文，要么整体失败；同时删除旧格式字段，避免
      * logout 或后续排障时设备上继续残留一份已经失去业务意义的旧 Secret。
      */
-    internal suspend fun writeEncryptedGatewayConfig(serverUrl: String, encryptedSecret: String) {
+    internal suspend fun writeEncryptedGatewayConfig(
+        profileId: String,
+        serverUrl: String,
+        encryptedSecret: String,
+    ) {
         context.nanobotDataStore.edit { values ->
+            values[Keys.gatewayProfileId] = profileId
             values[Keys.gatewayServerUrl] = serverUrl
             values[Keys.gatewaySecretCiphertext] = encryptedSecret
+            values.remove(Keys.v2GatewayServerUrl)
+            values.remove(Keys.v2GatewaySecretCiphertext)
             values.remove(Keys.legacyServerUrl)
             values.remove(Keys.legacyBootstrapSecret)
         }
@@ -83,8 +96,11 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
     /** 地址、Secret 以及不再支持的旧格式字段必须在同一个事务中一起清除。 */
     internal suspend fun clearEncryptedGatewayConfig() {
         context.nanobotDataStore.edit { values ->
+            values.remove(Keys.gatewayProfileId)
             values.remove(Keys.gatewayServerUrl)
             values.remove(Keys.gatewaySecretCiphertext)
+            values.remove(Keys.v2GatewayServerUrl)
+            values.remove(Keys.v2GatewaySecretCiphertext)
             values.remove(Keys.legacyServerUrl)
             values.remove(Keys.legacyBootstrapSecret)
         }
@@ -122,9 +138,12 @@ class UserPreferencesRepository @Inject constructor(@param:ApplicationContext pr
         val wrapCode = booleanPreferencesKey("wrap_code")
         val brandLogos = booleanPreferencesKey("brand_logos")
         val fileEditDisplay = stringPreferencesKey("file_edit_display")
-        val gatewayServerUrl = stringPreferencesKey("gateway_config_v2_server_url")
-        val gatewaySecretCiphertext = stringPreferencesKey("gateway_config_v2_secret_ciphertext")
+        val gatewayProfileId = stringPreferencesKey("gateway_config_v3_profile_id")
+        val gatewayServerUrl = stringPreferencesKey("gateway_config_v3_server_url")
+        val gatewaySecretCiphertext = stringPreferencesKey("gateway_config_v3_secret_ciphertext")
         // 旧字段只用于彻底清理，不参与任何恢复或迁移逻辑。
+        val v2GatewayServerUrl = stringPreferencesKey("gateway_config_v2_server_url")
+        val v2GatewaySecretCiphertext = stringPreferencesKey("gateway_config_v2_secret_ciphertext")
         val legacyServerUrl = stringPreferencesKey("server_url")
         val legacyBootstrapSecret = stringPreferencesKey("bootstrap_secret_ciphertext")
         val lastAppUpdateCheckAtMillis = longPreferencesKey("last_app_update_check_at_millis")

@@ -11,6 +11,8 @@ import com.nanobotkt.core.network.GatewayServerAddressError
 data class GatewayConnectionConfig(
     val serverUrl: String,
     val bootstrapSecret: String,
+    /** 仅由持久化恢复或候选激活事务填写；用户输入永远不需要也不能决定缓存身份。 */
+    internal val profileId: String? = null,
 )
 
 /** 初次配置和重新配置共用的稳定错误模型。 */
@@ -31,6 +33,6 @@ sealed interface GatewayConfigurationError {
 
 /** 只有候选配置完成验证、持久化和激活后才返回 [Success]。 */
 sealed interface GatewayConfigurationResult {
-    data class Success(val serverUrl: String) : GatewayConfigurationResult
+    data class Success(val serverUrl: String, val profileId: String) : GatewayConfigurationResult
     data class Failure(val error: GatewayConfigurationError) : GatewayConfigurationResult
 }

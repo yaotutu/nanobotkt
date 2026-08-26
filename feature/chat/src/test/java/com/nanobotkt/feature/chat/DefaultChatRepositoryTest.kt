@@ -1,13 +1,20 @@
 package com.nanobotkt.feature.chat
 
+import com.nanobotkt.core.model.GatewayProfileProvider
 import com.nanobotkt.core.model.GatewayRuntimeSnapshot
 import com.nanobotkt.core.model.GatewayRuntimeSnapshotProvider
 import com.nanobotkt.core.model.IngressLimitsProvider
 import com.nanobotkt.core.model.OutboundMedia
+import com.nanobotkt.core.model.UiMessage
+import com.nanobotkt.core.model.WebUiThreadPayload
 import com.nanobotkt.core.model.WorkspacesPayload
 import com.nanobotkt.core.network.ApiCredentialProvider
 import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
+import com.nanobotkt.core.persistence.SidebarStartupSnapshot
+import com.nanobotkt.core.persistence.StartupCacheStore
+import com.nanobotkt.core.persistence.StoredChatThreadSnapshot
+import com.nanobotkt.core.persistence.StoredSidebarStartupSnapshot
 import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.WebSocketCredentialProvider
 import com.nanobotkt.core.transport.TransportStatus
@@ -37,6 +44,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -113,6 +121,234 @@ class DefaultChatRepositoryTest {
         assertEquals("160", request.requestUrl?.queryParameter("limit"))
         assertEquals("latest", request.requestUrl?.queryParameter("direction"))
         assertNull(request.requestUrl?.queryParameter("before"))
+    }
+
+    @Test
+    fun `cached settled thread renders before authentication and equivalent remote data keeps message identity`() = runBlocking {
+        val sessionKey = "webui:cached"
+        val cachedPayload = cachedThread(sessionKey, "cached-message")
+        val cache = FakeStartupCacheStore().apply {
+            threads["profile-a" to sessionKey] = StoredChatThreadSnapshot(
+                sessionKey = sessionKey,
+                chatId = "cached-chat",
+                payload = cachedPayload,
+                contentHash = "cached-hash",
+                savedAtEpochMillis = 1L,
+            )
+        }
+        val threadRequests = AtomicInteger(0)
+        server.dispatcher = threadDispatcher {
+            threadRequests.incrementAndGet()
+            jsonResponse(
+                """{
+                  "schemaVersion":1,
+                  "sessionKey":"$sessionKey",
+                  "savedAt":"2026-08-26T10:00:00Z",
+                  "messages":[{"id":"cached-message","role":"user","content":"cached-message","createdAt":1}]
+                }""".trimIndent(),
+            )
+        }
+        val repository = newRepository(cache = cache, profileId = "profile-a")
+
+        repository.openSession(sessionKey, "cached-chat")
+        val cachedState = awaitState { !it.loading && it.messages.singleOrNull()?.id == "cached-message" }
+        val cachedMessages = cachedState.messages
+        // Bootstrap 前只允许读取 Room；即使 MockWebServer 可用，也不能提前发 HTTP。
+        assertEquals(0, threadRequests.get())
+
+        repository.onAuthenticated(1L)
+        // 等价远端快照刻意不发布新的 StateFlow 对象，因此轮询请求计数而不是等待状态流再次 emit。
+        withTimeout(ASYNC_STATE_TIMEOUT_MS) {
+            while (threadRequests.get() < 1) delay(10)
+        }
+
+        assertSame(cachedMessages, repository.state.value.messages)
+        assertEquals(0, cache.chatSaveCount.get())
+    }
+
+    @Test
+    fun `settled remote thread clears stale streaming flags and remains available offline`() = runBlocking {
+        val sessionKey = "webui:stale-streaming"
+        val cache = FakeStartupCacheStore()
+        val threadRequests = AtomicInteger(0)
+        server.dispatcher = threadDispatcher {
+            threadRequests.incrementAndGet()
+            jsonResponse(
+                """{
+                  "schemaVersion":1,
+                  "sessionKey":"$sessionKey",
+                  "messages":[{
+                    "id":"settled-assistant","role":"assistant","content":"done","createdAt":1,
+                    "isStreaming":true,"reasoningStreaming":true,"turnId":"turn-done"
+                  }]
+                }""".trimIndent(),
+            )
+        }
+        val repository = newRepository(cache = cache, profileId = "profile-a")
+
+        repository.openSession(sessionKey, "settled-chat")
+        repository.onAuthenticated(1L)
+        val online = awaitState {
+            !it.loading && it.messages.singleOrNull()?.id == "settled-assistant"
+        }
+
+        // active_turn_id 缺失是服务端对 settled 的规范结论；历史消息残留的 streaming 标记
+        // 必须在进入 UI 和 Room 前清空，否则在线会显示幽灵活动，离线冷启动也拿不到快照。
+        assertNull(online.messages.single().isStreaming)
+        assertNull(online.messages.single().reasoningStreaming)
+        withTimeout(ASYNC_STATE_TIMEOUT_MS) {
+            while (cache.chatSaveCount.get() < 1) delay(10)
+        }
+        val stored = requireNotNull(cache.threads["profile-a" to sessionKey])
+        assertNull(stored.payload.messages.single().isStreaming)
+        assertNull(stored.payload.messages.single().reasoningStreaming)
+
+        repository.reset()
+        // 生产组合根在 reset 后立即关闭 Transport；测试也保持同一顺序，避免旧连接状态
+        // 额外触发一次在线 canonical refresh，污染“仅从 Room 恢复”的断言窗口。
+        transport.close()
+        repository.openSession(sessionKey, "settled-chat")
+        val offline = awaitState {
+            !it.loading && it.messages.singleOrNull()?.id == "settled-assistant"
+        }
+        assertNull(offline.activeTurnId)
+        assertEquals(1, threadRequests.get())
+    }
+
+    @Test
+    fun `active remote thread is never cached and missing remote thread deletes stale cache`() = runBlocking {
+        val activeSession = "webui:active"
+        val cache = FakeStartupCacheStore()
+        server.dispatcher = threadDispatcher { request ->
+            when {
+                request.path?.contains("webui%3Aactive") == true -> jsonResponse(
+                    """{
+                      "schemaVersion":1,
+                      "sessionKey":"$activeSession",
+                      "active_turn_id":"turn-1",
+                      "messages":[{
+                        "id":"streaming","role":"assistant","content":"partial","createdAt":1,
+                        "isStreaming":true,"turnId":"turn-1"
+                      }]
+                    }""".trimIndent(),
+                )
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        val repository = newRepository(cache = cache, profileId = "profile-a")
+        repository.openSession(activeSession, "active-chat")
+        repository.onAuthenticated(1L)
+        awaitState { it.sessionKey == activeSession && !it.loading && it.activeTurnId == "turn-1" }
+        assertEquals(0, cache.chatSaveCount.get())
+
+        val missingSession = "webui:missing"
+        cache.threads["profile-a" to missingSession] = StoredChatThreadSnapshot(
+            sessionKey = missingSession,
+            chatId = "missing-chat",
+            payload = cachedThread(missingSession, "stale"),
+            contentHash = "stale-hash",
+            savedAtEpochMillis = 1L,
+        )
+        repository.openSession(missingSession, "missing-chat")
+        awaitState { it.sessionKey == missingSession && it.messages.singleOrNull()?.id == "stale" }
+        awaitState { it.sessionKey == missingSession && !it.loading && it.messages.isEmpty() }
+        // openSession 与 Transport 恢复协调器都可能观察到同一个 404；删除缓存本身是幂等操作，
+        // 测试只约束所有删除都指向当前 profile/session，并确认旧快照已经不可再恢复。
+        assertEquals(setOf("profile-a" to missingSession), cache.deletedThreads.toSet())
+        assertNull(cache.threads["profile-a" to missingSession])
+    }
+
+    @Test
+    fun `old profile remote response cannot populate an identical new profile session`() = runBlocking {
+        val sessionKey = "webui:shared-key"
+        val requestStarted = CountDownLatch(1)
+        val releaseOldResponse = CountDownLatch(1)
+        val releaseNewResponse = CountDownLatch(1)
+        val requestCount = AtomicInteger(0)
+        val profileId = AtomicReference("profile-a")
+        server.dispatcher = threadDispatcher {
+            if (requestCount.incrementAndGet() == 1) {
+                requestStarted.countDown()
+                check(releaseOldResponse.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    "old profile response was not released"
+                }
+                jsonResponse(threadPayload(sessionKey, messageId = "profile-a-message", before = null))
+            } else {
+                // Transport/显式刷新可能已经在 canonical Mutex 后排队。把新 profile 的合法请求保持
+                // 在途，确保断言观察窗口内只有第一条旧响应有机会写入，而不是被后续 404 掩盖。
+                check(releaseNewResponse.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    "new profile response was not released"
+                }
+                jsonResponse(threadPayload(sessionKey, messageId = "profile-b-message", before = null))
+            }
+        }
+        val repository = newRepository(
+            cache = FakeStartupCacheStore(),
+            profileProvider = object : GatewayProfileProvider {
+                override fun currentProfileId(): String = profileId.get()
+            },
+        )
+
+        repository.openSession(sessionKey, "shared-chat")
+        repository.onAuthenticated(1L)
+        assertTrue(requestStarted.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+
+        // 模拟 Gateway 切换后新账号碰巧复用了同一 sessionKey/chatId。旧请求仍在服务器等待，
+        // reset 与 profileId 核验必须共同保证它返回后不能通过“会话标识相同”的检查。
+        profileId.set("profile-b")
+        repository.reset()
+        // 生产组合根在 Repository reset 后会立即关闭旧 Transport；测试也保持同一顺序，避免旧连接的
+        // dirty 恢复协调器为新 profile 合法发起第二个 HTTP 请求，混淆“旧响应不得串写”的单一断言。
+        transport.close()
+        repository.openSession(sessionKey, "shared-chat")
+        releaseOldResponse.countDown()
+        try {
+            delay(200)
+
+            assertEquals("profile-b", profileId.get())
+            assertEquals(sessionKey, repository.state.value.sessionKey)
+            assertTrue(repository.state.value.messages.isEmpty())
+            assertTrue(repository.state.value.loading)
+        } finally {
+            // 无论断言是否通过都释放可能已经排队的新 profile 请求，避免 MockWebServer teardown 等待。
+            releaseNewResponse.countDown()
+        }
+    }
+
+    @Test
+    fun `remote missing result wins when cached load completes late`() = runBlocking {
+        val sessionKey = "webui:late-cache"
+        val cacheLoadStarted = CountDownLatch(1)
+        val releaseCacheLoad = CountDownLatch(1)
+        val cache = FakeStartupCacheStore().apply {
+            threads["profile-a" to sessionKey] = StoredChatThreadSnapshot(
+                sessionKey = sessionKey,
+                chatId = "late-chat",
+                payload = cachedThread(sessionKey, "stale-message"),
+                contentHash = "stale-hash",
+                savedAtEpochMillis = 1L,
+            )
+            beforeChatLoadReturn = {
+                cacheLoadStarted.countDown()
+                check(releaseCacheLoad.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    "delayed cache load was not released"
+                }
+            }
+        }
+        server.dispatcher = threadDispatcher { MockResponse().setResponseCode(404) }
+        val repository = newRepository(cache = cache, profileId = "profile-a")
+
+        repository.openSession(sessionKey, "late-chat")
+        assertTrue(cacheLoadStarted.await(ASYNC_STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        repository.onAuthenticated(1L)
+        awaitState { it.sessionKey == sessionKey && !it.loading && it.messages.isEmpty() }
+
+        // 远端 404 已经成为当前会话的 canonical 结论。此时才释放早先读到的 Room 快照，
+        // 它也只能被代次保护丢弃，不能让已删除的历史在 UI 中“复活”。
+        releaseCacheLoad.countDown()
+        delay(100)
+        assertTrue(repository.state.value.messages.isEmpty())
+        assertNull(cache.threads["profile-a" to sessionKey])
     }
 
     @Test
@@ -872,30 +1108,104 @@ class DefaultChatRepositoryTest {
         runtimeSnapshotProvider: GatewayRuntimeSnapshotProvider = object : GatewayRuntimeSnapshotProvider {
             override fun currentRuntimeSnapshot(): GatewayRuntimeSnapshot? = null
         },
+        cache: StartupCacheStore? = null,
+        profileId: String? = null,
+        profileProvider: GatewayProfileProvider? = null,
     ): DefaultChatRepository {
-        currentRepository = DefaultChatRepository(
-            api = GatewayApiClient(
-                client = httpClient,
-                json = json,
-                endpointProvider = object : GatewayEndpointProvider {
-                    override val baseUrl: String = server.url("/").toString()
-                },
-                credentialProvider = object : ApiCredentialProvider {
-                    override suspend fun tokenForRequest(): String = "test-api-token"
-                    override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
-                },
-            ),
-            transport = transport,
-            limitsProvider = object : IngressLimitsProvider {
-                override fun currentIngressLimits() = null
+        val api = GatewayApiClient(
+            client = httpClient,
+            json = json,
+            endpointProvider = object : GatewayEndpointProvider {
+                override val baseUrl: String = server.url("/").toString()
             },
-            runtimeSnapshotProvider = runtimeSnapshotProvider,
-            workspaceAccessProvider = object : WorkspaceAccessProvider {
-                override val workspaces = MutableStateFlow<WorkspacesPayload?>(null)
-                override suspend fun refresh() = Unit
+            credentialProvider = object : ApiCredentialProvider {
+                override suspend fun tokenForRequest(): String = "test-api-token"
+                override suspend fun tokenAfterUnauthorized(rejectedToken: String): String = "test-api-token"
             },
         )
+        val limitsProvider = object : IngressLimitsProvider {
+            override fun currentIngressLimits() = null
+        }
+        val workspaceAccessProvider = object : WorkspaceAccessProvider {
+            override val workspaces = MutableStateFlow<WorkspacesPayload?>(null)
+            override suspend fun refresh() = Unit
+        }
+
+        currentRepository = if (cache == null && profileId == null && profileProvider == null) {
+            // 历史测试验证的是已经完成认证后的 HTTP/Transport 行为，继续使用测试专用构造器，
+            // 避免把本轮新增的 Bootstrap 门禁错误地引入与启动缓存无关的测试前置条件。
+            DefaultChatRepository(
+                api = api,
+                transport = transport,
+                limitsProvider = limitsProvider,
+                runtimeSnapshotProvider = runtimeSnapshotProvider,
+                workspaceAccessProvider = workspaceAccessProvider,
+            )
+        } else {
+            // 启动缓存专项测试必须走生产构造路径，从 networkReady=false 开始，才能验证认证前
+            // 只读 Room、认证完成后才允许 HTTP 与 Transport 副作用的两阶段恢复契约。
+            DefaultChatRepository(
+                api = api,
+                transport = transport,
+                limitsProvider = limitsProvider,
+                runtimeSnapshotProvider = runtimeSnapshotProvider,
+                workspaceAccessProvider = workspaceAccessProvider,
+                startupCacheStore = requireNotNull(cache),
+                profileProvider = profileProvider ?: object : GatewayProfileProvider {
+                    override fun currentProfileId(): String? = profileId
+                },
+            )
+        }
         return currentRepository
+    }
+
+    private fun cachedThread(sessionKey: String, messageId: String) = WebUiThreadPayload(
+        schemaVersion = 1,
+        sessionKey = sessionKey,
+        messages = listOf(UiMessage(messageId, "user", messageId, createdAt = 1L)),
+    )
+
+    private class FakeStartupCacheStore : StartupCacheStore {
+        val threads = mutableMapOf<Pair<String, String>, StoredChatThreadSnapshot>()
+        val chatSaveCount = AtomicInteger(0)
+        val deletedThreads = mutableListOf<Pair<String, String>>()
+        var beforeChatLoadReturn: (() -> Unit)? = null
+
+        override suspend fun loadSidebar(profileId: String): StoredSidebarStartupSnapshot? = null
+        override suspend fun saveSidebar(profileId: String, snapshot: SidebarStartupSnapshot, contentHash: String) = Unit
+        override suspend fun loadSelection(profileId: String): String? = null
+        override suspend fun saveSelection(profileId: String, selectedSessionKey: String?) = Unit
+        override suspend fun loadChatThread(profileId: String, sessionKey: String): StoredChatThreadSnapshot? {
+            val stored = threads[profileId to sessionKey]
+            beforeChatLoadReturn?.invoke()
+            return stored
+        }
+
+        override suspend fun saveChatThread(
+            profileId: String,
+            sessionKey: String,
+            chatId: String,
+            payload: WebUiThreadPayload,
+            contentHash: String,
+        ) {
+            chatSaveCount.incrementAndGet()
+            threads[profileId to sessionKey] = StoredChatThreadSnapshot(
+                sessionKey,
+                chatId,
+                payload,
+                contentHash,
+                savedAtEpochMillis = 1L,
+            )
+        }
+
+        override suspend fun deleteChatThread(profileId: String, sessionKey: String) {
+            threads.remove(profileId to sessionKey)
+            deletedThreads += profileId to sessionKey
+        }
+
+        override suspend fun deleteProfile(profileId: String) {
+            threads.keys.removeAll { it.first == profileId }
+        }
     }
 
     private suspend fun awaitState(predicate: (ChatUiState) -> Boolean): ChatUiState =

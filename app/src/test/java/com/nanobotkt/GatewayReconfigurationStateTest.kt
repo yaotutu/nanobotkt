@@ -1,6 +1,8 @@
 package com.nanobotkt
 
+import com.nanobotkt.feature.auth.AuthState
 import com.nanobotkt.feature.auth.GatewayConfigurationError
+import com.nanobotkt.feature.auth.GatewayConnectionState
 import com.nanobotkt.feature.auth.GatewayConfigurationResult
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_SYSTEM
 import org.junit.Assert.assertEquals
@@ -17,7 +19,7 @@ class GatewayReconfigurationStateTest {
         )
 
         val updated = current.afterGatewayReconfiguration(
-            GatewayConfigurationResult.Success("http://192.168.55.147:8765"),
+            GatewayConfigurationResult.Success("http://192.168.55.147:8765", profileId = "profile-new"),
         )
 
         assertEquals(8L, updated.successGeneration)
@@ -39,6 +41,49 @@ class GatewayReconfigurationStateTest {
         assertEquals(3L, updated.successGeneration)
         assertFalse(updated.submitting)
         assertEquals(GatewayConfigurationError.AuthenticationRejected, updated.error)
+    }
+
+    @Test
+    fun persistedSelectionIsAppliedOnlyToTheSameProfileAndEpoch() {
+        val expected = AuthState.Ready(
+            sessionEpoch = 4L,
+            profileId = "profile-a",
+            connection = GatewayConnectionState.CONNECTING,
+        )
+        val root = RootUiState()
+
+        assertEquals(
+            root.copy(selectedKey = "webui:cached"),
+            root.restorePersistedSelectionIfCurrent(
+                expectedAuth = expected,
+                currentAuth = expected.copy(connection = GatewayConnectionState.ONLINE),
+                persistedSelection = "webui:cached",
+            ),
+        )
+        assertEquals(
+            root,
+            root.restorePersistedSelectionIfCurrent(
+                expectedAuth = expected,
+                currentAuth = expected.copy(sessionEpoch = 5L, profileId = "profile-b"),
+                persistedSelection = "webui:old-account",
+            ),
+        )
+    }
+
+    @Test
+    fun persistedSelectionCannotOverrideRestoredRootOrDraftingGuard() {
+        val auth = AuthState.Ready(1L, "profile-a", GatewayConnectionState.CONNECTING)
+        val selected = RootUiState(selectedKey = "webui:saved-state")
+        val drafting = RootUiState(draftingNewTopic = true)
+
+        assertEquals(
+            selected,
+            selected.restorePersistedSelectionIfCurrent(auth, auth, "webui:room"),
+        )
+        assertEquals(
+            drafting,
+            drafting.restorePersistedSelectionIfCurrent(auth, auth, "webui:room"),
+        )
     }
 
     @Test

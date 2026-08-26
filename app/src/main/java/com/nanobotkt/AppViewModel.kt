@@ -14,6 +14,7 @@ import com.nanobotkt.feature.auth.AuthSessionRepository
 import com.nanobotkt.feature.auth.AuthState
 import com.nanobotkt.feature.auth.GatewayConfigurationError
 import com.nanobotkt.feature.auth.GatewayConfigurationResult
+import com.nanobotkt.feature.auth.GatewayConnectionState
 import com.nanobotkt.feature.auth.GatewayConnectionConfig
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +29,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 internal enum class AppDestination { CHAT, CONVERSATIONS, WORKSPACES, APPS, SKILLS, AUTOMATIONS, CHANNELS, SECURITY, SETTINGS }
@@ -162,6 +166,21 @@ internal fun scheduleLogoutCleanup(
     }
 }
 
+/** 只有 profile 与 epoch 仍属于同一 Ready 会话时，才允许把异步读取的最近选择写回 Root。 */
+internal fun RootUiState.restorePersistedSelectionIfCurrent(
+    expectedAuth: AuthState.Ready,
+    currentAuth: AuthState,
+    persistedSelection: String?,
+): RootUiState {
+    if (!currentAuth.matchesReadySession(expectedAuth)) return this
+    if (selectedKey != null || draftingNewTopic || persistedSelection == null) return this
+    return copy(selectedKey = persistedSelection, draftingNewTopic = false)
+}
+
+/** profileId 与 sessionEpoch 共同定义一次可恢复的本地身份边界。 */
+private fun AuthState.matchesReadySession(expected: AuthState.Ready): Boolean =
+    this is AuthState.Ready && sessionEpoch == expected.sessionEpoch && profileId == expected.profileId
+
 private fun SavedStateHandle.writeRootUiState(value: RootUiState) {
     this[ROOT_SELECTED_KEY] = value.selectedKey
     this[ROOT_DESTINATION] = value.destination.name
@@ -204,18 +223,55 @@ class AppViewModel @Inject constructor(
     internal val gatewayReconfiguration: StateFlow<GatewayReconfigurationUiState> =
         mutableGatewayReconfiguration.asStateFlow()
 
+    /**
+     * 最近选择的 Room 写入与 logout/重配清理共用同一把锁。
+     *
+     * 仅靠 profileId 虽能阻止跨账号读取，却不能阻止“旧写入晚于 deleteProfile 完成”后重新留下
+     * 已退出账号的选择记录。代次先废止尚未开始的写入，Mutex 再等待已经进入数据库调用的写入完成，
+     * 随后的 profile 清理因此一定是该账号最后一次持久化操作。
+     */
+    private val selectionPersistenceMutex = Mutex()
+    private val selectionPersistenceGeneration = AtomicLong(0L)
+
     init {
         authRepository.start()
         viewModelScope.launch {
+            var restoredEpoch: Long? = null
+            var authenticatedEpoch: Long? = null
+            var hadReadySession = false
             authRepository.state.collectLatest { state ->
                 if (state is AuthState.Ready) {
-                    // 必须先发布认证会话边界，再恢复实时连接。Composer/Workspace 的 HTTP
-                    // 加载依赖已建立的登录会话；短期 Token 续期由凭据系统内部处理，不再改变 epoch。
-                    sessionCleanup.onAuthenticated(state.sessionEpoch)
-                    // Ready 是唯一可以激活实时通信的认证边界；Activity 前台事件只负责恢复
-                    // 已激活会话，不能在登录页或 logout 后隐式创建连接。
-                    transport.connect()
+                    hadReadySession = true
+                    if (restoredEpoch != state.sessionEpoch) {
+                        // collectLatest 允许 CONNECTING→ONLINE 或账号切换立即取消旧恢复；只有缓存和选择
+                        // 都恢复完成且认证身份仍相同时才登记 epoch，取消后的 ONLINE 状态会重新执行本地阶段。
+                        sessionCleanup.onLocalSessionAvailable(state.profileId)
+                        restorePersistedSelection(state)
+                        if (authState.value.matchesReadySession(state)) restoredEpoch = state.sessionEpoch
+                    }
+                    if (state.connection == GatewayConnectionState.ONLINE) {
+                        if (authenticatedEpoch != state.sessionEpoch) {
+                            sessionCleanup.onAuthenticated(state.sessionEpoch)
+                            if (authState.value.matchesReadySession(state)) authenticatedEpoch = state.sessionEpoch
+                        }
+                        if (authState.value.matchesReadySession(state)) transport.connect()
+                    } else {
+                        // CONNECTING/OFFLINE 仍保留缓存 Root，但严格禁止提前建立实时连接。
+                        transport.close()
+                    }
                 } else {
+                    if (hadReadySession) {
+                        // 认证拒绝、手工进入重新配置页和 logout 都属于离开当前身份边界。除清空
+                        // Repository 外还要清掉内存中的旧选择，否则新 profile 若复用相同 sessionKey，
+                        // Root 会跳过自己的最近选择恢复并短暂打开旧账号的会话标识。
+                        invalidateSelectionPersistence()
+                        updateRootUiState(persistSelection = false, RootUiState::clearGatewayScopedSelection)
+                        sessionCleanup.resetAll()
+                        transport.clearAttachments()
+                        hadReadySession = false
+                    }
+                    restoredEpoch = null
+                    authenticatedEpoch = null
                     transport.close()
                 }
             }
@@ -252,6 +308,7 @@ class AppViewModel @Inject constructor(
             error = null,
         )
         viewModelScope.launch {
+            val oldProfileId = (authState.value as? AuthState.Ready)?.profileId
             try {
                 val result = authRepository.reconfigure(
                     config = GatewayConnectionConfig(serverUrl, bootstrapSecret),
@@ -259,6 +316,11 @@ class AppViewModel @Inject constructor(
                 )
                 mutableGatewayReconfiguration.value =
                     mutableGatewayReconfiguration.value.afterGatewayReconfiguration(result)
+                if (result is GatewayConfigurationResult.Success && oldProfileId != null) {
+                    // 新 profile 已激活后再按旧 profileId 删除缓存；先等待已进入 Room 的旧选择写入，
+                    // 防止 deleteProfile 完成后又被迟到协程重新创建旧账号记录。
+                    runCatching { clearPersistedSessionAfterSelectionWrites(oldProfileId) }
+                }
             } catch (error: kotlinx.coroutines.CancellationException) {
                 // ViewModel 销毁时无需再向已经离开的页面发布结果，但仍保持协程取消语义。
                 throw error
@@ -282,6 +344,8 @@ class AppViewModel @Inject constructor(
     }
 
     fun logout() {
+        val oldProfileId = (authState.value as? AuthState.Ready)?.profileId
+        invalidateSelectionPersistence()
         scheduleLogoutCleanup(
             scope = viewModelScope,
             resetRootUiState = ::resetRootUiState,
@@ -292,7 +356,7 @@ class AppViewModel @Inject constructor(
             // 登记，避免新账号建立 WebSocket 时自动恢复旧账号的会话。
             clearAttachments = transport::clearAttachments,
             closeTransport = transport::close,
-            clearComposerDrafts = sessionCleanup::clearPersistedChatInput,
+            clearComposerDrafts = { clearPersistedSessionAfterSelectionWrites(oldProfileId) },
             logout = authRepository::logout,
         )
     }
@@ -397,7 +461,8 @@ class AppViewModel @Inject constructor(
      * 此函数故意不启动协程，确保 CredentialManager 激活新配置前清理顺序已经完成。
      */
     private fun resetGatewayScopedStatePreservingNavigation() {
-        updateRootUiState(RootUiState::clearGatewayScopedSelection)
+        invalidateSelectionPersistence()
+        updateRootUiState(persistSelection = false, RootUiState::clearGatewayScopedSelection)
         sessionCleanup.resetAll()
         transport.clearAttachments()
         transport.close()
@@ -409,11 +474,59 @@ class AppViewModel @Inject constructor(
         savedStateHandle.writeRootUiState(reset)
     }
 
-    private inline fun updateRootUiState(transform: RootUiState.() -> RootUiState) {
+    private inline fun updateRootUiState(
+        persistSelection: Boolean = true,
+        transform: RootUiState.() -> RootUiState,
+    ) {
         val updated = mutableRootUiState.value.transform()
         if (updated == mutableRootUiState.value) return
         mutableRootUiState.value = updated
         savedStateHandle.writeRootUiState(updated)
+        val profileId = (authState.value as? AuthState.Ready)?.profileId
+        if (persistSelection && profileId != null && !updated.draftingNewTopic) {
+            val expectedGeneration = selectionPersistenceGeneration.get()
+            viewModelScope.launch {
+                selectionPersistenceMutex.withLock {
+                    val currentProfileId = (authState.value as? AuthState.Ready)?.profileId
+                    if (
+                        selectionPersistenceGeneration.get() == expectedGeneration &&
+                        currentProfileId == profileId
+                    ) {
+                        try {
+                            sessionCleanup.saveSessionSelection(profileId, updated.selectedKey)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            // 最近选择只是启动加速元数据；写入失败不能影响当前会话，但协程取消必须透传。
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun restorePersistedSelection(expectedAuth: AuthState.Ready) {
+        val currentRoot = mutableRootUiState.value
+        val selected = if (currentRoot.selectedKey == null && !currentRoot.draftingNewTopic) {
+            sessionCleanup.loadSessionSelection(expectedAuth.profileId)
+        } else {
+            null
+        }
+        updateRootUiState(persistSelection = false) {
+            restorePersistedSelectionIfCurrent(expectedAuth, authState.value, selected)
+        }
+    }
+
+    /** 废止尚未进入 Room 的选择写入；已经持锁的写入由后续清理等待完成。 */
+    private fun invalidateSelectionPersistence() {
+        selectionPersistenceGeneration.incrementAndGet()
+    }
+
+    /** profile 清理与选择写入串行，保证清理完成后不会重新出现旧账号的最近选择。 */
+    private suspend fun clearPersistedSessionAfterSelectionWrites(profileId: String?) {
+        selectionPersistenceMutex.withLock {
+            sessionCleanup.clearPersistedSession(profileId)
+        }
     }
 
     private fun applyApplicationLocale(languageTag: String?) {

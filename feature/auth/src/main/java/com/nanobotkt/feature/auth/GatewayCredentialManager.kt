@@ -2,6 +2,7 @@ package com.nanobotkt.feature.auth
 
 import com.nanobotkt.core.model.BootstrapResponse
 import com.nanobotkt.core.model.GatewayRuntimeSnapshot
+import com.nanobotkt.core.model.GatewayProfileProvider
 import com.nanobotkt.core.model.GatewayRuntimeSnapshotProvider
 import com.nanobotkt.core.model.IngressLimitsProvider
 import com.nanobotkt.core.model.WebUiIngressLimits
@@ -12,6 +13,7 @@ import com.nanobotkt.core.network.GatewayServerAddressResult
 import com.nanobotkt.core.network.GatewayServerUrl
 import com.nanobotkt.core.network.normalizeGatewayServerAddress
 import com.nanobotkt.core.transport.WebSocketCredentialProvider
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -69,7 +71,8 @@ class GatewayCredentialManager @Inject internal constructor(
     ApiCredentialProvider,
     WebSocketCredentialProvider,
     IngressLimitsProvider,
-    GatewayRuntimeSnapshotProvider {
+    GatewayRuntimeSnapshotProvider,
+    GatewayProfileProvider {
 
     /**
      * 同一把锁串行化恢复、配置替换、Token 刷新和 logout。
@@ -90,18 +93,29 @@ class GatewayCredentialManager @Inject internal constructor(
     @Volatile
     private var currentBaseUrl: String = normalizedDefaultServerUrl()
 
+    @Volatile
+    private var currentProfileId: String? = null
+
     internal val events: SharedFlow<CredentialEvent> = mutableEvents.asSharedFlow()
 
     override val baseUrl: String
         get() = currentBaseUrl
 
-    /** 启动时只恢复新的完整配置；旧版分离字段不会被读取或迁移。 */
-    suspend fun restore(): Boolean {
+    override fun currentProfileId(): String? = currentProfileId
+
+    /**
+     * 冷启动第一阶段只从本地恢复完整配置，不执行 Bootstrap。
+     *
+     * 这里先发布 baseUrl/profileId，使 Root 可以按正确账号读取启动缓存；短期 Token 仍为空，
+     * 因而任何误提前发出的网络请求都会被凭据边界拒绝，而不会携带旧 Token。
+     */
+    suspend fun restoreLocal(): Boolean {
         val expectedGeneration = authGeneration.current()
         val stored = configStore.load() ?: return credentialMutex.withLock {
             if (!authGeneration.isCurrent(expectedGeneration)) return@withLock false
             currentConfig = null
             currentSnapshot = null
+            currentProfileId = null
             currentBaseUrl = normalizedDefaultServerUrl()
             false
         }
@@ -109,15 +123,27 @@ class GatewayCredentialManager @Inject internal constructor(
             configStore.clear()
             return false
         }
-
         return credentialMutex.withLock {
             if (!authGeneration.isCurrent(expectedGeneration)) return@withLock false
-            // 即使当前网络不可达，也要先发布真实的持久化入口，错误页和重新配置表单才能
-            // 正确预填用户当前配置，而不是误回退到编译期默认地址。
             currentConfig = normalized
+            currentSnapshot = null
+            currentProfileId = normalized.profileId
             currentBaseUrl = normalized.serverUrl
-            val fetched = fetchActivePayloadLocked(normalized, expectedGeneration)
-            currentSnapshot = buildSnapshot(fetched, normalized.serverUrl, expectedGeneration)
+            true
+        }
+    }
+
+    /** 测试与非 UI 调用的一次性恢复入口；生产冷启动必须使用两阶段 API 以便先显示缓存。 */
+    internal suspend fun restore(): Boolean = restoreLocal() && activateCurrent()
+
+    /** 冷启动第二阶段为已经恢复的本地配置请求 Bootstrap，并激活短期 HTTP/WS 凭据。 */
+    suspend fun activateCurrent(): Boolean {
+        val expectedGeneration = authGeneration.current()
+        return credentialMutex.withLock {
+            if (!authGeneration.isCurrent(expectedGeneration)) return@withLock false
+            val config = currentConfig ?: return@withLock false
+            val fetched = fetchActivePayloadLocked(config, expectedGeneration)
+            currentSnapshot = buildSnapshot(fetched, config.serverUrl, expectedGeneration)
             true
         }
     }
@@ -138,6 +164,9 @@ class GatewayCredentialManager @Inject internal constructor(
         if (normalized.bootstrapSecret.isBlank()) {
             return GatewayConfigurationResult.Failure(GatewayConfigurationError.MissingSecret)
         }
+        // 每次成功提交完整配置都创建新 profile。即使服务器地址相同，也可能是另一个账号/Secret，
+        // 复用旧 profile 会让新账号看到旧缓存。候选失败前该身份不会写入磁盘或对外可见。
+        val candidateConfig = normalized.copy(profileId = UUID.randomUUID().toString())
 
         val expectedGeneration = authGeneration.current()
         return credentialMutex.withLock {
@@ -148,7 +177,7 @@ class GatewayCredentialManager @Inject internal constructor(
             val fetched = try {
                 // 候选验证只使用候选对象中的地址与 Secret，不读取 currentConfig，因此旧 Secret
                 // 不可能被转发到用户新填写的 Host。
-                fetchPayload(normalized, expectedGeneration)
+                fetchPayload(candidateConfig, expectedGeneration)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -157,7 +186,7 @@ class GatewayCredentialManager @Inject internal constructor(
             val candidateSnapshot = try {
                 // WebSocket URL、TTL 和运行时元数据也必须在持久化前完成验证。否则 Bootstrap
                 // 表面成功但响应不可用时，会把无法激活的候选配置写成新的活动配置。
-                buildSnapshot(fetched, normalized.serverUrl, expectedGeneration)
+                buildSnapshot(fetched, candidateConfig.serverUrl, expectedGeneration)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -170,7 +199,7 @@ class GatewayCredentialManager @Inject internal constructor(
             try {
                 // DataStore 在同一个事务中替换地址和加密 Secret。持久化失败时，下面的旧会话
                 // 清理和活动快照替换都不会执行，当前连接仍然完整可用。
-                configStore.save(normalized)
+                configStore.save(candidateConfig)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -198,30 +227,23 @@ class GatewayCredentialManager @Inject internal constructor(
                 // Error 不在此吞掉，避免掩盖 OOM 等进程级故障。
             }
             if (authGeneration.isCurrent(activationGeneration)) {
-                currentConfig = normalized
-                currentBaseUrl = normalized.serverUrl
+                currentConfig = candidateConfig
+                currentBaseUrl = candidateConfig.serverUrl
+                currentProfileId = candidateConfig.profileId
                 currentSnapshot = candidateSnapshot
             }
             if (!authGeneration.isCurrent(activationGeneration)) {
                 return@withLock GatewayConfigurationResult.Failure(GatewayConfigurationError.Cancelled)
             }
 
-            GatewayConfigurationResult.Success(normalized.serverUrl)
+            GatewayConfigurationResult.Success(candidateConfig.serverUrl, requireNotNull(candidateConfig.profileId))
         }
     }
 
     /** 使用当前完整配置重新 Bootstrap；用于冷启动临时失败后的显式重试。 */
     suspend fun retryCurrent(): Boolean {
-        val expectedGeneration = authGeneration.current()
-        return credentialMutex.withLock {
-            if (!authGeneration.isCurrent(expectedGeneration)) return@withLock false
-            val config = currentConfig ?: configStore.load()?.let(::normalizeConfig) ?: return@withLock false
-            currentConfig = config
-            currentBaseUrl = config.serverUrl
-            val fetched = fetchActivePayloadLocked(config, expectedGeneration)
-            currentSnapshot = buildSnapshot(fetched, config.serverUrl, expectedGeneration)
-            true
-        }
+        if (currentConfig == null && !restoreLocal()) return false
+        return activateCurrent()
     }
 
     /** logout 先使代数失效，再把地址和 Secret 作为一个整体清除。 */
@@ -230,6 +252,7 @@ class GatewayCredentialManager @Inject internal constructor(
         credentialMutex.withLock {
             currentSnapshot = null
             currentConfig = null
+            currentProfileId = null
             currentBaseUrl = normalizedDefaultServerUrl()
             configStore.clear()
         }
@@ -409,6 +432,7 @@ class GatewayCredentialManager @Inject internal constructor(
         val rejectedUrl = currentBaseUrl
         currentSnapshot = null
         currentConfig = null
+        currentProfileId = null
         try {
             configStore.clear()
         } catch (_: Exception) {

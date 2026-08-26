@@ -1,10 +1,17 @@
 package com.nanobotkt.feature.sidebar
 
+import com.nanobotkt.core.model.ChatSummary
+import com.nanobotkt.core.model.GatewayProfileProvider
 import com.nanobotkt.core.model.InboundEvent
+import com.nanobotkt.core.model.WebUiThreadPayload
 import com.nanobotkt.core.model.SidebarStatePayload
 import com.nanobotkt.core.network.ApiCredentialProvider
 import com.nanobotkt.core.network.GatewayEndpointProvider
 import com.nanobotkt.core.network.GatewayApiClient
+import com.nanobotkt.core.persistence.SidebarStartupSnapshot
+import com.nanobotkt.core.persistence.StartupCacheStore
+import com.nanobotkt.core.persistence.StoredChatThreadSnapshot
+import com.nanobotkt.core.persistence.StoredSidebarStartupSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +28,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -43,6 +51,87 @@ class SidebarRepositoryTest {
     @After
     fun tearDown() {
         server.shutdown()
+    }
+
+    @Test
+    fun cachedSnapshotRendersBeforeNetworkAndEquivalentRemoteDataKeepsListIdentity() = runBlocking {
+        val cached = SidebarStartupSnapshot(
+            sessions = listOf(ChatSummary("webui:cached", "webui", "cached", title = "Cached")),
+            sidebar = SidebarStatePayload(pinnedKeys = listOf("webui:cached")),
+        )
+        val cache = FakeStartupCacheStore().apply { sidebarByProfile["profile-a"] = cached }
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                // 运行时间和设置更新时间都是瞬态字段；它们变化不能替换已展示列表或重写 Room。
+                "/api/sessions" -> jsonResponse(
+                    """{"sessions":[{"key":"webui:cached","chat_id":"cached","title":"Cached","run_started_at":99}]}""",
+                )
+                "/api/webui/sidebar-state" -> jsonResponse(
+                    """{"schema_version":1,"pinned_keys":["webui:cached"],"updated_at":"2026-08-26T10:00:00Z"}""",
+                )
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        val repository = newRepository(
+            startupCacheStore = cache,
+            profileProvider = FixedProfileProvider("profile-a"),
+        )
+
+        repository.restoreCached("profile-a")
+        val cachedState = repository.state.value
+        val cachedList = cachedState.sessions
+        assertEquals(SidebarSnapshotSource.CACHE, cachedState.source)
+        assertEquals(listOf("webui:cached"), cachedList.map(ChatSummary::key))
+
+        repository.refresh()
+
+        assertEquals(SidebarSnapshotSource.REMOTE, repository.state.value.source)
+        assertSame(cachedList, repository.state.value.sessions)
+        assertEquals(0, cache.sidebarSaveCount)
+    }
+
+    @Test
+    fun remoteFailureKeepsCacheAndChangedRemoteSnapshotIsNormalizedBeforeSaving() = runBlocking {
+        val cached = SidebarStartupSnapshot(
+            sessions = listOf(ChatSummary("webui:cached", "webui", "cached", title = "Cached")),
+            sidebar = SidebarStatePayload(),
+        )
+        val cache = FakeStartupCacheStore().apply { sidebarByProfile["profile-a"] = cached }
+        val failRemote = AtomicBoolean(true)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (failRemote.get()) return MockResponse().setResponseCode(503).setBody("offline")
+                return when (request.path) {
+                    "/api/sessions" -> jsonResponse(
+                        """{"sessions":[{"key":"webui:new","chat_id":"new","title":"New","run_started_at":123}]}""",
+                    )
+                    "/api/webui/sidebar-state" -> jsonResponse(
+                        """{"schema_version":1,"pinned_keys":["webui:new","webui:new"],"updated_at":"2026-08-26T11:00:00Z"}""",
+                    )
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        val repository = newRepository(
+            startupCacheStore = cache,
+            profileProvider = FixedProfileProvider("profile-a"),
+        )
+        repository.restoreCached("profile-a")
+
+        repository.refresh()
+        assertEquals(listOf("webui:cached"), repository.state.value.sessions.map(ChatSummary::key))
+        assertEquals(SidebarSnapshotSource.CACHE, repository.state.value.source)
+        assertTrue(repository.state.value.error != null)
+
+        failRemote.set(false)
+        repository.refresh()
+        val saved = cache.sidebarByProfile.getValue("profile-a")
+        assertEquals(listOf("webui:new"), repository.state.value.sessions.map(ChatSummary::key))
+        assertEquals(SidebarSnapshotSource.REMOTE, repository.state.value.source)
+        assertEquals(1, cache.sidebarSaveCount)
+        assertEquals(null, saved.sessions.single().runStartedAt)
+        assertEquals(listOf("webui:new"), saved.sidebar.pinnedKeys)
+        assertEquals(null, saved.sidebar.updatedAt)
     }
 
     @Test
@@ -393,6 +482,8 @@ class SidebarRepositoryTest {
 
     private fun newRepository(
         activityEvents: Flow<InboundEvent> = kotlinx.coroutines.flow.emptyFlow(),
+        startupCacheStore: StartupCacheStore? = null,
+        profileProvider: GatewayProfileProvider? = null,
     ): DefaultSidebarRepository = DefaultSidebarRepository(
         GatewayApiClient(
             OkHttpClient(),
@@ -406,7 +497,42 @@ class SidebarRepositoryTest {
             },
         ),
         activityEvents,
+        startupCacheStore,
+        profileProvider,
     )
+
+    private class FixedProfileProvider(private val profileId: String) : GatewayProfileProvider {
+        override fun currentProfileId(): String = profileId
+    }
+
+    private class FakeStartupCacheStore : StartupCacheStore {
+        val sidebarByProfile = mutableMapOf<String, SidebarStartupSnapshot>()
+        var sidebarSaveCount = 0
+            private set
+
+        override suspend fun loadSidebar(profileId: String): StoredSidebarStartupSnapshot? =
+            sidebarByProfile[profileId]?.let { StoredSidebarStartupSnapshot(it, it.hashCode().toString(), 1L) }
+
+        override suspend fun saveSidebar(profileId: String, snapshot: SidebarStartupSnapshot, contentHash: String) {
+            sidebarSaveCount += 1
+            sidebarByProfile[profileId] = snapshot
+        }
+
+        override suspend fun loadSelection(profileId: String): String? = null
+        override suspend fun saveSelection(profileId: String, selectedSessionKey: String?) = Unit
+        override suspend fun loadChatThread(profileId: String, sessionKey: String): StoredChatThreadSnapshot? = null
+        override suspend fun saveChatThread(
+            profileId: String,
+            sessionKey: String,
+            chatId: String,
+            payload: WebUiThreadPayload,
+            contentHash: String,
+        ) = Unit
+        override suspend fun deleteChatThread(profileId: String, sessionKey: String) = Unit
+        override suspend fun deleteProfile(profileId: String) {
+            sidebarByProfile.remove(profileId)
+        }
+    }
 
     private fun jsonResponse(body: String): MockResponse = MockResponse()
         .setResponseCode(200)

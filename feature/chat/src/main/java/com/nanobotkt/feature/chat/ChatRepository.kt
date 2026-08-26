@@ -1,5 +1,6 @@
 package com.nanobotkt.feature.chat
 
+import com.nanobotkt.core.model.GatewayProfileProvider
 import com.nanobotkt.core.model.GatewayRuntimeSnapshotProvider
 import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.FilePreviewPayload
@@ -17,10 +18,12 @@ import com.nanobotkt.core.model.UiMediaAttachment
 import com.nanobotkt.core.model.UiMcpPresetAttachment
 import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.model.WebUiIngressLimits
+import com.nanobotkt.core.model.WebUiThreadPayload
 import com.nanobotkt.core.model.WorkspaceScope
 import com.nanobotkt.core.model.WorkspacesPayload
 import com.nanobotkt.core.model.normalized
 import com.nanobotkt.core.network.GatewayApiClient
+import com.nanobotkt.core.persistence.StartupCacheStore
 import com.nanobotkt.core.transport.MessageSendResult
 import com.nanobotkt.core.transport.NanobotTransport
 import com.nanobotkt.core.transport.TransportError
@@ -161,7 +164,30 @@ class DefaultChatRepository @Inject constructor(
     private val limitsProvider: IngressLimitsProvider,
     private val runtimeSnapshotProvider: GatewayRuntimeSnapshotProvider,
     private val workspaceAccessProvider: WorkspaceAccessProvider,
+    private val startupCacheStore: StartupCacheStore,
+    private val profileProvider: GatewayProfileProvider,
 ) : ChatRepository {
+    /** 旧有纯 Repository 单元测试不关心启动缓存，使用明确的内存空实现保持测试边界聚焦。 */
+    internal constructor(
+        api: GatewayApiClient,
+        transport: NanobotTransport,
+        limitsProvider: IngressLimitsProvider,
+        runtimeSnapshotProvider: GatewayRuntimeSnapshotProvider,
+        workspaceAccessProvider: WorkspaceAccessProvider,
+    ) : this(
+        api,
+        transport,
+        limitsProvider,
+        runtimeSnapshotProvider,
+        workspaceAccessProvider,
+        NoOpStartupCacheStore,
+        NoProfileProvider,
+    ) {
+        // 旧 Repository 单元测试从创建后就直接验证 HTTP/Transport 行为；该测试专用构造器显式模拟
+        // 已完成 Bootstrap 的历史前置条件。生产 Hilt 构造器仍从未认证状态开始，冷启动不会提前联网。
+        networkReady = true
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableState = MutableStateFlow(ChatUiState())
     /**
@@ -213,6 +239,14 @@ class DefaultChatRepository @Inject constructor(
     private val filePreviewLoader = ChatFilePreviewLoader(api)
     /** 多个 TurnEnd、手动刷新和恢复 dirty 信号可能同时到达；HTTP latest 请求统一串行化。 */
     private val canonicalRefreshMutex = Mutex()
+    /** Bootstrap 完成前只允许读取本地快照；网络与 Transport 副作用在 onAuthenticated 后才开放。 */
+    @Volatile private var networkReady = false
+    /** 仅在 timelineWriterLock 内读写，用于跳过与本地 settled 快照相同的远端对象替换。 */
+    private var visibleSettledSnapshot: WebUiThreadPayload? = null
+    /** 每次切换/清空时间线递增；阻止上一轮 Room 读取在同名会话重新打开后迟到提交。 */
+    private var cacheRestoreGeneration = 0L
+    /** 当前会话若已有远端 canonical 结果，该代次的迟到 Room 快照不得再覆盖它。 */
+    private var remoteCanonicalGeneration: Long? = null
 
     init {
         scope.launch {
@@ -243,7 +277,12 @@ class DefaultChatRepository @Inject constructor(
                 .map(TransportState::toCanonicalRefreshTrigger)
                 .distinctUntilChanged()
                 .collectLatest { trigger ->
-                    if (!trigger.canRefresh || mutableState.value.sessionKey == null) return@collectLatest
+                    // Transport 会在同一进程 logout 后保留 dirty 代次；仅看网络与前台状态会让
+                    // 新 profile 在 Bootstrap 前借用旧 dirty 信号发出 HTTP。networkReady 是认证
+                    // 生命周期的最终闸门，冷启动本地阶段和 reset 后都必须直接忽略恢复请求。
+                    if (!networkReady || !trigger.canRefresh || mutableState.value.sessionKey == null) {
+                        return@collectLatest
+                    }
 
                     // active turn 在断线窗口内可能继续运行，而 reconnect attach 不会补发 TurnEnd。
                     // 因此 active 快照只能暂时收敛 UI，不能确认 dirty；保持低频重试直到服务端明确
@@ -261,6 +300,9 @@ class DefaultChatRepository @Inject constructor(
     }
 
     override fun onAuthenticated(sessionEpoch: Long) {
+        networkReady = true
+        mutableState.value.chatId?.let(transport::attach)
+        if (mutableState.value.sessionKey != null) scope.launch { refreshCanonical() }
         val generation: Long
         val job: Job
         synchronized(authenticatedLifecycleLock) {
@@ -299,6 +341,7 @@ class DefaultChatRepository @Inject constructor(
         // 退出登录时必须同时清理服务端会话标识、规范化消息和所有乐观消息，
         // 同时淘汰所有在途文件预览响应，避免旧账号内容回写到新登录会话。
         filePreviewLoader.invalidate()
+        networkReady = false
         synchronized(authenticatedLifecycleLock) {
             authenticatedSessionEpoch = null
             composerCatalogLoaded = false
@@ -354,8 +397,10 @@ class DefaultChatRepository @Inject constructor(
         val catalogs = mutableState.value
         activeSessionModelPreset = modelPreset
         turnModelName = null
+        val expectedCacheRestoreGeneration: Long
         synchronized(timelineWriterLock) {
             clearTimelineLocked()
+            expectedCacheRestoreGeneration = cacheRestoreGeneration
             mutableState.value = ChatUiState(
                 sessionKey = sessionKey,
                 chatId = chatId,
@@ -370,8 +415,48 @@ class DefaultChatRepository @Inject constructor(
                 model = buildModelSelection(scopeKey = sessionKey),
             )
         }
-        transport.attach(chatId)
-        scope.launch { refreshCanonical() }
+        if (networkReady) transport.attach(chatId)
+        scope.launch {
+            restoreCachedThread(sessionKey, chatId, expectedCacheRestoreGeneration)
+            if (networkReady && mutableState.value.matchesSession(sessionKey, chatId)) refreshCanonical()
+        }
+    }
+
+    /** 本地 settled 快照只负责首屏时间线，不恢复发送中、停止中或 WebSocket 临时 fold。 */
+    private suspend fun restoreCachedThread(
+        sessionKey: String,
+        chatId: String,
+        expectedCacheRestoreGeneration: Long,
+    ) {
+        val profileId = profileProvider.currentProfileId() ?: return
+        val stored = runCatching { startupCacheStore.loadChatThread(profileId, sessionKey) }.getOrNull() ?: return
+        if (stored.chatId != chatId || profileProvider.currentProfileId() != profileId) return
+        synchronized(timelineWriterLock) {
+            // profile 也必须在时间线写锁内再次核对。旧账号与新账号可能恰好复用同一个
+            // sessionKey/chatId，仅检查会话标识会把旧 Room 正文写进新账号的空时间线。
+            if (
+                !mutableState.value.matchesSession(sessionKey, chatId) ||
+                profileProvider.currentProfileId() != profileId ||
+                cacheRestoreGeneration != expectedCacheRestoreGeneration ||
+                remoteCanonicalGeneration == expectedCacheRestoreGeneration ||
+                canonical.isNotEmpty()
+            ) return
+            val payload = normalizeSettledThread(stored.payload)
+            visibleSettledSnapshot = payload
+            canonicalLineageGeneration += 1L
+            canonical.clear()
+            canonical.addAll(payload.messages)
+            canonicalCompletedTurnIds.clear()
+            canonicalCompletedTurnIds.addAll(payload.completedTurnIds.orEmpty())
+            publishLocked(
+                loading = false,
+                loadingOlder = false,
+                hasMore = payload.page?.hasMoreBefore == true,
+                before = payload.page?.beforeCursor,
+                activeTurnId = null,
+                userMessageOffset = payload.page?.userMessageOffset ?: 0,
+            )
+        }
     }
 
     override suspend fun newChat(workspaceScope: WorkspaceScope?): String {
@@ -899,19 +984,25 @@ class DefaultChatRepository @Inject constructor(
         val sessionState = mutableState.value
         val session = sessionState.sessionKey ?: return@withLock CanonicalRefreshResult.Ignored
         val chatId = sessionState.chatId
+        // profileId 与 HTTP 请求同时捕获。请求返回时还要再次核对当前 profile，防止账号切换后
+        // 使用新身份删除或覆盖旧请求所属的缓存。
+        val requestProfileId = profileProvider.currentProfileId()
+        val requestCacheRestoreGeneration = synchronized(timelineWriterLock) { cacheRestoreGeneration }
         try {
             val payload = sessionLoader.loadThread(session, before = null, latest = true)
             // 会话在请求期间切换时，旧响应既不能写回，也不能被恢复协调器当成成功确认。
-            if (!mutableState.value.matchesSession(session, chatId)) {
+            if (!isCurrentCanonicalRequest(session, chatId, requestProfileId)) {
                 return@withLock CanonicalRefreshResult.Ignored
             }
             if (payload == null) {
                 var applied = false
                 synchronized(timelineWriterLock) {
-                    if (mutableState.value.matchesSession(session, chatId)) {
+                    if (isCurrentCanonicalRequest(session, chatId, requestProfileId)) {
+                        remoteCanonicalGeneration = requestCacheRestoreGeneration
                         canonicalLineageGeneration += 1L
                         canonical.clear()
                         canonicalCompletedTurnIds.clear()
+                        visibleSettledSnapshot = null
                         publishLocked(
                             loading = false,
                             loadingOlder = false,
@@ -923,6 +1014,15 @@ class DefaultChatRepository @Inject constructor(
                         applied = true
                     }
                 }
+                if (
+                    applied &&
+                    requestProfileId != null &&
+                    profileProvider.currentProfileId() == requestProfileId &&
+                    isCurrentCanonicalRequest(session, chatId, requestProfileId)
+                ) {
+                    runCatching { startupCacheStore.deleteChatThread(requestProfileId, session) }
+                    // 删除缓存失败不影响“远端明确不存在”的当前 UI；下次联网仍会再次收敛。
+                }
                 return@withLock if (applied) {
                     CanonicalRefreshResult.AppliedSettled
                 } else {
@@ -930,25 +1030,42 @@ class DefaultChatRepository @Inject constructor(
                 }
             }
 
+            val settledSnapshot = payload
+                .takeIf(::isSettledThread)
+                ?.let(::normalizeSettledThread)
+            // activeTurnId 是服务端对“当前是否仍在运行”的规范结论。部分历史数据即使已经
+            // settled，单条消息仍可能残留 isStreaming/reasoningStreaming=true；若继续把原始
+            // payload 投影到 UI，不仅会显示幽灵流式状态，也会因为拒绝缓存而让离线冷启动
+            // 永久停在骨架屏。settled 线程统一使用去瞬态后的同一份对象渲染、比较和落盘。
+            val canonicalPayload = settledSnapshot ?: payload
             var applied = false
+            var settledSnapshotChanged = false
             synchronized(timelineWriterLock) {
-                if (mutableState.value.matchesSession(session, chatId)) {
+                if (isCurrentCanonicalRequest(session, chatId, requestProfileId)) {
+                    remoteCanonicalGeneration = requestCacheRestoreGeneration
+                    if (settledSnapshot != null && visibleSettledSnapshot == settledSnapshot) {
+                        // 内容未变化时只结束加载态，保留原列表对象与滚动锚点，也不重复改写 Room
+                        // 的 savedAt/LRU，确保“云端没更新”真正维持当前对象与本地版本。
+                        publishLocked(loading = false)
+                        applied = true
+                        return@synchronized
+                    }
                     // latest 是新的权威窗口。先推进 lineage，让任何使用旧 cursor 的分页响应失效，
                     // 再一次性提交规范消息、完成 turn 集合和分页元数据。
                     canonicalLineageGeneration += 1L
-                    val reconciled = mergeLatestMessages(canonical, payload.messages)
+                    val reconciled = mergeLatestMessages(canonical, canonicalPayload.messages)
                     canonical.clear()
                     canonical.addAll(reconciled)
 
-                    val canonicalTurns = payload.messages.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
-                    val completedTurns = payload.completedTurnIds.orEmpty().toSet()
+                    val canonicalTurns = canonicalPayload.messages.mapNotNullTo(mutableSetOf(), UiMessage::turnId)
+                    val completedTurns = canonicalPayload.completedTurnIds.orEmpty().toSet()
                     canonicalCompletedTurnIds.addAll(completedTurns)
                     (canonicalTurns + completedTurns).forEach(optimistic::remove)
 
                     // active/incomplete canonical 可能落后于已接收的 WebSocket delta，不能仅因 canonical
                     // 中出现同 turn assistant 就丢弃 transient。只有服务端明确完成的 turn 才能淘汰。
                     streamFold.markCompletedTurns(completedTurns)
-                    payload.workspaceScope?.let { canonicalScope ->
+                    canonicalPayload.workspaceScope?.let { canonicalScope ->
                         mutableState.update { current ->
                             current.copy(workspaceScope = canonicalScope.normalized())
                         }
@@ -957,15 +1074,37 @@ class DefaultChatRepository @Inject constructor(
                     publishLocked(
                         loading = false,
                         loadingOlder = false,
-                        hasMore = payload.page?.hasMoreBefore == true,
-                        before = payload.page?.beforeCursor,
-                        activeTurnId = payload.activeTurnId,
-                        userMessageOffset = payload.page?.userMessageOffset ?: 0,
+                        hasMore = canonicalPayload.page?.hasMoreBefore == true,
+                        before = canonicalPayload.page?.beforeCursor,
+                        activeTurnId = canonicalPayload.activeTurnId,
+                        userMessageOffset = canonicalPayload.page?.userMessageOffset ?: 0,
                     )
+                    // active 快照已经改变可见时间线，不能继续声称 UI 等于旧 settled 快照；否则
+                    // 后续服务端回到同一个 settled 内容时会错误跳过从 active 状态收敛。
+                    visibleSettledSnapshot = settledSnapshot
+                    settledSnapshotChanged = settledSnapshot != null
                     applied = true
                 }
             }
             if (!applied) return@withLock CanonicalRefreshResult.Ignored
+            if (settledSnapshotChanged && settledSnapshot != null) {
+                if (
+                    requestProfileId != null &&
+                    profileProvider.currentProfileId() == requestProfileId &&
+                    isCurrentCanonicalRequest(session, chatId, requestProfileId)
+                ) {
+                    runCatching {
+                        startupCacheStore.saveChatThread(
+                            profileId = requestProfileId,
+                            sessionKey = session,
+                            chatId = chatId ?: return@runCatching,
+                            payload = settledSnapshot,
+                            contentHash = settledSnapshot.hashCode().toString(),
+                        )
+                    }
+                    // 缓存容量或数据库故障不能覆盖已经成功提交到 UI 的远端结果。
+                }
+            }
 
             // activeTurnId 非空表示快照只是运行中截面。断线恢复协调器必须保留 dirty 并重试，
             // 直到 HTTP 明确返回 settled；普通手动/TurnEnd 刷新则可以忽略此返回值。
@@ -975,12 +1114,12 @@ class DefaultChatRepository @Inject constructor(
                 CanonicalRefreshResult.AppliedActive
             }
         } catch (error: CancellationException) {
-            if (mutableState.value.matchesSession(session, chatId)) {
+            if (isCurrentCanonicalRequest(session, chatId, requestProfileId)) {
                 mutableState.value = mutableState.value.copy(loading = false, loadingOlder = false)
             }
             throw error
         } catch (error: Exception) {
-            if (mutableState.value.matchesSession(session, chatId)) {
+            if (isCurrentCanonicalRequest(session, chatId, requestProfileId)) {
                 mutableState.value = mutableState.value.copy(
                     loading = false,
                     loadingOlder = false,
@@ -990,6 +1129,21 @@ class DefaultChatRepository @Inject constructor(
             CanonicalRefreshResult.Failed
         }
     }
+
+    /**
+     * 规范线程请求的提交身份同时包含 profileId 与会话标识。
+     *
+     * reset 后新账号可能打开同名会话；此时旧 HTTP 响应即使 sessionKey/chatId 全部相同，也必须
+     * 被丢弃，不能写入 UI、覆盖新缓存或删除新账号的快照。测试空 Provider 使用 null==null 保持
+     * 既有纯 HTTP 测试边界，生产 Ready 会话始终提供非空 profileId。
+     */
+    private fun isCurrentCanonicalRequest(
+        sessionKey: String,
+        chatId: String?,
+        profileId: String?,
+    ): Boolean =
+        mutableState.value.matchesSession(sessionKey, chatId) &&
+            profileProvider.currentProfileId() == profileId
 
     private suspend fun refreshComposerCatalogs(sessionEpoch: Long, generation: Long): Boolean {
         val result = composerCatalogLoader.load()
@@ -1321,6 +1475,11 @@ class DefaultChatRepository @Inject constructor(
 
     /** 调用方持有时间线写锁；会话切换必须一次性清空所有可变时间线结构。 */
     private fun clearTimelineLocked() {
+        cacheRestoreGeneration += 1L
+        remoteCanonicalGeneration = null
+        // 会话切换后可见时间线不再对应上一个 settled 快照；若不清除该标记，B 会话的
+        // 远端内容恰好与 A 会话相等时可能错误跳过提交。
+        visibleSettledSnapshot = null
         // 会话切换/退出同样属于 lineage reset；在途分页即使 sessionKey 恰好复用，也不能写入。
         canonicalLineageGeneration += 1L
         canonical.clear()
@@ -1339,7 +1498,7 @@ class DefaultChatRepository @Inject constructor(
     /** 只比较会影响恢复请求有效性的状态，过滤每个入站事件产生的 lastActivityAt 高频更新。 */
     private fun isCurrentCanonicalRefreshTrigger(trigger: CanonicalRefreshTrigger): Boolean {
         val current = transport.state.value.toCanonicalRefreshTrigger()
-        return current == trigger && trigger.canRefresh && mutableState.value.sessionKey != null
+        return networkReady && current == trigger && trigger.canRefresh && mutableState.value.sessionKey != null
     }
 }
 
@@ -1470,4 +1629,41 @@ private fun InboundEvent.turnIdOrNull(): String? = when (this) {
     is InboundEvent.TurnModelUpdated -> null
     is InboundEvent.Error -> turnId
     else -> null
+}
+
+
+/** 只有完全 settled 的规范线程才允许落盘，避免把半个 assistant turn 当成冷启动真相。 */
+private fun isSettledThread(payload: WebUiThreadPayload): Boolean =
+    payload.activeTurnId == null && payload.hasPendingToolCalls != true
+
+/**
+ * 把服务端已确认 settled 的线程转换为可稳定比较和离线恢复的快照。
+ *
+ * savedAt 只是服务端写盘时间，不代表可见内容变化。单条消息的 streaming 标记则是运行期瞬态；
+ * 某些已结束的历史线程会残留 true，但 activeTurnId=null 已明确说明当前没有活动 turn。这里统一
+ * 清空这些标记，避免离线恢复幽灵 spinner，也避免同一内容因 null/false/残留 true 反复改写 Room。
+ */
+private fun normalizeSettledThread(payload: WebUiThreadPayload): WebUiThreadPayload = payload.copy(
+    savedAt = null,
+    activeTurnId = null,
+    messages = payload.messages.takeLast(160).map { message ->
+        message.copy(isStreaming = null, reasoningStreaming = null)
+    },
+    completedTurnIds = payload.completedTurnIds.orEmpty().distinct().sorted(),
+)
+
+
+private object NoProfileProvider : GatewayProfileProvider {
+    override fun currentProfileId(): String? = null
+}
+
+private object NoOpStartupCacheStore : StartupCacheStore {
+    override suspend fun loadSidebar(profileId: String) = null
+    override suspend fun saveSidebar(profileId: String, snapshot: com.nanobotkt.core.persistence.SidebarStartupSnapshot, contentHash: String) = Unit
+    override suspend fun loadSelection(profileId: String): String? = null
+    override suspend fun saveSelection(profileId: String, selectedSessionKey: String?) = Unit
+    override suspend fun loadChatThread(profileId: String, sessionKey: String) = null
+    override suspend fun saveChatThread(profileId: String, sessionKey: String, chatId: String, payload: WebUiThreadPayload, contentHash: String) = Unit
+    override suspend fun deleteChatThread(profileId: String, sessionKey: String) = Unit
+    override suspend fun deleteProfile(profileId: String) = Unit
 }

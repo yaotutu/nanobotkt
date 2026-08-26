@@ -2,12 +2,15 @@ package com.nanobotkt.feature.sidebar
 
 import kotlinx.coroutines.CancellationException
 import com.nanobotkt.core.model.ChatSummary
+import com.nanobotkt.core.model.GatewayProfileProvider
 import com.nanobotkt.core.model.InboundEvent
 import com.nanobotkt.core.model.SessionDeleteResult
 import com.nanobotkt.core.model.SessionRow
 import com.nanobotkt.core.model.SessionsPayload
 import com.nanobotkt.core.model.SidebarStatePayload
 import com.nanobotkt.core.network.GatewayApiClient
+import com.nanobotkt.core.persistence.SidebarStartupSnapshot
+import com.nanobotkt.core.persistence.StartupCacheStore
 import com.nanobotkt.core.transport.NanobotTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +34,8 @@ import javax.inject.Singleton
 
 interface SidebarRepository {
     val state: StateFlow<SidebarUiState>
+    /** 按 profileId 读取本地快照；该入口绝不发起网络请求。 */
+    suspend fun restoreCached(profileId: String)
     suspend fun refresh()
     suspend fun togglePinned(key: String)
     suspend fun toggleArchived(key: String)
@@ -45,6 +50,8 @@ interface SidebarRepository {
     fun reset()
 }
 
+enum class SidebarSnapshotSource { NONE, CACHE, REMOTE }
+
 data class SidebarUiState(
     val sessions: List<ChatSummary> = emptyList(),
     val sidebar: SidebarStatePayload = SidebarStatePayload(),
@@ -58,25 +65,38 @@ data class SidebarUiState(
     /** 非当前会话在 turn 结束后留下的活动标记；进入该会话后立即清除。 */
     val unreadChatIds: Set<String> = emptySet(),
     val error: String? = null,
+    /** 标记当前可见内容来自本地还是远端，和 loading/refreshing 正交，避免一个 phase 枚举混合两类状态。 */
+    val source: SidebarSnapshotSource = SidebarSnapshotSource.NONE,
 )
 
 @Singleton
 class DefaultSidebarRepository private constructor(
     private val api: GatewayApiClient,
+    private val startupCacheStore: StartupCacheStore?,
+    private val profileProvider: GatewayProfileProvider?,
     activityEvents: Flow<InboundEvent>,
     @Suppress("UNUSED_PARAMETER") collectorMarker: Unit,
 ) : SidebarRepository {
     @Inject
-    constructor(api: GatewayApiClient, transport: NanobotTransport) : this(api, transport.events, Unit)
+    constructor(
+        api: GatewayApiClient,
+        transport: NanobotTransport,
+        startupCacheStore: StartupCacheStore,
+        profileProvider: GatewayProfileProvider,
+    ) : this(api, startupCacheStore, profileProvider, transport.events, Unit)
 
-    /** 测试可注入可控 Flow；默认空 Flow 保持纯 HTTP 测试不需要构造 WebSocket。 */
+    /** 测试可注入可控 Flow；缓存依赖为空时保持原有纯 HTTP 契约测试无需构造 Room。 */
     internal constructor(
         api: GatewayApiClient,
         activityEvents: Flow<InboundEvent> = emptyFlow(),
-    ) : this(api, activityEvents, Unit)
+        startupCacheStore: StartupCacheStore? = null,
+        profileProvider: GatewayProfileProvider? = null,
+    ) : this(api, startupCacheStore, profileProvider, activityEvents, Unit)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutationMutex = Mutex()
+    /** Room 写入按已提交快照代次串行，防止较旧协程晚完成后覆盖更新的 Sidebar 缓存。 */
+    private val cacheWriteMutex = Mutex()
     /** 只在 reset 时递增，用于隔离退出前已经发出的 mutation/delete 请求。 */
     private val sessionGeneration = AtomicLong(0)
     /** 用于保证并发 refresh 只有最新一代可以提交结果。 */
@@ -99,9 +119,38 @@ class DefaultSidebarRepository private constructor(
     /** 仅在 [stateLock] 内读写，确保“选择会话并清未读”与 turn_end 判定不可交错。 */
     private var selectedChatId: String? = null
     private var activityRefreshJob: Job? = null
+    /** 仅在 stateLock 内读写；用于比较远端规范快照，避免相等数据触发列表对象替换和滚动跳动。 */
+    private var visibleSnapshot: SidebarStartupSnapshot? = null
+    private var activeProfileId: String? = null
+    private var visibleSnapshotGeneration = 0L
 
     init {
         scope.launch { activityEvents.collect(::handleActivityEvent) }
+    }
+
+    override suspend fun restoreCached(profileId: String) {
+        val expectedSessionGeneration = sessionGeneration.get()
+        val stored = startupCacheStore?.loadSidebar(profileId)
+        updateStateIfCurrent(expectedSessionGeneration) { current ->
+            // transform 本身已经在 stateLock 内执行；这里直接替换 profile 级可见快照，避免
+            // 额外嵌套同步掩盖锁边界。每次本地恢复也推进代次，使旧 profile 的延迟写入失效。
+            activeProfileId = profileId
+            visibleSnapshot = stored?.snapshot
+            visibleSnapshotGeneration += 1L
+            if (stored == null) {
+                current.copy(loaded = false, loading = false, source = SidebarSnapshotSource.NONE)
+            } else {
+                current.copy(
+                    sessions = stored.snapshot.sessions,
+                    sidebar = stored.snapshot.sidebar,
+                    loaded = true,
+                    loading = false,
+                    refreshing = false,
+                    error = null,
+                    source = SidebarSnapshotSource.CACHE,
+                )
+            }
+        }
     }
 
     override suspend fun refresh() {
@@ -115,7 +164,7 @@ class DefaultSidebarRepository private constructor(
         val requestGeneration = refreshGeneration.incrementAndGet()
         val requestActivityGeneration = activityGeneration.get()
         val previous = mutableState.value
-        val hadData = previous.sessions.isNotEmpty()
+        val hadData = previous.loaded
         updateStateIfCurrent(expectedSessionGeneration) { current ->
             current.copy(
                 loading = !hadData,
@@ -129,22 +178,33 @@ class DefaultSidebarRepository private constructor(
                 val sidebarRequest = async { api.get<SidebarStatePayload>("/api/webui/sidebar-state") }
                 sessionsRequest.await() to sidebarRequest.await()
             }
+            val summaries = sessions.sessions.map(SessionRow::toSummary)
+            val normalizedSnapshot = normalizeSidebarSnapshot(summaries, sidebar)
+            val profileId = profileProvider?.currentProfileId() ?: synchronized(stateLock) { activeProfileId }
             // refresh 可以由启动、mutation 和手动下拉同时触发；旧请求返回后
             // 不能覆盖较新的会话列表和 sidebar 状态，只允许最后一代写入。
-            updateStateIfCurrent(
+            var snapshotToPersist: SidebarStartupSnapshot? = null
+            val committed = updateStateIfCurrent(
                 expectedSessionGeneration,
                 canWrite = { requestGeneration == refreshGeneration.get() },
             ) { current ->
+                val snapshotUnchanged = visibleSnapshot == normalizedSnapshot
+                // mutation pending 时 GET 可能仍是旧 Sidebar；这轮只提交会话列表，不把旧设置
+                // 标成新的可见/持久化快照。mutation 的规范响应随后会组合当前 sessions 落盘。
+                if (current.pendingKeys.isEmpty()) snapshotToPersist = normalizedSnapshot
                 current.copy(
-                    sessions = sessions.sessions.map(SessionRow::toSummary),
+                    sessions = if (snapshotUnchanged) current.sessions else summaries,
                     // mutation pending 期间服务端 GET 可能仍是旧值，不能把已在本地生效的 optimistic
                     // Sidebar 快照顶回去；mutation 响应会随后提交服务端规范化结果。
-                    sidebar = if (current.pendingKeys.isEmpty()) sidebar else current.sidebar,
+                    sidebar = if (current.pendingKeys.isNotEmpty() || snapshotUnchanged) {
+                        current.sidebar
+                    } else {
+                        sidebar
+                    },
                     // 未收到实时事件的会话可由 run_started_at 补齐冷启动状态；尚未被 HTTP 确认的
                     // 实时结论继续覆盖快照。两者一旦一致便释放覆盖，避免旧终态阻止未来外部 turn
                     // 通过 run_started_at 重新显示运行中状态。
                     runningChatIds = if (requestActivityGeneration == activityGeneration.get()) {
-                        val summaries = sessions.sessions.map(SessionRow::toSummary)
                         val serverRunningIds = summaries
                             .filterTo(mutableSetOf()) { it.runStartedAt != null }
                             .mapTo(mutableSetOf(), ChatSummary::chatId)
@@ -164,7 +224,17 @@ class DefaultSidebarRepository private constructor(
                     loading = false,
                     refreshing = false,
                     error = null,
+                    source = SidebarSnapshotSource.REMOTE,
                 )
+            }
+            if (
+                committed &&
+                profileId != null &&
+                requestGeneration == refreshGeneration.get()
+            ) {
+                snapshotToPersist?.let { snapshot ->
+                    persistVisibleSnapshot(expectedSessionGeneration, profileId, snapshot)
+                }
             }
         } catch (error: CancellationException) {
             updateStateIfCurrent(
@@ -288,6 +358,9 @@ class DefaultSidebarRepository private constructor(
             activityRefreshJob = null
             selectedChatId = null
             pendingActivityOverrides.clear()
+            activeProfileId = null
+            visibleSnapshot = null
+            visibleSnapshotGeneration += 1L
             mutableState.value = SidebarUiState()
         }
     }
@@ -314,8 +387,18 @@ class DefaultSidebarRepository private constructor(
                     deserializer = SidebarStatePayload.serializer(),
                     query = mapOf("state" to api.encode(proposed, SidebarStatePayload.serializer())),
                 )
-                updateStateIfCurrent(expectedSessionGeneration) { current ->
+                var canonicalSnapshot: SidebarStartupSnapshot? = null
+                val committed = updateStateIfCurrent(expectedSessionGeneration) { current ->
+                    canonicalSnapshot = normalizeSidebarSnapshot(current.sessions, canonical)
                     current.copy(sidebar = canonical)
+                }
+                if (committed) {
+                    val profileId = profileProvider?.currentProfileId() ?: synchronized(stateLock) { activeProfileId }
+                    if (profileId != null) {
+                        canonicalSnapshot?.let { snapshot ->
+                            persistVisibleSnapshot(expectedSessionGeneration, profileId, snapshot)
+                        }
+                    }
                 }
             } catch (error: CancellationException) {
                 // 协程取消也要回滚仍由本请求持有的 optimistic 快照，然后继续传播取消。
@@ -350,6 +433,45 @@ class DefaultSidebarRepository private constructor(
                 sidebar = if (current.sidebar == proposed) previous else current.sidebar,
                 error = error ?: current.error,
             )
+        }
+    }
+
+    /**
+     * 先在状态锁内登记最新规范快照，再在独立 Mutex 中执行 Room 写入。写入前再次核对会话、
+     * profile 和快照代次，确保 reset、账号切换或更新快照已经发生时，旧协程只能退出。
+     */
+    private suspend fun persistVisibleSnapshot(
+        expectedSessionGeneration: Long,
+        profileId: String,
+        snapshot: SidebarStartupSnapshot,
+    ) {
+        val snapshotGeneration = synchronized(stateLock) {
+            if (sessionGeneration.get() != expectedSessionGeneration) return
+            val changed = activeProfileId != profileId || visibleSnapshot != snapshot
+            if (!changed) return
+            activeProfileId = profileId
+            visibleSnapshot = snapshot
+            visibleSnapshotGeneration += 1L
+            visibleSnapshotGeneration
+        }
+        val cacheStore = startupCacheStore ?: return
+
+        cacheWriteMutex.withLock {
+            val canWrite = synchronized(stateLock) {
+                sessionGeneration.get() == expectedSessionGeneration &&
+                    activeProfileId == profileId &&
+                    visibleSnapshotGeneration == snapshotGeneration &&
+                    visibleSnapshot == snapshot
+            }
+            if (!canWrite) return@withLock
+            runCatching {
+                cacheStore.saveSidebar(
+                    profileId,
+                    snapshot,
+                    snapshot.hashCode().toString(),
+                )
+            }
+            // 缓存写失败不能把成功的远端刷新或 mutation 变成用户可见错误。
         }
     }
 
@@ -474,6 +596,33 @@ private fun SidebarStatePayload.withoutSession(key: String) = copy(
     archivedKeys = archivedKeys - key,
     titleOverrides = titleOverrides - key,
     tagsByKey = tagsByKey - key,
+)
+
+
+/**
+ * 生成只包含稳定字段的启动快照。运行中状态来自 HTTP/WebSocket 活动信号，不进入磁盘；
+ * updatedAt 仅是 Sidebar 设置写入时间，也不应导致内容相同的快照反复替换。
+ */
+private fun normalizeSidebarSnapshot(
+    sessions: List<ChatSummary>,
+    sidebar: SidebarStatePayload,
+): SidebarStartupSnapshot = SidebarStartupSnapshot(
+    sessions = sessions
+        .associateBy(ChatSummary::key)
+        .values
+        .map { it.copy(runStartedAt = null) }
+        .sortedBy(ChatSummary::key),
+    sidebar = sidebar.copy(
+        pinnedKeys = sidebar.pinnedKeys.distinct().sorted(),
+        archivedKeys = sidebar.archivedKeys.distinct().sorted(),
+        titleOverrides = sidebar.titleOverrides.toSortedMap(),
+        projectNameOverrides = sidebar.projectNameOverrides.toSortedMap(),
+        tagsByKey = sidebar.tagsByKey
+            .mapValues { (_, tags) -> tags.distinct().sorted() }
+            .toSortedMap(),
+        collapsedGroups = sidebar.collapsedGroups.toSortedMap(),
+        updatedAt = null,
+    ),
 )
 
 private fun String.pathEncoded(): String = URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")

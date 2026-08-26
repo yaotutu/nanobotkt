@@ -47,6 +47,7 @@ class DefaultAuthGatewayConfigStore @Inject constructor(
     override suspend fun save(config: GatewayConnectionConfig) {
         store.save(
             StoredGatewayConnectionConfig(
+                profileId = requireNotNull(config.profileId) { "活动 Gateway 配置必须先分配 profileId" },
                 serverUrl = config.serverUrl,
                 bootstrapSecret = config.bootstrapSecret,
             ),
@@ -57,6 +58,7 @@ class DefaultAuthGatewayConfigStore @Inject constructor(
         GatewayConnectionConfig(
             serverUrl = stored.serverUrl,
             bootstrapSecret = stored.bootstrapSecret,
+            profileId = stored.profileId,
         )
     }
 

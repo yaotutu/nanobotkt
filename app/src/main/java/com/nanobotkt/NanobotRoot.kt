@@ -15,8 +15,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +48,7 @@ import com.nanobotkt.feature.apps.AppsScreen
 import com.nanobotkt.feature.auth.AuthScreen
 import com.nanobotkt.feature.auth.AuthState
 import com.nanobotkt.feature.auth.GatewayConfigurationError
+import com.nanobotkt.feature.auth.GatewayConnectionState
 import com.nanobotkt.feature.auth.gatewayConfigurationErrorMessage
 import com.nanobotkt.feature.automations.AutomationsScreen
 import com.nanobotkt.feature.channels.ChannelsScreen
@@ -96,7 +99,7 @@ fun NanobotRoot(appViewModel: AppViewModel) {
                     onRetry = appViewModel::retry,
                     onReconfigure = appViewModel::editGatewayConfiguration,
                 )
-                is AuthState.Ready -> ReadyRoot(state.sessionEpoch, appViewModel)
+                is AuthState.Ready -> ReadyRoot(state, appViewModel)
             }
         }
     }
@@ -152,7 +155,7 @@ private fun UnreachableScreen(
 
 @Composable
 private fun ReadyRoot(
-    sessionEpoch: Long,
+    authState: AuthState.Ready,
     appViewModel: AppViewModel,
     sidebarViewModel: SidebarViewModel = hiltViewModel(),
     chatViewModel: ChatViewModel = hiltViewModel(),
@@ -166,6 +169,10 @@ private fun ReadyRoot(
     val draftingNewTopic = rootUiState.draftingNewTopic
     val lifecycleOwner = LocalLifecycleOwner.current
     val sidebarSnackbar = remember { SnackbarHostState() }
+    val gatewaySnackbar = remember { SnackbarHostState() }
+    val gatewayErrorMessage = authState.error?.let { gatewayConfigurationErrorMessage(it) }
+        ?: stringResource(R.string.gateway_unreachable)
+    val retryLabel = stringResource(R.string.retry)
 
     DisposableEffect(lifecycleOwner, chatViewModel) {
         val observer = LifecycleEventObserver { _, event ->
@@ -185,7 +192,20 @@ private fun ReadyRoot(
         appViewModel.navigateBack()
     }
 
-    LaunchedEffect(sessionEpoch) { sidebarViewModel.refresh() }
+    LaunchedEffect(authState.connection, gatewayErrorMessage, retryLabel) {
+        // 离线只影响云端同步能力，不替换 Root 或清空缓存。使用独立 SnackbarHost 提供明确
+        // 的重试入口，避免与 Sidebar 业务错误互相阻塞；连接恢复后立即撤下离线提示。
+        gatewaySnackbar.currentSnackbarData?.dismiss()
+        if (authState.connection == GatewayConnectionState.OFFLINE) {
+            val result = gatewaySnackbar.showSnackbar(
+                message = gatewayErrorMessage,
+                actionLabel = retryLabel,
+                duration = SnackbarDuration.Indefinite,
+            )
+            if (result == SnackbarResult.ActionPerformed) appViewModel.retry()
+        }
+    }
+
     LaunchedEffect(sidebar.error) {
         val error = sidebar.error ?: return@LaunchedEffect
         sidebarSnackbar.showSnackbar(error)
@@ -356,6 +376,10 @@ private fun ReadyRoot(
                 onSectionChange = appViewModel::setSettingsSection,
             )
         }
+        SnackbarHost(
+            hostState = gatewaySnackbar,
+            modifier = Modifier.align(Alignment.TopCenter).padding(16.dp),
+        )
         SnackbarHost(
             hostState = sidebarSnackbar,
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),

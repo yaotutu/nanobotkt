@@ -64,3 +64,9 @@ data class GatewayRuntimeSnapshot(
 interface GatewayRuntimeSnapshotProvider {
     fun currentRuntimeSnapshot(): GatewayRuntimeSnapshot?
 }
+
+
+/** 当前本地 Gateway 配置对应的缓存隔离身份；不包含 Secret 或任何短期 Token。 */
+interface GatewayProfileProvider {
+    fun currentProfileId(): String?
+}

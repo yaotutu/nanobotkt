@@ -1,5 +1,6 @@
 package com.nanobotkt.feature.auth
 
+import com.nanobotkt.core.model.GatewayProfileProvider
 import com.nanobotkt.core.model.GatewayRuntimeSnapshotProvider
 import com.nanobotkt.core.model.IngressLimitsProvider
 import com.nanobotkt.core.network.ApiCredentialProvider
@@ -26,6 +27,7 @@ abstract class AuthModule {
     /** 业务层只读取无敏感凭据的运行时元数据和上传限制。 */
     @Binds abstract fun bindIngressLimitsProvider(manager: GatewayCredentialManager): IngressLimitsProvider
     @Binds abstract fun bindGatewayRuntimeSnapshotProvider(manager: GatewayCredentialManager): GatewayRuntimeSnapshotProvider
+    @Binds abstract fun bindGatewayProfileProvider(manager: GatewayCredentialManager): GatewayProfileProvider
 
     companion object {
         @Provides

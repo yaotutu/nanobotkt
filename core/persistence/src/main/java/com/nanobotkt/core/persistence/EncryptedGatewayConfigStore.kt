@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 data class StoredGatewayConnectionConfig(
     val serverUrl: String,
     val bootstrapSecret: String,
+    val profileId: String,
 )
 
 /**
@@ -32,6 +33,7 @@ class EncryptedGatewayConfigStore @Inject constructor(
     suspend fun save(config: StoredGatewayConnectionConfig) = withContext(Dispatchers.IO) {
         val encryptedSecret = encrypt(config.bootstrapSecret)
         preferences.writeEncryptedGatewayConfig(
+            profileId = config.profileId,
             serverUrl = config.serverUrl,
             encryptedSecret = encryptedSecret,
         )
@@ -41,6 +43,7 @@ class EncryptedGatewayConfigStore @Inject constructor(
         val record = preferences.readEncryptedGatewayConfig() ?: return@withContext null
         try {
             StoredGatewayConnectionConfig(
+                profileId = record.profileId,
                 serverUrl = record.serverUrl,
                 bootstrapSecret = decrypt(record.encryptedSecret),
             )
@@ -93,7 +96,7 @@ class EncryptedGatewayConfigStore @Inject constructor(
 
     private companion object {
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
-        const val KEY_ALIAS = "nanobot.gateway-config.v2"
+        const val KEY_ALIAS = "nanobot.gateway-config.v3"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
     }
 }

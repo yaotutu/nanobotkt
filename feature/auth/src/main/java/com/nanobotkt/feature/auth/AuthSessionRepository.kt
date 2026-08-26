@@ -5,12 +5,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+enum class GatewayConnectionState { CONNECTING, ONLINE, OFFLINE }
 
 sealed interface AuthState {
     val sessionEpoch: Long
@@ -30,7 +33,16 @@ sealed interface AuthState {
         override val sessionEpoch: Long = 0L,
     ) : AuthState
 
-    data class Ready(override val sessionEpoch: Long) : AuthState
+    /**
+     * 本地完整配置恢复后立即建立可渲染会话；[connection] 只描述远端同步能力。
+     * OFFLINE 不会销毁 Root，本地 Sidebar/Chat 快照仍可继续阅读。
+     */
+    data class Ready(
+        override val sessionEpoch: Long,
+        val profileId: String,
+        val connection: GatewayConnectionState,
+        val error: GatewayConfigurationError? = null,
+    ) : AuthState
 
     /** 当前完整配置仍被保留，但临时网络或服务错误阻止了连接。 */
     data class Unreachable(
@@ -75,7 +87,10 @@ class AuthSessionRepository @Inject constructor(
             operationGeneration
         }
 
-        scope.launch {
+        // 事件收集器必须在恢复协程开始 Bootstrap 之前进入挂起态。SharedFlow 不重放历史事件；
+        // 如果直接并发 launch，极快的认证拒绝可能先于订阅发生，状态会永久停在 CONNECTING。
+        // UNDISPATCHED 只同步执行到 collect 的首次挂起点，不会在调用线程执行后续网络 I/O。
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
             credentials.events.collect { event ->
                 when (event) {
                     is CredentialEvent.AuthenticationRejected -> {
@@ -95,24 +110,21 @@ class AuthSessionRepository @Inject constructor(
         }
         scope.launch {
             try {
-                if (credentials.restore()) {
-                    establishSessionIfCurrent(startupGeneration)
-                } else {
+                if (!credentials.restoreLocal()) {
                     publishIfCurrent(startupGeneration) { configurationState() }
+                    return@launch
                 }
-            } catch (_: GatewayException.AuthenticationRequired) {
-                publishIfCurrent(startupGeneration) {
-                    configurationState(error = GatewayConfigurationError.AuthenticationRejected)
-                }
+                // 本地配置是进入缓存 UI 的门槛，Bootstrap 不再阻塞首屏。sessionEpoch 只在这里递增一次，
+                // 后续 CONNECTING/ONLINE/OFFLINE 转换不会让 Root 误判成账号切换。
+                if (!establishSessionIfCurrent(startupGeneration, GatewayConnectionState.CONNECTING)) return@launch
+                activateRestoredSession(startupGeneration)
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: Exception) {
+            } catch (_: Exception) {
+                // DataStore 或 KeyStore 的意外读取故障不能让状态永久停在 Booting。由于尚未建立
+                // 本地 profile，会话缓存没有安全身份可用，只能回到完整配置页并报告存储失败。
                 publishIfCurrent(startupGeneration) {
-                    AuthState.Unreachable(
-                        error = error.toGatewayConfigurationError(),
-                        serverUrl = credentials.baseUrl,
-                        sessionEpoch = sessionEpoch,
-                    )
+                    configurationState(error = GatewayConfigurationError.StorageFailure)
                 }
             }
         }
@@ -128,7 +140,7 @@ class AuthSessionRepository @Inject constructor(
             )
         }
         when (val result = credentials.configure(config)) {
-            is GatewayConfigurationResult.Success -> establishSessionIfCurrent(generation)
+            is GatewayConfigurationResult.Success -> establishSessionIfCurrent(generation, GatewayConnectionState.ONLINE)
             is GatewayConfigurationResult.Failure -> publishIfCurrent(generation) {
                 AuthState.Configuration(
                     serverUrl = config.serverUrl,
@@ -152,35 +164,21 @@ class AuthSessionRepository @Inject constructor(
         val generation = beginOperation()
         val result = credentials.configure(config, beforeActivation)
         if (result is GatewayConfigurationResult.Success) {
-            establishSessionIfCurrent(generation)
+            establishSessionIfCurrent(generation, GatewayConnectionState.ONLINE)
         }
         return result
     }
 
-    /** 冷启动临时失败后的重试；当前持久化配置保持不变。 */
+    /** 离线缓存页上的重试只改变连接子状态，不创建新的本地会话 epoch。 */
     suspend fun retry() {
-        val generation = beginOperation { AuthState.Booting(sessionEpoch) }
-        try {
-            if (credentials.retryCurrent()) {
-                establishSessionIfCurrent(generation)
-            } else {
-                publishIfCurrent(generation) { configurationState() }
-            }
-        } catch (_: GatewayException.AuthenticationRequired) {
-            publishIfCurrent(generation) {
-                configurationState(error = GatewayConfigurationError.AuthenticationRejected)
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            publishIfCurrent(generation) {
-                AuthState.Unreachable(
-                    error = error.toGatewayConfigurationError(),
-                    serverUrl = credentials.baseUrl,
-                    sessionEpoch = sessionEpoch,
-                )
-            }
+        val generation = beginOperation {
+            val current = mutableState.value
+            if (current is AuthState.Ready) current.copy(
+                connection = GatewayConnectionState.CONNECTING,
+                error = null,
+            ) else AuthState.Booting(sessionEpoch)
         }
+        activateRestoredSession(generation)
     }
 
     /** 从临时错误页进入完整重新配置，不清除仍可重试的当前配置。 */
@@ -221,12 +219,50 @@ class AuthSessionRepository @Inject constructor(
         sessionEpoch = sessionEpoch,
     )
 
-    /** sessionEpoch 仅在完整配置真正建立新会话时递增，Token 轮换不会触碰它。 */
-    private fun establishSessionIfCurrent(expectedGeneration: Long): Boolean = synchronized(operationLock) {
+    /** sessionEpoch 仅在完整配置真正建立新会话时递增，连接状态切换和 Token 轮换都不会触碰它。 */
+    private fun establishSessionIfCurrent(
+        expectedGeneration: Long,
+        connection: GatewayConnectionState,
+    ): Boolean = synchronized(operationLock) {
         if (operationGeneration != expectedGeneration) return@synchronized false
+        val profileId = credentials.currentProfileId() ?: return@synchronized false
         sessionEpoch += 1L
-        mutableState.value = AuthState.Ready(sessionEpoch)
+        mutableState.value = AuthState.Ready(sessionEpoch, profileId, connection)
         true
+    }
+
+    /**
+     * 为当前本地会话激活远端凭据。网络错误降级为 OFFLINE，认证拒绝仍由 CredentialEvent
+     * 统一切回配置页；两条路径都受 operationGeneration 保护，logout 后的迟到结果不能复活会话。
+     */
+    private suspend fun activateRestoredSession(expectedGeneration: Long) {
+        try {
+            if (credentials.activateCurrent()) {
+                publishIfCurrent(expectedGeneration) {
+                    val current = mutableState.value as? AuthState.Ready ?: return@publishIfCurrent mutableState.value
+                    current.copy(connection = GatewayConnectionState.ONLINE, error = null)
+                }
+            } else {
+                publishIfCurrent(expectedGeneration) { configurationState() }
+            }
+        } catch (_: GatewayException.AuthenticationRequired) {
+            // CredentialManager 会先发布 AuthenticationRejected 事件并清理活动配置；这里不重复发布，
+            // 避免事件与 catch 对同一失败产生两次可见状态跳转。
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            publishIfCurrent(expectedGeneration) {
+                val current = mutableState.value as? AuthState.Ready
+                current?.copy(
+                    connection = GatewayConnectionState.OFFLINE,
+                    error = error.toGatewayConfigurationError(),
+                ) ?: AuthState.Unreachable(
+                    error = error.toGatewayConfigurationError(),
+                    serverUrl = credentials.baseUrl,
+                    sessionEpoch = sessionEpoch,
+                )
+            }
+        }
     }
 }
 

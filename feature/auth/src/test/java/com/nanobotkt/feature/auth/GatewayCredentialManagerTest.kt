@@ -34,6 +34,7 @@ class GatewayCredentialManagerTest {
         val store = FakeGatewayConfigStore()
         val manager = managerFor(gateway, store)
         assertTrue(manager.configure(config(OLD_URL, "old-secret")) is GatewayConfigurationResult.Success)
+        val activeConfig = store.config
 
         val result = manager.configure(config(NEW_URL, "new-secret"))
 
@@ -43,7 +44,7 @@ class GatewayCredentialManagerTest {
         )
         assertEquals(OLD_URL, manager.baseUrl)
         assertEquals("old-token", manager.tokenForRequest())
-        assertEquals(config(OLD_URL, "old-secret"), store.config)
+        assertEquals(activeConfig, store.config)
     }
 
     @Test
@@ -55,6 +56,7 @@ class GatewayCredentialManagerTest {
         val store = FakeGatewayConfigStore()
         val manager = managerFor(gateway, store)
         manager.configure(config(OLD_URL, "old-secret"))
+        val activeConfig = store.config
 
         val result = manager.configure(config(NEW_URL, "new-secret"))
 
@@ -64,7 +66,7 @@ class GatewayCredentialManagerTest {
         )
         assertEquals(OLD_URL, manager.baseUrl)
         assertEquals("old-token", manager.tokenForRequest())
-        assertEquals(config(OLD_URL, "old-secret"), store.config)
+        assertEquals(activeConfig, store.config)
         assertEquals(0, store.clearCount)
     }
 
@@ -99,6 +101,7 @@ class GatewayCredentialManagerTest {
         val store = FakeGatewayConfigStore()
         val manager = managerFor(gateway, store)
         manager.configure(config(OLD_URL, "old-secret"))
+        val activeConfig = store.config
         store.saveFailure = IllegalStateException("keystore unavailable")
         var cleanupCalled = false
 
@@ -111,7 +114,7 @@ class GatewayCredentialManagerTest {
         assertFalse(cleanupCalled)
         assertEquals(OLD_URL, manager.baseUrl)
         assertEquals("old-token", manager.tokenForRequest())
-        assertEquals(config(OLD_URL, "old-secret"), store.config)
+        assertEquals(activeConfig, store.config)
     }
 
     @Test
@@ -149,8 +152,12 @@ class GatewayCredentialManagerTest {
         }
 
         // 持久化已经提交后，安全选择是让内存也收敛到候选配置；不能留到下次冷启动才突然切换。
-        assertEquals(GatewayConfigurationResult.Success(NEW_URL), result)
-        assertEquals(config(NEW_URL, "new-secret"), store.config)
+        val success = result as GatewayConfigurationResult.Success
+        assertEquals(NEW_URL, success.serverUrl)
+        assertTrue(success.profileId.isNotBlank())
+        assertEquals(NEW_URL, store.config?.serverUrl)
+        assertEquals("new-secret", store.config?.bootstrapSecret)
+        assertEquals(success.profileId, store.config?.profileId)
         assertEquals(NEW_URL, manager.baseUrl)
         assertEquals("candidate-token", manager.tokenForRequest())
     }
@@ -171,8 +178,11 @@ class GatewayCredentialManagerTest {
         clock.nowMillis = 30_000L
         assertEquals("token-3", manager.tokenForRequest())
 
-        assertEquals(GatewayConfigurationResult.Success(OLD_URL), result)
-        assertEquals(config(OLD_URL, "secret-2"), store.config)
+        val success = result as GatewayConfigurationResult.Success
+        assertEquals(OLD_URL, success.serverUrl)
+        assertEquals("secret-2", store.config?.bootstrapSecret)
+        assertEquals(success.profileId, store.config?.profileId)
+        assertTrue(success.profileId != TEST_PROFILE)
         assertEquals(
             listOf("secret-1", "secret-2", "secret-2"),
             gateway.requests.map(BootstrapRequest::secret),
@@ -386,7 +396,7 @@ class GatewayCredentialManagerTest {
     private fun config(
         serverUrl: String = DEFAULT_URL,
         secret: String = "secret",
-    ) = GatewayConnectionConfig(serverUrl, secret)
+    ) = GatewayConnectionConfig(serverUrl, secret, profileId = TEST_PROFILE)
 
     private fun testBootstrap(
         apiToken: String = "api-token",
@@ -403,5 +413,6 @@ class GatewayCredentialManagerTest {
         const val DEFAULT_URL = "http://test-server"
         const val OLD_URL = "http://old-server"
         const val NEW_URL = "https://new-server.example/gateway"
+        const val TEST_PROFILE = "profile-credential-test"
     }
 }

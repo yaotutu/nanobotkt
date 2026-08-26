@@ -1,6 +1,7 @@
 package com.nanobotkt
 
 import com.nanobotkt.core.persistence.ComposerDraftStore
+import com.nanobotkt.core.persistence.StartupCacheStore
 import com.nanobotkt.feature.apps.AppsRepository
 import com.nanobotkt.feature.automations.AutomationsRepository
 import com.nanobotkt.feature.channels.ChannelsRepository
@@ -32,6 +33,7 @@ class SessionCleanup @Inject constructor(
     private val workspacesRepository: WorkspacesRepository,
     private val settingsRepository: SettingsRepository,
     private val composerDraftStore: ComposerDraftStore,
+    private val startupCacheStore: StartupCacheStore,
 ) {
     /**
      * 在认证状态进入 Ready 后启动需要 Token 的会话级加载。
@@ -39,8 +41,14 @@ class SessionCleanup @Inject constructor(
      * 当前只有 Chat 的 Composer 目录需要显式入口；其他 feature 仍由各自页面触发刷新。
      * 把调用保留在 app 组合根，避免 feature:auth 反向依赖 feature:chat。
      */
-    fun onAuthenticated(sessionEpoch: Long) {
+    suspend fun onLocalSessionAvailable(profileId: String) {
+        // 本地阶段只恢复无副作用的缓存，不能触发任何需要 Token 的 HTTP 或 WebSocket 操作。
+        sidebarRepository.restoreCached(profileId)
+    }
+
+    suspend fun onAuthenticated(sessionEpoch: Long) {
         chatRepository.onAuthenticated(sessionEpoch)
+        sidebarRepository.refresh()
     }
 
     /**
@@ -50,8 +58,16 @@ class SessionCleanup @Inject constructor(
      * 当前账号的本地私有数据，若保留到下一账号会造成跨账号内容泄漏。方法保持 suspend，避免在
      * 主线程使用 runBlocking；调用方通过 finally 保证即使数据库清理失败也仍会完成认证注销。
      */
-    suspend fun clearPersistedChatInput() {
+    suspend fun loadSessionSelection(profileId: String): String? =
+        startupCacheStore.loadSelection(profileId)
+
+    suspend fun saveSessionSelection(profileId: String, selectedSessionKey: String?) {
+        startupCacheStore.saveSelection(profileId, selectedSessionKey)
+    }
+
+    suspend fun clearPersistedSession(profileId: String?) {
         composerDraftStore.deleteAll()
+        if (profileId != null) startupCacheStore.deleteProfile(profileId)
     }
 
     /**
