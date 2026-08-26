@@ -1,9 +1,11 @@
-# NanobotKT 0.1.19
+# NanobotKT 0.1.20
 
-> 自动构建发布，提交：`e7ce8b9`。
+> 自动构建发布，提交：`276b7af`。
 
 ## 变更
 
+- feat: add local-first startup cache (`276b7af`)
+- chore(dev): prepare v0.1.19 (`dfe298b`)
 - Merge branch 'codex/chat-ui-state-polish' into dev (`e7ce8b9`)
 - feat(chat): polish state feedback (`cefa18b`)
 - chore(dev): prepare v0.1.18 (`535c9c9`)
