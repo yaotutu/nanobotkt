@@ -16,6 +16,23 @@ class BusinessWireContractTest {
     }
 
     @Test
+    fun `sessions decode floating point run start timestamp from current gateway schema`() {
+        val payload = json.decodeFromString<SessionsPayload>(
+            """{
+              "sessions": [{
+                "key": "websocket:first-chat",
+                "channel": "websocket",
+                "chat_id": "first-chat",
+                "run_started_at": 1787840928.125
+              }]
+            }""",
+        )
+
+        // Gateway 直接发送 Python time.time()；小数秒是当前协议的一部分，不能再按 Long 解码。
+        assertEquals(1787840928.125, payload.sessions.single().runStartedAt ?: 0.0, 0.0)
+    }
+
+    @Test
     fun `skills decode snake case fields and tolerate future fields`() {
         val payload = json.decodeFromString<SkillsPayload>(
             """

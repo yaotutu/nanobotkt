@@ -88,6 +88,36 @@ internal class ChatStreamFold(
         return snapshot()
     }
 
+    /**
+     * 本地停止指定 turn 的流式视觉状态，但不把它伪装成服务端已经完成。
+     *
+     * Stop 点击后 Gateway 仍可能需要一段时间才发出 `goal_status:idle` 或 `turn_end`。UI 不应在
+     * 这段确认窗口继续展示 reasoning/tool loading，因此这里立即关闭对应临时消息的流式标记并
+     * 释放增量缓冲身份。刻意不写入 [completedTurns]：如果停止请求失败，后续服务端增量仍然可以
+     * 继续进入同一 turn；真正禁止迟到事件只能由服务端终态事件或 canonical 快照决定。
+     */
+    fun finishTurnLocally(turnId: String?) {
+        val completedAt = now()
+        messages.replaceAll { message ->
+            if (turnId == null || message.turnId == turnId) {
+                message.copy(
+                    isStreaming = false,
+                    reasoningStreaming = false,
+                    completedAt = message.completedAt ?: completedAt,
+                )
+            } else {
+                message
+            }
+        }
+        if (turnId == null) {
+            activeMessageByKey.clear()
+            lastSequenceByKey.clear()
+        } else {
+            activeMessageByKey.keys.removeAll { key -> key.startsWith("turn:$turnId") }
+            lastSequenceByKey.keys.removeAll { key -> key.startsWith("turn:$turnId") }
+        }
+    }
+
     private fun appendDelta(
         turnId: String?,
         streamId: String?,
@@ -183,16 +213,12 @@ internal class ChatStreamFold(
         if (turnId != null) {
             completedTurns += turnId
             mediaCompletedTurns -= turnId
-            activeMessageByKey.keys.removeAll { it.startsWith("turn:$turnId") }
-            // turn 已进入 completedTurns，后续事件会在入口被拒绝；水位可以同步释放，避免长会话泄漏。
-            lastSequenceByKey.keys.removeAll { it.startsWith("turn:$turnId") }
         }
+        finishTurnLocally(turnId)
         val completedAt = now()
         messages.replaceAll { message ->
             if (turnId == null || message.turnId == turnId) {
                 message.copy(
-                    isStreaming = false,
-                    reasoningStreaming = false,
                     latencyMs = event.latencyMs ?: message.latencyMs,
                     completedAt = completedAt,
                     turnPhase = "complete",

@@ -49,8 +49,6 @@ import com.nanobotkt.core.model.UiFileEdit
 import com.nanobotkt.core.model.UiMcpPresetAttachment
 import kotlinx.coroutines.delay
 
-private const val ACTIVITY_COMPLETION_HOLD_MS = 900L
-
 /** Activity 在主时间轴中的视觉等级；成功的纯 reasoning/trace 不再占据独立空间。 */
 internal enum class ActivityDisplayMode {
     Hidden,
@@ -142,11 +140,15 @@ internal fun activityDisplayMode(item: ChatTimelineItem.AgentActivity): Activity
 internal fun activityStepCount(item: ChatTimelineItem.AgentActivity): Int =
     buildActivityPresentation(item.messages).itemCount
 
+/** Activity 首次进入时间轴一律折叠；只有用户的显式点击可以改变展开状态。 */
+internal fun resolveActivityExpanded(userExpandedOverride: Boolean?): Boolean =
+    userExpandedOverride ?: false
+
 /**
  * Reasoning、Tool、CLI/MCP 与文件修改的统一活动组。
  *
- * 执行中、失败或等待用户时自动展开并使用状态容器；普通成功记录降级为 40dp 左右的摘要行。
- * 用户手动展开/折叠后始终尊重用户选择，流式状态变化不能抢回控制权。
+ * 运行、失败和等待状态仍使用强调容器，但详情默认全部折叠，避免长工具链进入页面时抢占正文空间。
+ * 展开权只属于用户点击；流式开始、结束或失败状态变化都不能自动改写用户选择。
  */
 @Composable
 internal fun AgentActivityCluster(
@@ -167,24 +169,8 @@ internal fun AgentActivityCluster(
         }
     var userExpandedOverride by
         rememberSaveable(item.key) { mutableStateOf<Boolean?>(null) }
-    var completionHoldOpen by remember(item.key) { mutableStateOf(false) }
-    var wasStreaming by remember(item.key) { mutableStateOf(item.isStreaming) }
     var nowMs by remember(item.key) { mutableLongStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(item.isStreaming, userExpandedOverride) {
-        val completedNow = wasStreaming && !item.isStreaming
-        wasStreaming = item.isStreaming
-        when {
-            item.isStreaming -> completionHoldOpen = false
-            completedNow && userExpandedOverride == null -> {
-                // 完成瞬间保留详情 900ms，让用户能确认最后一步结果；随后折叠为轻量摘要，避免
-                // 页面在每次回复结束后永久留下大卡片。
-                completionHoldOpen = true
-                delay(ACTIVITY_COMPLETION_HOLD_MS)
-                completionHoldOpen = false
-            }
-        }
-    }
     LaunchedEffect(item.isStreaming) {
         while (item.isStreaming) {
             nowMs = System.currentTimeMillis()
@@ -192,9 +178,7 @@ internal fun AgentActivityCluster(
         }
     }
 
-    val expanded =
-        userExpandedOverride
-            ?: (displayMode == ActivityDisplayMode.Emphasized || completionHoldOpen)
+    val expanded = resolveActivityExpanded(userExpandedOverride)
     val durationMs = activityDurationMs(item, nowMs)
     val statusText =
         when (status) {

@@ -38,6 +38,25 @@ class ChatStreamFoldTest {
     }
 
     @Test
+    fun `local stop closes only target turn without marking it completed`() {
+        val fold = fold()
+        fold.fold(InboundEvent.ReasoningDelta("c1", "thinking", turnId = "t1", turnSeq = 1))
+        fold.fold(InboundEvent.Delta("c1", "other", turnId = "t2", turnSeq = 1))
+
+        fold.finishTurnLocally("t1")
+
+        val stopped = fold.snapshot().single { it.turnId == "t1" }
+        val untouched = fold.snapshot().single { it.turnId == "t2" }
+        assertFalse(stopped.isStreaming == true)
+        assertFalse(stopped.reasoningStreaming == true)
+        assertTrue(untouched.isStreaming == true)
+
+        // 本地 Stop 不是服务端完成事件；发送失败或竞态下的新序号仍必须能够重新建立流。
+        fold.fold(InboundEvent.Delta("c1", "resumed", turnId = "t1", turnSeq = 2))
+        assertTrue(fold.snapshot().any { it.turnId == "t1" && it.content == "resumed" && it.isStreaming == true })
+    }
+
+    @Test
     fun `canonical message replaces partial content`() {
         val fold = fold()
         fold.fold(InboundEvent.Delta("c1", "Part", turnId = "t1"))
@@ -171,4 +190,3 @@ class ChatStreamFoldTest {
         pending = pending,
     )
 }
-

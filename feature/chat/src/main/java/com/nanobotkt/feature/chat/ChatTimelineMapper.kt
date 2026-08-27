@@ -28,6 +28,7 @@ private enum class ActivityBucket {
 internal fun buildChatTimelineItems(
     messages: List<UiMessage>,
     activeTurnId: String? = null,
+    stoppingTurnId: String? = null,
     failedMessageIds: Set<String> = emptySet(),
 ): List<ChatTimelineItem> {
     val units = mutableListOf<ChatTimelineItem>()
@@ -51,6 +52,7 @@ internal fun buildChatTimelineItems(
                 turnId = currentTurnId,
                 startedAtMs = currentTurnStartedAtMs,
                 activeTurnId = activeTurnId,
+                stoppingTurnId = stoppingTurnId,
                 preserveTrailingActivity = preserveTrailingActivity,
             )
         turnMessages.clear()
@@ -106,6 +108,7 @@ private fun buildTurnItems(
     turnId: String?,
     startedAtMs: Long?,
     activeTurnId: String?,
+    stoppingTurnId: String?,
     preserveTrailingActivity: Boolean,
 ): List<ChatTimelineItem> {
     val ordered = orderMessagesByTurnSeq(indexedMessages)
@@ -123,6 +126,7 @@ private fun buildTurnItems(
                 turnId = turnId,
                 startedAtMs = startedAtMs,
                 activeTurnId = activeTurnId,
+                stoppingTurnId = stoppingTurnId,
             )
         pendingActivity.clear()
     }
@@ -228,6 +232,7 @@ private fun buildActivityRuns(
     turnId: String?,
     startedAtMs: Long?,
     activeTurnId: String?,
+    stoppingTurnId: String?,
 ): List<ChatTimelineItem.AgentActivity> {
     val units = mutableListOf<ChatTimelineItem.AgentActivity>()
     val run = mutableListOf<IndexedTimelineMessage>()
@@ -240,9 +245,13 @@ private fun buildActivityRuns(
         val first = run.first().message
         val bucket = runBucket ?: ActivityBucket.OTHER
         val inferredTurnId = runMessages.firstNotNullOfOrNull { it.turnId } ?: turnId
+        // activeTurnId 继续代表服务端仍在运行，用于保持 Composer 与 Sidebar 的真实状态；
+        // stoppingTurnId 只覆盖本地视觉层，确保用户点击 Stop 后活动卡立即停止转圈。
+        val stoppingLocally = inferredTurnId != null && inferredTurnId == stoppingTurnId
         val isStreaming =
-            runMessages.any { it.isStreaming == true || it.reasoningStreaming == true } ||
-                (activeTurnId != null && inferredTurnId == activeTurnId)
+            !stoppingLocally &&
+                (runMessages.any { it.isStreaming == true || it.reasoningStreaming == true } ||
+                    (activeTurnId != null && inferredTurnId == activeTurnId))
         units +=
             ChatTimelineItem.AgentActivity(
                 // 首条消息 ID 在后续流式增量中保持稳定；不能把 lastId 或活动数量写进 key，

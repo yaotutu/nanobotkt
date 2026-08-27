@@ -4,6 +4,8 @@ import com.nanobotkt.core.model.ToolProgressEvent
 import com.nanobotkt.core.model.UiFileEdit
 import com.nanobotkt.core.model.UiMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -13,6 +15,13 @@ import org.junit.Test
  * 再由 [activityDisplayMode] 根据执行状态和可复查价值决定隐藏、紧凑或强调展示。
  */
 class AgentActivityDisplayModeTest {
+    @Test
+    fun `执行步骤首次展示默认折叠且只尊重用户显式选择`() {
+        assertFalse(resolveActivityExpanded(null))
+        assertTrue(resolveActivityExpanded(true))
+        assertFalse(resolveActivityExpanded(false))
+    }
+
     @Test
     fun `完成的纯 reasoning 默认隐藏`() {
         val item = activity(message(reasoning = "内部分析过程"))

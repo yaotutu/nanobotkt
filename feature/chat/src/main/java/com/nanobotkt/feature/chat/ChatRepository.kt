@@ -831,6 +831,11 @@ class DefaultChatRepository @Inject constructor(
                 stoppingTurnId = activeTurnId,
                 error = null,
             )
+            // 服务端终态确认与本地交互反馈是两个独立边界：activeTurnId 保持不变，继续锁住
+            // Composer/Sidebar；临时 fold 立即去除流式标记并发布，让工具与 reasoning loading
+            // 在本次点击内停止，而不是等待网络往返后的 goal_status/turn_end。
+            streamFold.finishTurnLocally(activeTurnId)
+            publishLocked()
             StopTurnRequest(
                 sessionKey = current.sessionKey,
                 chatId = chatId,
@@ -856,6 +861,9 @@ class DefaultChatRepository @Inject constructor(
                             stoppingTurnId = null,
                             error = error.message ?: "stop_turn_failed",
                         )
+                        // Stop 发送失败后 activeTurnId 仍是服务端活动事实。清掉 stopping 并重新发布，
+                        // Mapper 会据此恢复 loading；不能让一次失败的本地视觉收尾永久冻结运行态。
+                        publishLocked()
                     }
                 }
             }
@@ -872,6 +880,7 @@ class DefaultChatRepository @Inject constructor(
                 current.stoppingTurnId == request.turnId
             ) {
                 mutableState.value = current.copy(stoppingTurnId = null)
+                publishLocked()
             }
         }
     }
@@ -1281,9 +1290,10 @@ class DefaultChatRepository @Inject constructor(
                 if (!event.status.equals("idle", ignoreCase = true)) return
                 synchronized(timelineWriterLock) {
                     val current = mutableState.value
-                    // 服务端明确把 goal_status:idle 定义为终态兜底：取消或直接运行可能不会再发送
-                    // turn_end。这里必须按 turnId 收敛 active/stopping，否则 `/stop` 已成功但按钮会
-                    // 永久停在 loading；旧协议缺少 turnId 时，只能清理当前会话唯一的活动 turn。
+                    // 当前协议允许 goal_status 不携带 turnId；这种事件表示当前 chat 的唯一活动目标
+                    // 已回到 idle。无论是否还会收到 turn_end，都必须在同一写锁内先关闭临时流式
+                    // 状态、再清理 active/stopping 并发布，避免按钮已恢复但工具卡仍持续转圈。
+                    streamFold.finishTurnLocally(event.turnId)
                     mutableState.value = current.copy(
                         activeTurnId = current.activeTurnId.takeUnless { activeTurnId ->
                             event.turnId == null || activeTurnId == event.turnId
@@ -1294,6 +1304,7 @@ class DefaultChatRepository @Inject constructor(
                         sendingTurnIds = event.turnId?.let { current.sendingTurnIds - it }
                             ?: current.sendingTurnIds,
                     )
+                    publishLocked()
                 }
                 // idle 只负责结束本地运行态，最终消息仍以规范 HTTP 快照为准；延迟一点等待服务端
                 // 完成落盘，并与 turn_end 路径共用串行 refresh，避免并发快照互相覆盖。

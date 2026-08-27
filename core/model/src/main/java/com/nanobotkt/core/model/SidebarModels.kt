@@ -13,7 +13,8 @@ data class ChatSummary(
     val title: String? = null,
     val preview: String = "",
     @SerialName("modelPreset") val modelPreset: String? = null,
-    @SerialName("runStartedAt") val runStartedAt: Long? = null,
+    // Gateway 使用 Unix 秒时间戳并保留小数；客户端必须按浮点数接收，不能以 Long 解码运行中会话。
+    @SerialName("runStartedAt") val runStartedAt: Double? = null,
     @SerialName("workspaceScope") val workspaceScope: WorkspaceScope? = null,
 )
 
@@ -53,7 +54,8 @@ data class SessionRow(
     val title: String? = null,
     val preview: String? = null,
     @SerialName("model_preset") val modelPreset: String? = null,
-    @SerialName("run_started_at") val runStartedAt: Long? = null,
+    // 当前 `/api/sessions` 契约直接返回 Python `time.time()`，因此 wire 类型是带小数的 Unix 秒。
+    @SerialName("run_started_at") val runStartedAt: Double? = null,
     @SerialName("workspace_scope") val workspaceScope: WorkspaceScope? = null,
 )
 

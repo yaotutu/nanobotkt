@@ -106,6 +106,25 @@ class ChatTimelineMapperTest {
     }
 
     @Test
+    fun `停止中的活动轮次立即隐藏 loading 但仍保持活动轮次顺序`() {
+        val items =
+            buildChatTimelineItems(
+                messages =
+                    listOf(
+                        message("answer", content = "partial", turnId = "turn-1"),
+                        message("trace", kind = "trace", turnId = "turn-1").copy(isStreaming = true),
+                    ),
+                activeTurnId = "turn-1",
+                stoppingTurnId = "turn-1",
+            )
+
+        assertTrue(items[0] is ChatTimelineItem.AssistantMessage)
+        val activity = items[1] as ChatTimelineItem.AgentActivity
+        assertFalse(activity.isStreaming)
+        assertEquals("turn-1", activity.turnId)
+    }
+
+    @Test
     fun `turnSeq 全部存在时按序排列且缺失时保持原顺序`() {
         val sorted =
             buildChatTimelineItems(

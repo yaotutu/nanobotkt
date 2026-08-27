@@ -64,7 +64,7 @@ class SidebarRepositoryTest {
             override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
                 // 运行时间和设置更新时间都是瞬态字段；它们变化不能替换已展示列表或重写 Room。
                 "/api/sessions" -> jsonResponse(
-                    """{"sessions":[{"key":"webui:cached","chat_id":"cached","title":"Cached","run_started_at":99}]}""",
+                    """{"sessions":[{"key":"webui:cached","chat_id":"cached","title":"Cached","run_started_at":99.25}]}""",
                 )
                 "/api/webui/sidebar-state" -> jsonResponse(
                     """{"schema_version":1,"pinned_keys":["webui:cached"],"updated_at":"2026-08-26T10:00:00Z"}""",
@@ -103,7 +103,7 @@ class SidebarRepositoryTest {
                 if (failRemote.get()) return MockResponse().setResponseCode(503).setBody("offline")
                 return when (request.path) {
                     "/api/sessions" -> jsonResponse(
-                        """{"sessions":[{"key":"webui:new","chat_id":"new","title":"New","run_started_at":123}]}""",
+                        """{"sessions":[{"key":"webui:new","chat_id":"new","title":"New","run_started_at":123.5}]}""",
                     )
                     "/api/webui/sidebar-state" -> jsonResponse(
                         """{"schema_version":1,"pinned_keys":["webui:new","webui:new"],"updated_at":"2026-08-26T11:00:00Z"}""",
@@ -364,7 +364,7 @@ class SidebarRepositoryTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
                 "/api/sessions" -> {
-                    val runStartedAt = if (serverReportsRunning.get()) ",\"run_started_at\":123" else ""
+                    val runStartedAt = if (serverReportsRunning.get()) ",\"run_started_at\":123.5" else ""
                     jsonResponse(
                         """{"sessions":[{"key":"webui:other-chat","chat_id":"other-chat"$runStartedAt}]}""",
                     )

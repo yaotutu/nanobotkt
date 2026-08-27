@@ -992,10 +992,52 @@ class DefaultChatRepositoryTest {
         awaitState { !it.loading && it.activeTurnId == "active-turn" }
         assertTrue(socketOpened.await(2, TimeUnit.SECONDS))
 
+        val socket = socketRef.get()
+        assertNotNull(socket)
+        // 先建立真实的 reasoning 与工具启动事件，避免测试只覆盖 stoppingTurnId 而没有覆盖
+        // Repository 对 StreamFold 的本地收尾；工具卡在 Stop 后仍需保留内容，只移除 loading。
+        socket.send(
+            """{"event":"reasoning_delta","chat_id":"current-chat","text":"thinking","turn_id":"active-turn"}""",
+        )
+        socket.send(
+            """{"event":"message","chat_id":"current-chat","text":"","kind":"progress","tool_events":[{"phase":"start","call_id":"tool-1","name":"read_file"}],"turn_id":"active-turn"}""",
+        )
+        val streamingState = awaitState { state ->
+            state.messages.any { message ->
+                message.turnId == "active-turn" &&
+                    message.reasoningStreaming == true &&
+                    message.toolEvents?.singleOrNull()?.callId == "tool-1"
+            }
+        }
+        assertTrue(
+            buildChatTimelineItems(
+                messages = streamingState.messages,
+                activeTurnId = streamingState.activeTurnId,
+                stoppingTurnId = streamingState.stoppingTurnId,
+            ).filterIsInstance<ChatTimelineItem.AgentActivity>().single().isStreaming,
+        )
+
         assertTrue(repository.stop())
         assertFalse(repository.stop())
         assertFalse(repository.stop())
-        assertEquals("active-turn", repository.state.value.stoppingTurnId)
+        val stoppingState = repository.state.value
+        assertEquals("active-turn", stoppingState.activeTurnId)
+        assertEquals("active-turn", stoppingState.stoppingTurnId)
+        // Stop 的网络确认不能冒充服务端终态，所以 activeTurnId 仍保留；但所有本地临时流式
+        // 标记与 Activity loading 必须在 stop() 返回时同步清除，不能继续等待 goal_status。
+        assertTrue(stoppingState.messages.none { it.isStreaming == true || it.reasoningStreaming == true })
+        assertEquals(
+            "start",
+            stoppingState.messages.single { message -> message.turnId == "active-turn" }
+                .toolEvents?.singleOrNull()?.phase,
+        )
+        assertTrue(
+            buildChatTimelineItems(
+                messages = stoppingState.messages,
+                activeTurnId = stoppingState.activeTurnId,
+                stoppingTurnId = stoppingState.stoppingTurnId,
+            ).filterIsInstance<ChatTimelineItem.AgentActivity>().all { activity -> !activity.isStreaming },
+        )
         assertTrue(stopFrameReceived.await(2, TimeUnit.SECONDS))
         delay(100)
         assertEquals(1, stopFrameCount.get())
@@ -1003,8 +1045,6 @@ class DefaultChatRepositoryTest {
         assertEquals("active-turn", repository.state.value.stoppingTurnId)
 
         active.set(false)
-        val socket = socketRef.get()
-        assertNotNull(socket)
         // 取消路径允许只有 goal_status:idle 而没有 turn_end；idle 必须结束 active turn 并恢复按钮。
         socket.send(
             """{"event":"goal_status","chat_id":"current-chat","status":"idle","turn_id":"active-turn"}""",

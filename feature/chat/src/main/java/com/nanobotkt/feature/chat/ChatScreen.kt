@@ -124,10 +124,11 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val timelineItems =
-        remember(state.messages, state.activeTurnId, state.failedMessageIds) {
+        remember(state.messages, state.activeTurnId, state.stoppingTurnId, state.failedMessageIds) {
             buildChatTimelineItems(
                 messages = state.messages,
                 activeTurnId = state.activeTurnId,
+                stoppingTurnId = state.stoppingTurnId,
                 failedMessageIds = state.failedMessageIds,
             )
         }
