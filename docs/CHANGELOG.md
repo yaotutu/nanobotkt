@@ -1,9 +1,13 @@
-# NanobotKT 0.1.20
+# NanobotKT 0.1.21
 
-> 自动构建发布，提交：`276b7af`。
+> 自动构建发布，提交：`f189464`。
 
 ## 变更
 
+- fix: resolve chat activity state regressions (`f189464`)
+- fix: coordinate chat startup refresh (`868a5c6`)
+- fix: stabilize transport websocket tests (`d634ae2`)
+- chore(dev): prepare v0.1.20 (`19f30f7`)
 - feat: add local-first startup cache (`276b7af`)
 - chore(dev): prepare v0.1.19 (`dfe298b`)
 - Merge branch 'codex/chat-ui-state-polish' into dev (`e7ce8b9`)
