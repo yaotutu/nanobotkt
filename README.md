@@ -1,132 +1,215 @@
+<div align="center">
+
 # NanobotKT
 
-> Nanobot 的 Android 原生客户端。
+**把 Nanobot 带到 Android 手机上。**
 
-NanobotKT 是 [Nanobot](https://github.com/nanobot-ai/nanobot) 的 Android 手机客户端。它直接复用 Nanobot 的 HTTP API 与 WebSocket 实时通道，在手机上提供与桌面 WebUI 一致的能力，同时保持原生应用的交互、通知、生命周期和可恢复性。
+使用 Kotlin 与 Jetpack Compose 构建的 [Nanobot](https://github.com/nanobot-ai/nanobot) Android 原生客户端。<br>
+连接真实 Nanobot Gateway，在移动端提供实时对话、Agent 执行过程、会话管理和能力配置。
 
----
+[![Android 7.0+](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](#运行要求)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](#技术架构)
+[![Dev Release](https://img.shields.io/github/v/release/yaotutu/nanobotkt?include_prereleases&label=Current%20Dev)](https://github.com/yaotutu/nanobotkt/releases/tag/dev-latest)
+[![Android Dev Build](https://github.com/yaotutu/nanobotkt/actions/workflows/android-build.yml/badge.svg?branch=dev)](https://github.com/yaotutu/nanobotkt/actions/workflows/android-build.yml?query=branch%3Adev)
 
-## 为什么不用 WebUI，也不用 PWA，而是选择重新做一个 Android App
+[下载 Dev 预览版](https://github.com/yaotutu/nanobotkt/releases/tag/dev-latest) · [直接下载 Universal APK](https://github.com/yaotutu/nanobotkt/releases/download/dev-latest/app-universal-dev.apk) · [提交问题](https://github.com/yaotutu/nanobotkt/issues) · [变更记录](docs/CHANGELOG.md)
 
-官方的 Nanobot WebUI 已经非常优秀：信息架构清晰、消息流式响应、Agent Activity、会话管理、设置面板都很完整，桌面端的使用体验是产品基线。
+</div>
 
-但在手机上，单纯把 WebUI 包成一个网页或 PWA，存在几个真实的体验断点：
+> [!IMPORTANT]
+> NanobotKT 目前处于 **Dev 开发阶段**，仅发布 `dev-latest` Dev APK。项目尚无 Stable、正式 Release 或应用商店版本，功能、接口和数据行为仍可能调整，请勿将 Dev 包用于稳定生产环境。
 
-- **页面是为桌面密度设计的**：侧栏、设置抽屉、会话列表在 1080×2400 这种竖屏分辨率下要么被挤掉信息，要么只能勉强堆成单列，触控目标变小，扫描效率下降。
-- **焦点、滚动、IME、状态恢复在 WebView 里很难做到原生水准**：聊天场景里，消息在持续 streaming 时需要稳定地停在最新一条；用户中途切走、杀进程、回到桌面再回来，WebView 的滚动位置、IME 状态、进行中的 WebSocket 会话都容易掉；重新连接时还要面对额外的 Service Worker / Cache 生命周期。
-- **PWA 本来是一个非常优雅的方案**：一份 Web 资源同时覆盖桌面和移动，按需安装、可离线缓存、不用走商店审核，听上去就是最经济的形态。遗憾的是，**Android 对 PWA 的兼容性远远称不上优秀**：后台同步受限、Push 通知能力在不同厂商 ROM 上行为不一致、安装后的独立窗口体验、媒体权限、文件选择、键盘交互都长期处于“勉强能用”的状态，无法作为主力客户端交付。
-- **后台与服务端保活不可控**：聊天是带长连接的实时应用，Web 进程被系统回收后的恢复路径在浏览器里没有稳定保证；而 Native 进程可以借助前台服务、JobScheduler 和厂商白名单给出明确的策略。
+## 界面预览
 
-综合这些原因，我们决定为 Android 单独做一个手机端 App。目标是：
+<p align="center">
+  <img src="docs/images/readme/chat-agent-activity.png" width="23%" alt="聊天页面与 Agent Activity" />
+  <img src="docs/images/readme/chat-product-overview.png" width="23%" alt="富文本与结构化回答" />
+  <img src="docs/images/readme/conversations.png" width="23%" alt="会话列表" />
+  <img src="docs/images/readme/settings-capabilities.png" width="23%" alt="设置与能力管理" />
+</p>
 
-- 在手机上提供和桌面 WebUI **同源** 的能力与数据语义，而不是把 WebUI 塞进一个小屏。
-- 用原生组件把交互、滚动、IME、生命周期、后台恢复这些 Web 容器里最弱的部分接管过来。
-- 与 Nanobot 服务端保持 **单一真实来源**：客户端不缓存业务结果，不重新实现会话/Agent 逻辑，只负责把 Gateway 提供的真实状态高质量地呈现出来。
+<p align="center">
+  实时聊天与 Agent Activity · 富文本回答 · 会话管理 · 设置与能力入口
+</p>
 
-## 技术选型
+截图来自连接真实 Nanobot Gateway 的 Android 构建，不使用 Mock 数据。界面仍在持续迭代，最新版本可能与截图略有不同。
 
-- **Kotlin + Jetpack Compose（Material 3）**
-  - 整张 UI 用 Compose 构建，状态用 `StateFlow` 单向流动，避免命令式重组陷阱。
-  - 主题遵循 Material 3 自带的 Color Scheme / Shape / Typography，配色克制，强调内容阅读；Dynamic Color 仅作为显式可选能力，不作为默认。
-  - 复杂页面（聊天时间线、Agent Activity、会话列表、设置）全部基于 Compose 原生组件，避免引入额外的跨端运行时。
-- **AndroidX 基础库 + KSP**
-  - Hilt 做依赖注入；Kotlin Serialization 处理 JSON；KSP 取代 KAPT 以减少构建时间。
-  - 进程恢复和状态保护基于 `SavedStateHandle`、Lifecycle-aware 协程，避免重建 Activity 时丢上下文。
-- **网络与传输**
-  - HTTP 走 OkHttp + Kotlinx Serialization 访问 Gateway REST API。
-  - WebSocket 在应用入口（`http://192.168.55.147:8765/`）上以服务端下发的路径与令牌建立，处理 streaming、结束事件、断线重连。
-- **持久化**
-  - 本地仅保存客户端配置与必要状态；业务数据始终来自 Gateway。
+## 主要功能
 
-模块结构遵循 AGENTS.md 中规定的依赖方向：
+- **实时聊天**：通过 Gateway HTTP API 与 WebSocket 接收流式回答、结束事件和连接状态。
+- **Agent Activity**：统一展示 reasoning、工具调用、CLI/MCP 和文件修改，已完成步骤默认折叠。
+- **回答控制**：支持停止响应、消息排队以及明确的发送、运行和失败状态反馈。
+- **会话管理**：支持搜索、切换、置顶、归档、恢复和删除会话。
+- **移动端状态恢复**：处理旋转、后台切换、进程恢复与 WebSocket 重连，尽量保留当前会话和未发送草稿。
+- **能力配置**：提供 Workspaces、Apps、Skills、Automations、Channels、Security、模型与 Provider 等原生入口。
+- **富文本与媒体**：支持 Markdown、代码块、图片、音频、视频、文件和文件变更预览。
+- **应用内更新**：从 GitHub Release 检查并下载新 APK，安装操作仍由 Android 系统确认。
+- **多语言界面**：提供英语、简体中文、繁体中文、西班牙语、法语、印尼语、日语、韩语、葡萄牙语和越南语资源。
 
-```text
-app/                 应用组合根、导航、Root 状态与 Hilt 组装
-core/model/          共享数据模型与序列化模型
-core/network/        Gateway HTTP / API 客户端
-core/transport/      Gateway WebSocket / 实时传输
-core/persistence/    本地持久化
-core/designsystem/   共享 Compose 设计系统
-feature/auth/        登录与认证
-feature/chat/        会话、消息时间线、发送与媒体预览
-feature/sidebar/     会话列表及其管理入口
-feature/workspaces/  Workspace 管理
-feature/settings/    设置、运行状态与应用更新
-feature/apps/        Apps 管理
-feature/skills/      Skills 管理
-feature/automations/ Automations 管理
-feature/channels/    Channels 管理
-feature/security/    Security 管理
-```
+NanobotKT 不在本地重新实现 Agent 或会话业务逻辑。Gateway 始终是业务状态的真实来源，Android 客户端只负责认证、实时传输、状态编排和原生呈现。
 
----
+## 下载与安装
 
-## 效果预览
+### 1. 准备 Gateway
 
-下面四张截图均来自在 `emulator-5554` 上运行的 NanobotKT Debug 构建（v0.1.15-debug，versionCode 16），连接真实 Nanobot Gateway，没有 Mock。
+NanobotKT 只是 Android 客户端，不包含 Nanobot 服务端。使用前需要：
 
-### Chat：Agent Activity 与消息排队
+- 一套正在运行的 Nanobot Gateway；
+- Android 设备能够访问该 Gateway；
+- Gateway 地址与有效的 Bootstrap Secret。
 
-聊天时间线展示当前回答的状态（运行中）、展开的 Agent Activity、已完成活动的折叠卡片，以及正在排队的下一条用户消息。Composer 在排队时会给出明确的“添加消息到队列…”反馈。
-
-![NanobotKT 聊天页面：Agent Activity 与消息排队](docs/images/readme/chat-agent-activity.png)
-
-### Chat：结构化产品能力回答
-
-同一次会话中，模型给出的中文结构化回答：Android 客户端定位、WebSocket 实时流式消息、Agent Activity 折叠规则、运行中消息排队、会话管理与设置能力。代码块与列表层级在 Compose 中按 Material 3 排版规则渲染。
-
-![NanobotKT 聊天页面：结构化产品能力回答](docs/images/readme/chat-product-overview.png)
-
-### 会话列表
-
-侧滑打开的会话 Bottom Sheet。搜索框、最近会话、以及无敏感信息的演示会话。列表里的置顶、归档、删除与切换都直接作用到 Gateway 的会话状态。
-
-![NanobotKT 会话列表](docs/images/readme/conversations.png)
-
-### 设置：AI 与能力
-
-设置页面的“AI 与能力”区域，包含模型与提供商、应用、技能、图像生成、语音和网页搜索等入口。Gateway 状态、版本与构建信息独立于能力区呈现。
-
-![NanobotKT 设置页面](docs/images/readme/settings-capabilities.png)
-
----
-
-## 开发环境
-
-- Android Studio（最新稳定版）
-- JDK 17
-- Android SDK Platform 37，最小运行 SDK 24
-- Gradle Wrapper（仓库自带 `./gradlew`；macOS / Linux 上若提示权限，可使用 `sh ./gradlew`）
-
-调试默认直连局域网 Gateway：
+项目维护环境的默认 Gateway 入口为：
 
 ```text
 http://192.168.55.147:8765/
 ```
 
-需要连接其他环境时，通过 Gradle 属性 `NANOBOT_SERVER_URL` 或同名环境变量覆盖；不要在仓库中改写默认地址，也不要通过 `adb reverse` 绕过此约束。
+这是局域网地址，并非公开服务。为其他部署环境构建客户端时，需要显式配置设备可访问的 Gateway 地址；不要把 `localhost`、`127.0.0.1`、`10.0.2.2` 或临时 `adb reverse` 映射当作真实设备的正式入口。
 
-## 构建
+### 2. 选择 APK
+
+前往 [`dev-latest`](https://github.com/yaotutu/nanobotkt/releases/tag/dev-latest) 下载文件名带有 `-dev` 的 APK：
+
+| APK | 适用设备 |
+| --- | --- |
+| `app-universal-dev.apk` | 不确定设备架构时使用，推荐大多数用户下载 |
+| `app-arm64-v8a-dev.apk` | 绝大多数现代 Android 手机和平板 |
+| `app-armeabi-v7a-dev.apk` | 较老的 32 位 ARM 设备 |
+| `app-x86_64-dev.apk` / `app-x86-dev.apk` | Android 模拟器或少数 x86 设备 |
+
+公开 Dev APK 使用固定分发签名并保持相同应用 ID，版本升级后可以直接覆盖安装。请勿使用本地 Debug APK 覆盖公开 Dev 版，否则 Android 会因签名不同拒绝安装。
+
+### 3. 安装并连接
+
+1. 在 Android 系统设置中允许当前浏览器或文件管理器“安装未知应用”。
+2. 安装下载的 APK。
+3. 打开 NanobotKT，填写完整 Gateway 地址和 Bootstrap Secret。
+4. 点击“验证并连接”。只有验证成功后，客户端才会替换当前连接配置。
+
+> [!WARNING]
+> Bootstrap Secret、Token、Cookie、Provider API Key 和会话内容均属于敏感信息。请勿将它们放入截图、Issue、日志或公开讨论。跨公网部署时，应在可信网络边界内提供 Gateway，并使用可靠的传输保护和访问控制。
+
+## 运行要求
+
+- Android 7.0（API 24）或更高版本；
+- 能够访问 Nanobot Gateway 的网络；
+- 安装 APK 的系统权限；
+- 录音权限仅在使用语音输入时请求；
+- “安装未知应用”权限仅用于用户主动确认的应用内更新。
+
+当前唯一公开分发渠道是 GitHub `dev-latest`。请只从本仓库 Release 页面下载安装包，并确认文件名包含 `-dev`。
+
+## 反馈与参与
+
+欢迎通过 [Issues](https://github.com/yaotutu/nanobotkt/issues) 报告问题、提交兼容性结果或提出改进建议。反馈问题时，请尽量包含：
+
+1. NanobotKT 版本、Android 版本和设备型号；
+2. 问题入口、前置条件与稳定复现步骤；
+3. 预期结果和实际结果；
+4. 已脱敏的截图或日志。
+
+也欢迎参与翻译、无障碍、文档和 Material 3 交互改进。修改 Gateway 协议或关键状态机前，请先明确行为契约并补充对应测试。
+
+**请勿提交任何 Secret、Token、Cookie、Provider Key、真实聊天内容或其他个人数据。**
+
+## 本地开发
+
+### 环境要求
+
+- Android Studio 最新稳定版；
+- JDK 17；
+- Android SDK Platform 37；
+- 仓库自带的 Gradle Wrapper。
+
+### 构建与测试
 
 ```bash
-# 编译并安装 Debug APK
-sh ./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# 构建 Debug APK
+sh ./gradlew :app:assembleDebug --console=plain
 
-# 跑全模块编译与单元测试
-sh ./gradlew :app:testDebugUnitTest :app:assembleDebug
+# App/Root 单元测试与 Debug 构建
+sh ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain
+
+# 全模块 JVM 测试
+sh ./gradlew test --no-parallel --console=plain
+
+# Dev Lint 与构建
+sh ./gradlew :app:lintDev :app:assembleDev --console=plain
 ```
 
-ABI 相关的 APK（如 `app-x86_64-debug.apk`）在 `app/build/outputs/apk/debug/` 下单独产出，安装时按设备架构选择。
+Debug APK 输出目录：
 
-## 仓库约定
+```text
+app/build/outputs/apk/debug/
+```
 
-- AGENTS.md 是工程内 Agent 与贡献者的共同约定，包括模块依赖方向、状态管理、修改范围、发布流程和验证要求。
-- 截图、UI 规则、变更日志与发布流程分别维护在 `docs/images/`、`docs/UI_RULES.md`、`docs/CHANGELOG.md` 与 `docs/RELEASE.md`。
-- 版本号只在 `dev` / `main` 上通过 `scripts/release.sh dev` / `scripts/release.sh release` 递增，CI 只读不写。
+为明确授权的部署环境构建时，可通过 Gradle 属性或环境变量传入 `NANOBOT_SERVER_URL`。不要为了模拟器便利修改仓库默认地址，也不要使用 `adb reverse` 隐藏真实网络问题。
 
-## 后续
+## 技术架构
 
-- 跟进 Android 上 PWA 与 WebView 的能力差异，按需将可以标准化的部分重新反馈到 Nanobot 上游。
-- 持续打磨聊天时间线的滚动、IME 与进程恢复路径，让长会话在 Android 上和桌面 WebUI 一样可靠。
-- 在 Settings 与 Sidebar 中引入更多 Nanobot 能力的原生入口，避免用户在 WebUI 与 App 之间来回切换。
+**主要技术栈**
+
+- Kotlin、Coroutines、StateFlow
+- Jetpack Compose、Material 3、Navigation Compose
+- Hilt、KSP
+- OkHttp HTTP/WebSocket
+- Kotlinx Serialization
+- AndroidX Lifecycle、SavedStateHandle
+- 本地持久化与启动缓存
+
+<details>
+<summary><strong>查看模块结构与依赖方向</strong></summary>
+
+```text
+app/                     应用组合根、导航、Root 状态和 Hilt 组装
+core/model/              共享数据模型与序列化模型
+core/network/            Gateway HTTP/API 客户端
+core/transport/          Gateway WebSocket/实时传输
+core/persistence/        本地持久化
+core/designsystem/       共享 Compose 设计系统
+core/workspace-contract/ 跨 Feature 的 Workspace 最小能力契约
+feature/auth/            登录与认证
+feature/chat/            会话、消息时间线、发送与媒体预览
+feature/sidebar/         会话列表及其管理入口
+feature/workspaces/      Workspace 管理
+feature/settings/        设置、运行状态与应用更新
+feature/apps/            Apps 管理
+feature/skills/          Skills 管理
+feature/automations/     Automations 管理
+feature/channels/        Channels 管理
+feature/security/        Security 管理
+```
+
+```text
+app -> feature/* -> core/*
+app -> core/*
+feature/* -> core/*-contract
+```
+
+</details>
+
+## 项目文档
+
+- [工程协作规范](AGENTS.md)
+- [UI 规则](docs/UI_RULES.md)
+- [专项验证记录](docs/SMOKE_TEST.md)
+- [发布流程](docs/RELEASE.md)
+- [变更记录](docs/CHANGELOG.md)
+
+NanobotKT 是面向 Nanobot Gateway 的独立 Android 客户端。Nanobot 的服务端能力、协议和 WebUI 仍由对应 Nanobot 项目定义；本项目只专注 Android 端体验与集成。
+
+<details>
+<summary><strong>为什么不用 WebUI 或 PWA，而是重新开发 Android App？</strong></summary>
+
+官方 Nanobot WebUI 是本项目的产品、交互和数据语义基线，桌面端体验也已经十分完整。NanobotKT 选择原生 Android，并不是要分叉 Nanobot 或重复实现服务端能力，而是为了解决手机端长期存在的几个实际问题：
+
+- 桌面信息架构直接压缩到竖屏后，侧栏、会话列表和设置面板很难同时兼顾信息密度、触控尺寸与浏览效率；
+- 聊天页面对输入法、滚动位置、流式消息跟随和前后台切换十分敏感，WebView/PWA 难以稳定达到原生体验；
+- Android 对 PWA 的后台运行、通知、文件与媒体权限、独立窗口和厂商 ROM 兼容性支持并不一致；
+- 长连接在浏览器进程被系统回收后缺少可控的恢复路径，而原生客户端可以围绕 Android 生命周期明确管理连接、重连和状态恢复。
+
+因此，NanobotKT 使用 Compose 为竖屏与触控重新组织界面，使用 Android 生命周期与 `SavedStateHandle` 管理恢复路径，并通过原生网络层维护 HTTP、WebSocket、取消和重连状态。Gateway 仍然是唯一真实来源，客户端不会复制 Nanobot 的 Agent 逻辑。
+
+目标很简单：让同一套 Nanobot 能力在 Android 手机上更自然、更可靠。
+
+</details>
