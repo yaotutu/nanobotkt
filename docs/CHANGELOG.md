@@ -1,9 +1,12 @@
-# NanobotKT 0.1.21
+# NanobotKT 0.1.22
 
-> 自动构建发布，提交：`f189464`。
+> 自动构建发布，提交：`d7ca74d`。
 
 ## 变更
 
+- fix(chat): clear composer when starting new conversation (`d7ca74d`)
+- docs: rewrite project readme (`78096fd`)
+- chore(dev): prepare v0.1.21 (`7942d17`)
 - fix: resolve chat activity state regressions (`f189464`)
 - fix: coordinate chat startup refresh (`868a5c6`)
 - fix: stabilize transport websocket tests (`d634ae2`)
