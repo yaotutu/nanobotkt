@@ -285,8 +285,9 @@ private fun ReadyRoot(
                 selected.modelPreset,
             )
             // 删除最后一个已加载会话后，必须把 ChatRepository 也切回新主题，
-            // 否则 Root 虽然没有 selectedKey，聊天页仍会持有已删除的 chatId。
-            sidebar.loaded && selectedKey == null && !draftingNewTopic -> chatViewModel.startNewTopic()
+            // 否则 Root 虽然没有 selectedKey，聊天页仍会持有已删除的 chatId。该分支也会处理
+            // 启动时的空选择恢复，因此只能恢复 new-topic 草稿，不能按“用户主动新建”清空输入。
+            sidebar.loaded && selectedKey == null && !draftingNewTopic -> chatViewModel.restoreNewTopic()
         }
     }
 

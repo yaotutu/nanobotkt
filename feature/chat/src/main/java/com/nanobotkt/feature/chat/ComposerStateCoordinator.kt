@@ -78,12 +78,17 @@ internal class ComposerStateCoordinator(
     }
 
     /**
-     * 切换会话时先尽力保存旧会话快照，再异步恢复目标会话的唯一 Draft。
+     * 切换会话时先尽力保存旧会话快照，再按调用语义恢复或清空目标会话的唯一 Draft。
      *
+     * [restoreTargetDraft] 为 false 只用于用户明确点击“新建对话”的重新开始动作：目标 scope 的
+     * 内存状态和 Room 记录都必须清空。普通会话切换及进程恢复仍传 true，避免误删尚未发送的草稿。
      * hydration 期间如果用户已经开始输入，revision 会从 0 增长；此时磁盘旧草稿不得覆盖新输入。
      * 旧会话保存使用切换前捕获的 scope，不会因为 currentScope 已更新而写入新会话。
      */
-    fun switchScope(target: ComposerDraftScope) {
+    fun switchScope(
+        target: ComposerDraftScope,
+        restoreTargetDraft: Boolean = true,
+    ) {
         val previousScope = currentScope
         val previousSnapshot = mutableState.value
         draftSaveJob?.cancel()
@@ -98,9 +103,25 @@ internal class ComposerStateCoordinator(
                 // 旧 scope 的最终快照、新 scope 的读取以及 hydration 状态提交必须处在同一串行边界。
                 // 否则 Activity STOP 的 final flush 可能在“Room 已读完、revision 尚未提升”的缝隙里
                 // 保存较小 revision，随后进程被杀时，用户刚输入的长文本仍会输给磁盘旧记录。
-                if (previousScope != null && !previousSnapshot.hydrating) {
+                if (
+                    previousScope != null &&
+                    !previousSnapshot.hydrating &&
+                    (restoreTargetDraft || previousScope != target)
+                ) {
+                    // 从已有会话进入新主题时仍需保留旧会话自己的草稿；但连续点击“新建对话”时，
+                    // previousScope 与 target 都是 new-topic，此时绝不能先把待丢弃正文重新写回 Room。
                     runCatching { persistSnapshotUnlocked(previousScope, previousSnapshot) }
                 }
+                if (!restoreTargetDraft) {
+                    // 明确新建对话必须删除目标 scope 的持久化草稿。只清内存会导致应用进程重建后
+                    // 旧输入再次被 hydration 恢复，表现为同一个 Bug 隔一段时间重新出现。
+                    runCatching { draftStore.delete(target.key) }
+                    if (epoch == expectedEpoch && currentScope == target) {
+                        setInternal(mutableState.value.copy(hydrating = false))
+                    }
+                    return@withLock
+                }
+
                 val loaded = runCatching { draftStore.load(target.key) }.getOrNull()
                 if (epoch != expectedEpoch || currentScope != target) return@withLock
 

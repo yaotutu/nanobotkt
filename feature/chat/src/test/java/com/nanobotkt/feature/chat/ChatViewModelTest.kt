@@ -77,6 +77,48 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `explicit new topic clears the current new topic draft`() = runTest {
+        val viewModel = viewModel()
+        viewModel.startNewTopic()
+        runCurrent()
+        viewModel.updateText("大海为什么是蓝色的？")
+        advanceTimeBy(250L)
+        runCurrent()
+        assertEquals(
+            "大海为什么是蓝色的？",
+            composerDraftStore.records.getValue("new-topic").payload.text,
+        )
+
+        viewModel.startNewTopic()
+        advanceUntilIdle()
+
+        // “新建对话”是明确的重新开始动作：内存输入与可恢复磁盘草稿都必须一起清空，
+        // 否则当前界面虽然暂时为空，进程重建后旧问题仍会再次回到输入框。
+        assertEquals(ComposerUiState(), viewModel.composer.value)
+        assertFalse(composerDraftStore.records.containsKey("new-topic"))
+        assertEquals(2, repository.startNewTopicCount)
+    }
+
+    @Test
+    fun `restoring new topic keeps its process recovery draft`() = runTest {
+        composerDraftStore.save(
+            scopeKey = "new-topic",
+            revision = 5L,
+            payload = ComposerDraftPayload(text = "进程恢复草稿", cursorPosition = 3),
+        )
+        val viewModel = viewModel()
+
+        viewModel.restoreNewTopic()
+        advanceUntilIdle()
+
+        // Root 在首次加载或删除最后一个会话后进入空选中态时仍属于状态恢复，不能把它
+        // 等同于用户点击“新建对话”，否则后台进程重建会静默丢失尚未发送的草稿。
+        assertEquals("进程恢复草稿", viewModel.composer.value.text)
+        assertEquals(3, viewModel.composer.value.cursorPosition)
+        assertFalse(viewModel.composer.value.hydrating)
+    }
+
+    @Test
     fun `late attachment result from previous session cannot mutate the new composer`() = runTest {
         val encoder = DeferredAttachmentEncoder()
         val viewModel = viewModel(encoder)

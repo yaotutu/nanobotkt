@@ -58,10 +58,22 @@ constructor(
         repository.openSession(sessionKey, chatId, workspaceScope, modelPreset)
     }
 
-    fun startNewTopic() {
+    /** 用户明确点击“新建对话”：旧的新主题草稿属于被放弃的输入，必须从内存和磁盘一起清空。 */
+    fun startNewTopic() = enterNewTopic(restoreComposerDraft = false)
+
+    /**
+     * Root 在启动恢复或删除最后一个会话后进入空选择态时使用。该路径不是用户主动新建，
+     * 因此仍需恢复 new-topic 草稿，避免进程重建静默丢失尚未发送的输入。
+     */
+    fun restoreNewTopic() = enterNewTopic(restoreComposerDraft = true)
+
+    private fun enterNewTopic(restoreComposerDraft: Boolean) {
         repository.clearFilePreview()
         voiceCoordinator.reset()
-        composerCoordinator.switchScope(newTopicComposerScope(state.value.workspaceScope?.projectPath))
+        composerCoordinator.switchScope(
+            target = newTopicComposerScope(state.value.workspaceScope?.projectPath),
+            restoreTargetDraft = restoreComposerDraft,
+        )
         openedSessionKey = null
         repository.startNewTopic()
     }
