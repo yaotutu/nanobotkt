@@ -1,9 +1,11 @@
-# NanobotKT 0.1.26
+# NanobotKT 0.1.27
 
-> 自动构建发布，提交：`215bb13`。
+> 自动构建发布，提交：`41a3424`。
 
 ## 变更
 
+- refactor(ui): align screens with Material 3 (`41a3424`)
+- chore(dev): prepare v0.1.26 (`bb20766`)
 - fix(chat): handle rejected workspace switching (`215bb13`)
 - chore(dev): prepare v0.1.25 (`96b4d7d`)
 - feat(chat): move workspace selection to new topic composer (`574d720`)
