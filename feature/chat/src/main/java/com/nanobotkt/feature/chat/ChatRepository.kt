@@ -65,7 +65,7 @@ interface ChatRepository {
      * 清理当前登录会话留下的聊天状态，避免退出登录后旧会话内容继续显示。
      */
     fun reset()
-    fun startNewTopic()
+    fun startNewTopic(workspaceScope: WorkspaceScope? = null)
     fun openSession(sessionKey: String, chatId: String, workspaceScope: WorkspaceScope? = null, modelPreset: String? = null)
     suspend fun newChat(workspaceScope: WorkspaceScope? = null): String
     fun setWorkspaceScope(workspaceScope: WorkspaceScope)
@@ -376,7 +376,7 @@ class DefaultChatRepository @Inject constructor(
         }
     }
 
-    override fun startNewTopic() {
+    override fun startNewTopic(workspaceScope: WorkspaceScope?) {
         filePreviewLoader.invalidate()
         val catalogs = mutableState.value
         activeSessionModelPreset = null
@@ -390,7 +390,7 @@ class DefaultChatRepository @Inject constructor(
                 cliApps = catalogs.cliApps,
                 mcpPresets = catalogs.mcpPresets,
                 workspaces = catalogs.workspaces,
-                workspaceScope = catalogs.workspaces?.defaultScope?.normalized(),
+                workspaceScope = (workspaceScope ?: catalogs.workspaces?.defaultScope)?.normalized(),
                 model = buildModelSelection(scopeKey = NEW_TOPIC_MODEL_SCOPE),
             )
         }

@@ -17,7 +17,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.DropdownMenu
@@ -40,9 +39,9 @@ import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 /**
  * 聊天页唯一的顶部常驻区域。
  *
- * 顶部承载“会话导航、标题、运行/连接状态、系统设置、当前会话菜单”。会话列表属于页面导航，
- * 固定放在标题左侧；系统设置与当前会话菜单仍保持右侧独立入口，避免把应用级和会话级操作混在
- * 同一个菜单中。空闲时不渲染状态文案；出现运行、等待或连接状态时才增加第二行。
+ * 顶部只承载“标题、运行/连接状态、系统设置、当前会话菜单”。会话列表属于高频的移动端导航，
+ * 已下沉到 Composer 左侧的独立按钮；这里不再保留重复入口，避免顶部和底部出现两个相同动作。
+ * 空闲时不渲染状态文案；出现运行、等待或连接状态时才增加第二行。
  */
 @Composable
 internal fun ChatTopStatusBar(
@@ -54,7 +53,6 @@ internal fun ChatTopStatusBar(
     hasPromptNavigator: Boolean,
     hasSessionInfo: Boolean,
     hasAccessSettings: Boolean,
-    onOpenConversationList: () -> Unit,
     onOpenSettings: () -> Unit,
     onStatusClick: () -> Unit,
     onConfigMenuOpenChange: (Boolean) -> Unit,
@@ -75,19 +73,10 @@ internal fun ChatTopStatusBar(
                 .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 会话导航从 Composer 迁移到顶部，既符合 Android 的页面层级习惯，也把底部横向空间
-        // 完整留给输入内容；按钮仍保留 48dp 触控目标，视觉图标保持轻量。
-        IconButton(onClick = onOpenConversationList) {
-            Icon(
-                imageVector = Icons.Rounded.Menu,
-                contentDescription = stringResource(R.string.open_conversation_list),
-                modifier = Modifier.size(22.dp),
-                tint = muted,
-            )
-        }
-
         Column(
-            modifier = Modifier.weight(1f).padding(start = 4.dp),
+            // 移除左侧会话按钮后补足标准页面边距，避免标题贴近屏幕边缘；weight 继续保证
+            // 超长标题优先压缩，不会把右侧系统设置和当前会话设置挤出可触控区域。
+            modifier = Modifier.weight(1f).padding(start = 12.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             Text(

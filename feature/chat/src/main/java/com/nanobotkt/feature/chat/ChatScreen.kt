@@ -307,6 +307,11 @@ fun ChatScreen(
                 )
             },
             onPickFiles = { filePicker.launch(arrayOf("*/*")) },
+            onOpenConversationList = {
+                // 会话导航入口位于输入框外侧，但仍复用当前 ChatScreen 内的 Sheet；这样只改变
+                // 触达位置，不改变会话选择、草稿恢复或消息树生命周期。
+                conversationSheetOpen = true
+            },
         )
     }
 
@@ -336,10 +341,6 @@ fun ChatScreen(
             hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
             hasSessionInfo = state.sessionKey != null,
             hasAccessSettings = activeWorkspaceScope != null,
-            onOpenConversationList = {
-                // 会话列表继续使用同一 ChatScreen 内的 Sheet，打开导航不会销毁消息树或重建会话。
-                conversationSheetOpen = true
-            },
             onOpenSettings = onOpenSettings,
             onStatusClick = {
                 // 运行/等待状态指向当前时间轴中最后一段可见 Activity；连接状态没有对应
@@ -463,12 +464,6 @@ fun ChatScreen(
         onRename = onRenameConversation,
         onArchive = onArchiveConversation,
         onDelete = onDeleteConversation,
-        onOpenSettings = {
-            // 全局设置属于低频入口，不回到聊天页顶部常驻占位；先关闭会话 Sheet，
-            // 再交给 app 组合根导航到 Settings Home，返回时仍恢复当前聊天会话。
-            conversationSheetOpen = false
-            onOpenSettings()
-        },
     )
 
     if (modelDialogOpen) {

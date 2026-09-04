@@ -59,7 +59,8 @@ constructor(
     }
 
     /** 用户明确点击“新建对话”：旧的新主题草稿属于被放弃的输入，必须从内存和磁盘一起清空。 */
-    fun startNewTopic() = enterNewTopic(restoreComposerDraft = false)
+    fun startNewTopic(workspaceScope: WorkspaceScope? = null) =
+        enterNewTopic(workspaceScope = workspaceScope, restoreComposerDraft = false)
 
     /**
      * Root 在启动恢复或删除最后一个会话后进入空选择态时使用。该路径不是用户主动新建，
@@ -67,15 +68,20 @@ constructor(
      */
     fun restoreNewTopic() = enterNewTopic(restoreComposerDraft = true)
 
-    private fun enterNewTopic(restoreComposerDraft: Boolean) {
+    private fun enterNewTopic(workspaceScope: WorkspaceScope? = null, restoreComposerDraft: Boolean) {
         repository.clearFilePreview()
         voiceCoordinator.reset()
+        // Composer 的草稿作用域与 Repository 的新主题 Workspace 必须使用同一个解析结果。
+        // 否则从非默认会话新建默认主题时，正文可能写进旧 Workspace 的草稿 key，进程恢复后串稿。
+        val resolvedScope = workspaceScope
+            ?: state.value.workspaces?.defaultScope
+            ?: state.value.workspaceScope
         composerCoordinator.switchScope(
-            target = newTopicComposerScope(state.value.workspaceScope?.projectPath),
+            target = newTopicComposerScope(resolvedScope?.projectPath),
             restoreTargetDraft = restoreComposerDraft,
         )
         openedSessionKey = null
-        repository.startNewTopic()
+        repository.startNewTopic(resolvedScope)
     }
 
     fun setWorkspaceScope(workspaceScope: WorkspaceScope) {

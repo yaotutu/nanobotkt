@@ -30,7 +30,6 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -140,7 +139,6 @@ fun ConversationListSheet(
     onRename: (ConversationListItem, String) -> Unit,
     onArchive: (String) -> Unit,
     onDelete: (ConversationListItem) -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
     if (!visible) return
 
@@ -182,14 +180,8 @@ fun ConversationListSheet(
                     fontWeight = FontWeight.SemiBold,
                 )
                 if (!archivedMode) {
-                    // 全局设置与新建会话都属于会话导航层的低频操作。它们只在 Sheet
-                    // 打开时出现，不占用聊天主页的顶部、时间轴或输入区空间。
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            Icons.Rounded.Settings,
-                            contentDescription = stringResource(R.string.system_settings),
-                        )
-                    }
+                    // 全局设置已经由聊天主页顶部的常驻入口承载；会话列表只保留与会话导航
+                    // 直接相关的新建操作，避免同一个 Settings 动作在两个层级重复出现。
                     IconButton(onClick = onNewTopic) {
                         Icon(
                             Icons.Rounded.Add,

@@ -136,6 +136,41 @@ class ConversationListScreenUiTest {
     }
 
     @Test
+    fun conversationSheetDoesNotDuplicateGlobalSettingsEntry() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        composeRule.setContent {
+            NanobotTheme(darkTheme = false, dynamicColor = false) {
+                ConversationListSheet(
+                    items = emptyList(),
+                    archivedItems = emptyList(),
+                    selectedKey = null,
+                    visible = true,
+                    onDismiss = {},
+                    onSelect = {},
+                    onNewTopic = {},
+                    onTogglePinned = {},
+                    onRename = { _, _ -> },
+                    onArchive = {},
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText(context.getString(R.string.conversation_list_title))
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(
+            context.getString(R.string.conversation_new_topic)
+        )
+            .assertIsDisplayed()
+            .assertHasClickAction()
+        // Settings 已经由聊天首页顶部入口承载；会话 Sheet 中不再渲染重复的全局设置按钮，
+        // 从而避免用户在两个层级看到同一个入口并误以为它们作用域不同。
+        composeRule.onAllNodesWithContentDescription(
+            context.getString(R.string.system_settings)
+        ).assertCountEquals(0)
+    }
+
+    @Test
     fun pendingConversationDisablesMutationMenu() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         composeRule.setContent {

@@ -919,9 +919,12 @@ private class FakeChatRepository : ChatRepository {
     val modelPresetChanges = mutableListOf<String>()
     var startNewTopicCount = 0
 
-    override fun startNewTopic() {
+    override fun startNewTopic(workspaceScope: WorkspaceScope?) {
         startNewTopicCount += 1
-        mutableState.value = ChatUiState(workspaceScope = mutableState.value.workspaceScope)
+        mutableState.value = ChatUiState(
+            // Fake 与生产 Repository 保持同一接口语义：明确选择的 Workspace 优先于当前值。
+            workspaceScope = workspaceScope ?: mutableState.value.workspaceScope,
+        )
     }
 
     override fun reset() = Unit

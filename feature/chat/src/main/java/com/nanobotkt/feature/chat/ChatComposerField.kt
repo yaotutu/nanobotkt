@@ -1,6 +1,8 @@
 package com.nanobotkt.feature.chat
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -14,10 +16,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,13 +34,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 
 /** Chat Composer 文本输入，保留现有光标、IME Send 和最多五行的内部滚动行为。 */
 @Composable
@@ -154,10 +164,40 @@ internal fun reconcileComposerFieldValue(
 }
 
 /**
+ * 输入框外侧的会话导航按钮。
+ *
+ * 该按钮与输入胶囊保持独立的 Surface 和点击语义：它切换的是当前聊天上下文，不会被误解为
+ * 当前消息的附件或发送动作。即使输入框扩展为多行，父级 Row 也会让它固定贴在底部，保持单手
+ * 操作时的空间记忆；48dp 的外层触控区域满足 Android 无障碍最小目标尺寸。
+ */
+@Composable
+internal fun ConversationListButton(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(48.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)),
+        tonalElevation = 1.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Rounded.ChatBubbleOutline,
+                contentDescription = stringResource(R.string.open_conversation_list),
+                modifier = Modifier.size(21.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
  * 输入框左侧的“+”严格限定为附件菜单。
  *
- * 采用锚定 DropdownMenu 而不是多页面 Sheet，使图片/文件保持两项轻量操作；模型、权限和
- * Workspace 不再经过此入口，相关能力由顶部当前会话配置承接。
+ * 采用自定义定位的 Popup，而不是直接使用 DropdownMenu 的默认窗口兜底策略。默认策略在底部
+ * Composer 与输入法联动时可能把菜单回退到窗口顶部；这里仍保留 Popup 的焦点管理、返回键和
+ * 点击外部关闭能力，只替换定位规则，让菜单始终贴近触发按钮。
  */
 @Composable
 internal fun AttachmentMenuButton(
@@ -184,19 +224,39 @@ internal fun AttachmentMenuButton(
                 )
             }
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            CHAT_ATTACHMENT_ACTIONS.forEach { action ->
-                when (action) {
-                    AttachmentMenuAction.IMAGES ->
+
+        if (expanded) {
+            val density = LocalDensity.current
+            val positionProvider =
+                remember(density) {
+                    AttachmentMenuPositionProvider(
+                        edgeMarginPx = with(density) { 8.dp.roundToPx() },
+                        anchorGapPx = with(density) { 4.dp.roundToPx() },
+                    )
+                }
+            Popup(
+                popupPositionProvider = positionProvider,
+                onDismissRequest = { expanded = false },
+                // focusable=true 使返回键和点击 Popup 外部都能触发 dismiss，行为与原菜单一致。
+                properties = PopupProperties(focusable = true),
+            ) {
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 3.dp,
+                    shadowElevation = 6.dp,
+                ) {
+                    Column {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.attach_image)) },
-                            leadingIcon = { Icon(Icons.Rounded.Image, contentDescription = null) },
+                            leadingIcon = {
+                                Icon(Icons.Rounded.Image, contentDescription = null)
+                            },
                             onClick = {
                                 expanded = false
                                 onPickImages()
                             },
                         )
-                    AttachmentMenuAction.FILES ->
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.attach_file)) },
                             leadingIcon = {
@@ -207,9 +267,53 @@ internal fun AttachmentMenuButton(
                                 onPickFiles()
                             },
                         )
+                    }
                 }
             }
         }
+    }
+}
+
+/**
+ * 将附件菜单固定到“+”按钮的近邻区域，并对窗口边界做最小限度保护。
+ *
+ * Popup 的 anchorBounds 是包裹触发按钮的 Box 边界。优先尝试按钮上方 4dp，符合底部输入区的
+ * 操作习惯；如果上方空间不足则改放到按钮下方，最后才在窗口内裁切。这样键盘显示/隐藏、
+ * 横竖屏和不同密度下都不会把菜单放到与触发按钮无关的窗口角落。
+ */
+internal data class AttachmentMenuPositionProvider(
+    val edgeMarginPx: Int,
+    val anchorGapPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val preferredX =
+            if (layoutDirection == LayoutDirection.Ltr) {
+                anchorBounds.left
+            } else {
+                anchorBounds.right - popupContentSize.width
+            }
+        val maxX =
+            (windowSize.width - edgeMarginPx - popupContentSize.width)
+                .coerceAtLeast(edgeMarginPx)
+        val x = preferredX.coerceIn(edgeMarginPx, maxX)
+
+        val aboveY = anchorBounds.top - popupContentSize.height - anchorGapPx
+        val belowY = anchorBounds.bottom + anchorGapPx
+        val maxY =
+            (windowSize.height - edgeMarginPx - popupContentSize.height)
+                .coerceAtLeast(edgeMarginPx)
+        val y =
+            when {
+                aboveY >= edgeMarginPx -> aboveY
+                belowY <= maxY -> belowY
+                else -> aboveY.coerceIn(edgeMarginPx, maxY)
+            }
+        return IntOffset(x = x, y = y)
     }
 }
 

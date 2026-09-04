@@ -51,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,6 +79,7 @@ internal fun HeroComposer(
     onRemoveAttachment: (Int) -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
+    onOpenConversationList: () -> Unit,
 ) {
     ComposerLayout(
         state = state,
@@ -97,6 +99,7 @@ internal fun HeroComposer(
         onRemoveAttachment = onRemoveAttachment,
         onPickImages = onPickImages,
         onPickFiles = onPickFiles,
+        onOpenConversationList = onOpenConversationList,
     )
 }
 
@@ -119,6 +122,7 @@ internal fun ConversationComposer(
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
+    onOpenConversationList: () -> Unit,
 ) {
     ComposerLayout(
         state = state,
@@ -139,6 +143,7 @@ internal fun ConversationComposer(
         onClearQuote = onClearQuote,
         onPickImages = onPickImages,
         onPickFiles = onPickFiles,
+        onOpenConversationList = onOpenConversationList,
     )
 }
 
@@ -169,6 +174,7 @@ internal fun ComposerLayout(
     onClearQuote: () -> Unit = {},
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
+    onOpenConversationList: () -> Unit,
 ) {
     val hasDraft =
         state.text.isNotBlank() ||
@@ -320,57 +326,70 @@ internal fun ComposerLayout(
                 }
             }
 
-            // 会话列表属于页面导航而不是消息草稿，因此入口已经迁移到顶部栏。底部只保留一个
-            // 完整宽度的输入容器，避免“Chats 胶囊 + 输入胶囊”把有限横向空间切成两块。
-            Surface(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = inputContainerColor,
-                border =
-                    BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f),
-                    ),
-                tonalElevation = 1.dp,
-                shadowElevation = 0.dp,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                // 输入框增长为多行时，会话按钮固定贴住底边，不会跟随整行居中上浮。
+                verticalAlignment = Alignment.Bottom,
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.Bottom,
+                ConversationListButton(onClick = onOpenConversationList)
+
+                // 会话按钮明确位于输入胶囊之外；输入胶囊内部只保留当前消息相关的附件、
+                // 文本与发送动作，从视觉层级上区分“切换上下文”和“编辑当前消息”。
+                Surface(
+                    modifier =
+                        Modifier.weight(1f)
+                            // 测试标签只标记输入胶囊的真实视觉边界，用于验证会话按钮确实在其外侧；
+                            // 不参与业务状态，也不会改变 TalkBack 的 contentDescription。
+                            .testTag(CHAT_INPUT_CONTAINER_TEST_TAG),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = inputContainerColor,
+                    border =
+                        BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f),
+                        ),
+                    tonalElevation = 1.dp,
+                    shadowElevation = 0.dp,
                 ) {
-                    AttachmentMenuButton(
-                        enabled =
-                            draftEditable &&
-                                !state.voice.isRecording &&
-                                !state.voice.isTranscribing,
-                        onPickImages = onPickImages,
-                        onPickFiles = onPickFiles,
-                    )
-                    ComposerTextField(
-                        state = state,
-                        modifier = Modifier.weight(1f),
-                        // Active turn 期间仍允许准备下一条 Draft，但它不会被排队或自动发送，
-                        // 因此沿用普通输入提示，避免向用户暗示存在已删除的 Queue 能力。
-                        placeholder = placeholder,
-                        textColor = MaterialTheme.colorScheme.onSurface,
-                        mutedColor = mutedColor,
-                        sendAllowed = sendEnabled,
-                        onTextChange = onTextChange,
-                        onSend = onSend,
-                    )
-                    ComposerPrimaryActionButton(
-                        showSendAction = hasDraft,
-                        stopButton = stopButton,
-                        sendEnabled = sendEnabled,
-                        sending = state.sending,
-                        stopping = stopping,
-                        // 空草稿时只保留弱化的发送图标；有草稿或运行中才形成高强调主操作。
-                        controlColor = Color.Transparent,
-                        sendColor = actionColor,
-                        sendContentColor = actionContentColor,
-                        onSend = onSend,
-                        onStop = onStop,
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        AttachmentMenuButton(
+                            enabled =
+                                draftEditable &&
+                                    !state.voice.isRecording &&
+                                    !state.voice.isTranscribing,
+                            onPickImages = onPickImages,
+                            onPickFiles = onPickFiles,
+                        )
+                        ComposerTextField(
+                            state = state,
+                            modifier = Modifier.weight(1f),
+                            // Active turn 期间仍允许准备下一条 Draft，但它不会被排队或自动发送，
+                            // 因此沿用普通输入提示，避免向用户暗示存在已删除的 Queue 能力。
+                            placeholder = placeholder,
+                            textColor = MaterialTheme.colorScheme.onSurface,
+                            mutedColor = mutedColor,
+                            sendAllowed = sendEnabled,
+                            onTextChange = onTextChange,
+                            onSend = onSend,
+                        )
+                        ComposerPrimaryActionButton(
+                            showSendAction = hasDraft,
+                            stopButton = stopButton,
+                            sendEnabled = sendEnabled,
+                            sending = state.sending,
+                            stopping = stopping,
+                            // 空草稿时只保留弱化的发送图标；有草稿或运行中才形成高强调主操作。
+                            controlColor = Color.Transparent,
+                            sendColor = actionColor,
+                            sendContentColor = actionContentColor,
+                            onSend = onSend,
+                            onStop = onStop,
+                        )
+                    }
                 }
             }
         }
@@ -432,6 +451,7 @@ internal fun Composer(
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
+    onOpenConversationList: () -> Unit,
 ) {
     if (isHero) {
         HeroComposer(
@@ -451,6 +471,7 @@ internal fun Composer(
             onRemoveAttachment = onRemoveAttachment,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
+            onOpenConversationList = onOpenConversationList,
         )
     } else {
         ConversationComposer(
@@ -471,6 +492,10 @@ internal fun Composer(
             onClearQuote = onClearQuote,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
+            onOpenConversationList = onOpenConversationList,
         )
     }
 }
+
+/** 供 Compose 仪器测试定位输入胶囊真实边界，避免把整个底栏误当作输入框。 */
+internal const val CHAT_INPUT_CONTAINER_TEST_TAG = "chat_input_container"

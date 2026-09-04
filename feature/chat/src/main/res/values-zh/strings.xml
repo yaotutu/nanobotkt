@@ -14,6 +14,8 @@
     <string name="conversation_empty">还没有会话</string>
     <string name="conversation_no_results">没有匹配的会话</string>
     <string name="conversation_new_topic">新建会话</string>
+    <string name="workspace_select_title">选择工作区</string>
+    <string name="confirm">确认</string>
     <string name="topic_actions">会话操作</string>
     <string name="pin">置顶</string>
     <string name="unpin">取消置顶</string>
