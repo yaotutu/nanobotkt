@@ -1,7 +1,10 @@
 package com.nanobotkt.feature.chat
 
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -16,75 +19,77 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 验证新建会话 Workspace 选择器的用户可见规则和完整路径传递边界。
+ * 验证新主题输入框上方 Workspace 选择器的展示与回调边界。
  *
- * 测试只渲染独立 Dialog，不触发 Root、Repository 或 Gateway；因此可以确认重名展示和
- * 选择回调，而不会创建真实会话或把任何设备数据写入服务端。
+ * 测试只渲染独立选择器，不触发 Root、Repository 或 Gateway；这样可以确认完整路径传递，
+ * 同时不会创建真实会话或把设备上的用户数据带入测试产物。
  */
 @RunWith(AndroidJUnit4::class)
 class WorkspaceSelectionUiTest {
-    @get:Rule
-    val composeRule = createComposeRule()
+    @get:Rule val composeRule = createComposeRule()
 
     @Test
     fun duplicateLeafNamesShowFullPathsAndReturnSelectedScope() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val selectedScope = AtomicReference<WorkspaceScope?>(null)
-        val options = buildWorkspaceOptions(
-            listOf(
-                workspaceScope("/Users/test/client-a/nanobot"),
-                workspaceScope("/Users/test/client-b/nanobot"),
-            ),
-        )
+        val options =
+            buildWorkspaceOptions(
+                listOf(
+                    workspaceScope("/Users/test/client-a/nanobot"),
+                    workspaceScope("/Users/test/client-b/nanobot"),
+                )
+            )
 
         composeRule.setContent {
             NanobotTheme(darkTheme = false, dynamicColor = false) {
-                WorkspaceSelectionDialog(
+                NewTopicWorkspaceSelector(
+                    currentScope = options.first().scope,
                     options = options,
+                    enabled = true,
                     onSelect = selectedScope::set,
-                    onDismiss = {},
                 )
             }
         }
 
-        composeRule.onNodeWithText("/Users/test/client-b/nanobot")
+        composeRule.onNodeWithTag(NEW_TOPIC_WORKSPACE_SELECTOR_TEST_TAG)
             .assertIsDisplayed()
+            .assertHasClickAction()
             .performClick()
-        composeRule.onNodeWithText(context.getString(R.string.confirm))
+        composeRule.onNodeWithText("/Users/test/client-b/nanobot")
             .assertIsDisplayed()
             .performClick()
 
         composeRule.runOnIdle {
-            // UI 可以展示路径文本，但回调必须返回完整 WorkspaceScope，供新主题请求使用。
+            // 展示可以使用目录名或完整路径，但业务回调必须保留规范化后的绝对路径。
             assertEquals("/Users/test/client-b/nanobot", selectedScope.get()?.projectPath)
         }
     }
 
     @Test
-    fun uniqueLeafNamesStayCompact() {
-        val options = buildWorkspaceOptions(
-            listOf(
-                workspaceScope("/Users/test/client-a/nanobot"),
-                workspaceScope("/Users/test/client-b/mobile"),
-            ),
-        )
+    fun singleWorkspaceIsVisibleButCannotOpenASelectionMenu() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val option = buildWorkspaceOptions(listOf(workspaceScope("/Users/test/mobile"))).single()
 
         composeRule.setContent {
             NanobotTheme(darkTheme = false, dynamicColor = false) {
-                WorkspaceSelectionDialog(
-                    options = options,
+                NewTopicWorkspaceSelector(
+                    currentScope = option.scope,
+                    options = listOf(option),
+                    enabled = true,
                     onSelect = {},
-                    onDismiss = {},
                 )
             }
         }
 
-        composeRule.onNodeWithText("nanobot").assertIsDisplayed()
-        composeRule.onNodeWithText("mobile").assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.current_workspace, "mobile"))
+            .assertIsDisplayed()
+        // 只有一个 Workspace 时仍展示当前目录，但不制造一个没有实际选项的可点击入口。
+        composeRule.onNodeWithTag(NEW_TOPIC_WORKSPACE_SELECTOR_TEST_TAG)
+            .assertIsNotEnabled()
     }
 
-    private fun workspaceScope(path: String) = WorkspaceScope(
-        projectPath = path,
-        accessMode = WorkspaceAccessMode.RESTRICTED,
-    )
+    private fun workspaceScope(path: String) =
+        WorkspaceScope(
+            projectPath = path,
+            accessMode = WorkspaceAccessMode.RESTRICTED,
+        )
 }

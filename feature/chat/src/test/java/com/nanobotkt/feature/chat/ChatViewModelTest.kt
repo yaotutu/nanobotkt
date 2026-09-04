@@ -235,13 +235,52 @@ class ChatViewModelTest {
         val viewModel = viewModel()
         viewModel.startNewTopic()
 
-        viewModel.setWorkspaceScope(scope)
+        viewModel.setDraftWorkspaceScope(scope)
         viewModel.newChat()
         advanceUntilIdle()
 
         assertEquals(listOf(scope), repository.workspaceScopeChanges)
         assertEquals(listOf(scope), repository.newChatScopes)
         assertEquals(1, repository.startNewTopicCount)
+    }
+
+    @Test
+    fun `draft workspace change is ignored after a session exists`() {
+        val initial = workspaceScope("/srv/initial", WorkspaceAccessMode.RESTRICTED)
+        val replacement = workspaceScope("/srv/replacement", WorkspaceAccessMode.FULL)
+        val viewModel = viewModel()
+        viewModel.open("websocket:a", "a", initial)
+
+        viewModel.setDraftWorkspaceScope(replacement)
+
+        // 历史会话的 Workspace 已在首条消息发送时确定；新主题选择器的迟到事件不能改写它。
+        assertTrue(repository.workspaceScopeChanges.isEmpty())
+        assertEquals(initial, repository.state.value.workspaceScope)
+    }
+
+    @Test
+    fun `draft workspace change is ignored while first send awaits acceptance`() = runTest {
+        val initial = workspaceScope("/srv/initial", WorkspaceAccessMode.RESTRICTED)
+        val replacement = workspaceScope("/srv/replacement", WorkspaceAccessMode.FULL)
+        val acceptanceGate = CompletableDeferred<Unit>()
+        val viewModel = viewModel()
+        viewModel.startNewTopic(initial)
+        runCurrent()
+        viewModel.updateText("first question")
+        repository.sendBlock = { _, _, _ -> acceptanceGate.await() }
+
+        viewModel.send()
+        runCurrent()
+        viewModel.setDraftWorkspaceScope(replacement)
+
+        // 新会话 ID 可能晚于发送点击返回；这段窗口必须以 Composer.sending 锁住 Workspace，
+        // 否则可见选择和已经持久化、即将发往 Gateway 的发送快照会指向不同目录。
+        assertTrue(viewModel.composer.value.sending)
+        assertTrue(repository.workspaceScopeChanges.isEmpty())
+        assertEquals(initial, repository.state.value.workspaceScope)
+
+        acceptanceGate.complete(Unit)
+        advanceUntilIdle()
     }
 
     @Test

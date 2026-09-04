@@ -28,7 +28,9 @@
     <string name="conversation_empty">No conversations yet.</string>
     <string name="conversation_no_results">No matching conversations.</string>
     <string name="conversation_new_topic">New topic</string>
-    <string name="workspace_select_title">Select workspace</string>
+    <string name="current_workspace">Workspace · %1$s</string>
+    <string name="change_workspace">Change workspace</string>
+    <string name="workspace_selected">Current workspace</string>
     <string name="confirm">Confirm</string>
     <string name="topic_actions">Conversation actions</string>
     <string name="pin">Pin</string>

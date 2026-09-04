@@ -88,6 +88,26 @@ constructor(
         if (state.value.activeTurnId == null) repository.setWorkspaceScope(workspaceScope)
     }
 
+    /**
+     * 新主题专用的 Workspace 入口。
+     *
+     * 新主题尚未有 chatId 时，用户可以在首条消息发出前调整作用域；一旦发送流程已经开始，
+     * 即使服务端还没有返回新会话 ID，也必须拒绝迟到的点击，确保本次请求使用的 Workspace
+     * 与输入框显示的选择保持一致。已有会话仍走 [setWorkspaceScope]，不改变历史会话的访问设置。
+     */
+    fun setDraftWorkspaceScope(workspaceScope: WorkspaceScope) {
+        val current = state.value
+        if (
+            current.sessionKey != null ||
+                current.chatId != null ||
+                current.activeTurnId != null ||
+                composerCoordinator.value.sending
+        ) {
+            return
+        }
+        repository.setWorkspaceScope(workspaceScope)
+    }
+
     fun newChat(onCreated: (String) -> Unit = {}) =
         viewModelScope.launch {
             val requestEpoch = composerCoordinator.epoch

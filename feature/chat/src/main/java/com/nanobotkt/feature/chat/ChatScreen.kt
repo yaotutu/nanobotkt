@@ -67,6 +67,7 @@ fun ChatScreen(
     onOpenModelSettings: () -> Unit,
     onToggleTheme: () -> Unit = {},
     transportStatus: TransportStatus,
+    workspaceOptions: List<WorkspaceOption> = emptyList(),
     conversationItems: List<ConversationListItem> = emptyList(),
     archivedConversationItems: List<ConversationListItem> = emptyList(),
     selectedConversationKey: String? = null,
@@ -283,6 +284,11 @@ fun ChatScreen(
         if (inlineError?.key != dismissedInlineErrorKey) dismissedInlineErrorKey = null
     }
 
+    val activeWorkspaceScope = state.workspaceScope ?: state.workspaces?.defaultScope
+    val workspaceEditable =
+        // Hero 代表尚未创建 chatId 的新主题；Composer.sending 额外兜住创建请求返回前的竞态。
+        state.chatId == null && state.activeTurnId == null && !composer.sending
+
     val composerContent: @Composable () -> Unit = {
         Composer(
             state = composer,
@@ -312,6 +318,10 @@ fun ChatScreen(
                 // 触达位置，不改变会话选择、草稿恢复或消息树生命周期。
                 conversationSheetOpen = true
             },
+            workspaceScope = activeWorkspaceScope.takeIf { hero },
+            workspaceOptions = workspaceOptions,
+            workspaceEditable = workspaceEditable && hero,
+            onWorkspaceSelected = viewModel::setDraftWorkspaceScope,
         )
     }
 
@@ -328,8 +338,6 @@ fun ChatScreen(
             waitingForUser = waitingForUser,
             active = state.activeTurnId != null,
         )
-    val activeWorkspaceScope = state.workspaceScope ?: state.workspaces?.defaultScope
-
     // 页面骨架固定为“顶部状态栏 + 中间消息区 + 底部 Composer”。
     // Composer 不再覆盖消息列表，因此消息区只需要负责自己的滚动和跳转。
     Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {

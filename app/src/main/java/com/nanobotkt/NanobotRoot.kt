@@ -26,9 +26,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,7 +41,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nanobotkt.core.designsystem.NanobotTheme
 import com.nanobotkt.core.model.ChatSummary
-import com.nanobotkt.core.model.WorkspaceScope
 import com.nanobotkt.core.model.displayName
 import com.nanobotkt.feature.chat.buildWorkspaceOptions
 import com.nanobotkt.core.model.SidebarSortMode
@@ -62,7 +59,6 @@ import com.nanobotkt.feature.chat.ChatScreen
 import com.nanobotkt.feature.chat.ChatViewModel
 import com.nanobotkt.feature.chat.ConversationListItem
 import com.nanobotkt.feature.chat.ConversationListScreen
-import com.nanobotkt.feature.chat.WorkspaceSelectionDialog
 import com.nanobotkt.feature.security.SecurityScreen
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_MODELS
 import com.nanobotkt.feature.settings.SettingsScreen
@@ -243,21 +239,13 @@ private fun ReadyRoot(
     val workspaceOptions = remember(sortedSessions) {
         buildWorkspaceOptions(sortedSessions.map(ChatSummary::workspaceScope))
     }
-    var workspaceSelectionOpen by rememberSaveable { mutableStateOf(false) }
-    val beginNewConversation: (WorkspaceScope?) -> Unit = { workspaceScope ->
-        workspaceSelectionOpen = false
-        appViewModel.beginNewTopic()
-        chatViewModel.startNewTopic(workspaceScope)
-        // 兼容旧的 Conversations destination：无论从哪个会话入口发起，完成选择后都回到聊天页。
-        appViewModel.navigate(AppDestination.CHAT)
-    }
     val requestNewConversation: () -> Unit = {
-        if (workspaceOptions.size > 1) {
-            // 多个 Workspace 必须等待用户明确选择；取消弹窗不会清空当前会话或 Composer 草稿。
-            workspaceSelectionOpen = true
-        } else {
-            beginNewConversation(workspaceOptions.singleOrNull()?.scope)
-        }
+        // 新建动作只负责进入空白主题，Workspace 选择延后到 Composer，避免默认 Workspace
+        // 已经满足需求时还要先打断用户一次。Composer 会在首条消息发送前捕获最终选择。
+        appViewModel.beginNewTopic()
+        chatViewModel.startNewTopic()
+        // 兼容旧的 Conversations destination：无论从哪个会话入口发起，都直接回到聊天页。
+        appViewModel.navigate(AppDestination.CHAT)
     }
     LaunchedEffect(selected?.chatId) {
         // Sidebar 自己维护全局活动状态；Root 只把当前选择作为最小边界传入，选中即读。
@@ -346,6 +334,7 @@ private fun ReadyRoot(
                 // Chat feature 只接收 TransportStatus 这一最小只读边界，用于顶部状态展示；
                 // WebSocket 重连与生命周期仍由 AppViewModel/Transport 管理，避免 UI 产生第二状态源。
                 transportStatus = transport.status,
+                workspaceOptions = workspaceOptions,
                 onSessionCreated = { key ->
                     if (selectedKey != key) {
                         // 新会话出现在 Sidebar 前继续保留 drafting guard，避免传播窗口内
@@ -398,13 +387,6 @@ private fun ReadyRoot(
                 initialSection = rootUiState.settingsSection,
                 onOpenSection = appViewModel::openSettingsSection,
                 onSectionChange = appViewModel::setSettingsSection,
-            )
-        }
-        if (workspaceSelectionOpen) {
-            WorkspaceSelectionDialog(
-                options = workspaceOptions,
-                onSelect = beginNewConversation,
-                onDismiss = { workspaceSelectionOpen = false },
             )
         }
         SnackbarHost(

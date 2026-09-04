@@ -1,21 +1,21 @@
 package com.nanobotkt.feature.chat
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,7 +33,7 @@ import com.nanobotkt.core.model.normalized
 import com.nanobotkt.core.model.projectNameFromPath
 
 /**
- * 新建会话时可供选择的 Workspace。
+ * 新主题发送前可供选择的 Workspace。
  *
  * [identity] 始终来自规范化后的完整绝对路径；[displayName] 只是展示文案，不能参与去重、
  * 选中状态或新会话创建，避免同名目录把两个不同 Workspace 错误合并。
@@ -47,7 +48,7 @@ data class WorkspaceOption(
  * 从用户已有会话携带的 Workspace 范围生成稳定的候选项。
  *
  * 先按完整路径去重，再按最后一级目录名判断展示歧义：目录名唯一时保持紧凑，只展示最后一级；
- * 同名组则全部展示完整路径。列表最后按展示名和路径排序，避免 Sidebar 排序方式变化时弹窗跳动。
+ * 同名组则全部展示完整路径。列表最后按展示名和路径排序，避免 Sidebar 排序方式变化时菜单跳动。
  */
 fun buildWorkspaceOptions(scopes: Iterable<WorkspaceScope?>): List<WorkspaceOption> {
     val uniqueScopes = scopes
@@ -81,6 +82,34 @@ fun buildWorkspaceOptions(scopes: Iterable<WorkspaceScope?>): List<WorkspaceOpti
         )
 }
 
+/**
+ * 解析输入框上方当前 Workspace 的展示名称。
+ *
+ * 当前默认 Workspace 可能尚未出现在任何历史会话中，因此它不应被偷偷加入可选列表；但展示时
+ * 仍要和已有候选一起参与重名判断，避免两个同名目录都被压缩成无法区分的最后一级名称。
+ */
+fun currentWorkspaceDisplayName(
+    currentScope: WorkspaceScope,
+    options: List<WorkspaceOption>,
+): String {
+    val currentIdentity = workspaceIdentity(currentScope)
+    return workspaceDisplayNames(currentScope, options)[currentIdentity] ?: currentIdentity
+}
+
+/**
+ * 生成选择器本次渲染使用的展示项。
+ *
+ * 可点击候选仍严格来自已有会话的 [options]；这里只把当前默认 Workspace 临时加入“重名计算”，
+ * 让当前项和候选项在目录名冲突时都显示完整路径。这样不会把尚无历史会话的默认目录偷偷变成
+ * 新候选，同时也不会出现当前项显示完整路径、菜单中的同名候选却仍只显示目录名的不一致。
+ */
+internal fun workspaceDisplayNames(
+    currentScope: WorkspaceScope,
+    options: List<WorkspaceOption>,
+): Map<String, String> =
+    buildWorkspaceOptions(options.map(WorkspaceOption::scope) + currentScope)
+        .associate { option -> option.identity to option.displayName }
+
 /** 身份比较只做客户端可安全完成的字符串规范化，不猜测服务端软链接或路径大小写语义。 */
 private fun workspaceIdentity(scope: WorkspaceScope): String =
     normalizeWorkspacePath(scope.projectPath.trim())
@@ -90,69 +119,104 @@ private fun workspaceLeafName(scope: WorkspaceScope): String =
     projectNameFromPath(scope.projectPath).trim().ifEmpty { workspaceIdentity(scope) }
 
 /**
- * 多 Workspace 场景下的新会话选择对话框。
+ * 新主题输入框上方的 Workspace 选择器。
  *
- * 这里仅返回完整 [WorkspaceScope]，真正的新主题状态切换和后续 WebSocket `new_chat` 仍由
- * app 组合根及 ChatViewModel 负责，避免 Composable 直接持有网络或会话生命周期。
+ * 默认只展示当前 Workspace，不主动弹窗打断新建流程；只有候选中确实存在其他绝对路径时才开放
+ * 点击。菜单锚定在当前 Workspace 行上，避免像独立对话框一样与用户正在编辑的输入区脱节。
  */
 @Composable
-fun WorkspaceSelectionDialog(
+internal fun NewTopicWorkspaceSelector(
+    currentScope: WorkspaceScope,
     options: List<WorkspaceOption>,
+    enabled: Boolean,
     onSelect: (WorkspaceScope) -> Unit,
-    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    // 不预选第一项，要求用户明确点选 Workspace，避免连续点击确认时误用排序后的首项。
-    var selectedIdentity by remember(options) { mutableStateOf<String?>(null) }
+    val currentIdentity = workspaceIdentity(currentScope)
+    val hasAlternative = options.any { option -> option.identity != currentIdentity }
+    val selectable = enabled && hasAlternative
+    val displayNames = remember(currentScope, options) {
+        workspaceDisplayNames(currentScope, options)
+    }
+    val displayName = displayNames[currentIdentity] ?: currentIdentity
+    var expanded by remember(currentIdentity, options) { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.workspace_select_title)) },
-        text = {
-            LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                items(options, key = WorkspaceOption::identity) { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedIdentity = option.identity }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = selectedIdentity == option.identity,
-                            onClick = { selectedIdentity = option.identity },
-                        )
-                        Icon(
-                            imageVector = Icons.Rounded.Folder,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 8.dp).size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+    Box(modifier = modifier.fillMaxWidth()) {
+        Surface(
+            onClick = { expanded = true },
+            enabled = selectable,
+            modifier = Modifier.fillMaxWidth().testTag(NEW_TOPIC_WORKSPACE_SELECTOR_TEST_TAG),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = stringResource(R.string.current_workspace, displayName),
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (selectable) {
+                    Icon(
+                        imageVector = Icons.Rounded.ExpandMore,
+                        contentDescription = stringResource(R.string.change_workspace),
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded && selectable,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+        ) {
+            options.forEach { option ->
+                val selected = option.identity == currentIdentity
+                DropdownMenuItem(
+                    text = {
                         Text(
-                            text = option.displayName,
-                            modifier = Modifier.weight(1f),
+                            text = displayNames[option.identity] ?: option.displayName,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                    }
-                }
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingIcon = {
+                        if (selected) {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = stringResource(R.string.workspace_selected),
+                            )
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        if (!selected) onSelect(option.scope)
+                    },
+                )
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    options.firstOrNull { option -> option.identity == selectedIdentity }
-                        ?.scope
-                        ?.let(onSelect)
-                },
-                enabled = selectedIdentity != null,
-            ) {
-                Text(stringResource(R.string.confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
+        }
+    }
 }
+
+/** 供 Compose 仪器测试定位新主题 Workspace 行，不把菜单 Popup 误当作输入框内容。 */
+internal const val NEW_TOPIC_WORKSPACE_SELECTOR_TEST_TAG = "new_topic_workspace_selector"

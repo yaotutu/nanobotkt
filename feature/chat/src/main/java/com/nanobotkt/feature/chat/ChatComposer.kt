@@ -59,6 +59,7 @@ import com.nanobotkt.core.model.CliAppInfo
 import com.nanobotkt.core.model.McpPresetInfo
 import com.nanobotkt.core.model.SkillSummary
 import com.nanobotkt.core.model.SlashCommand
+import com.nanobotkt.core.model.WorkspaceScope
 
 /** Composer 只编排输入、附件、引用和发送状态；网络、文件与会话副作用仍由 ViewModel/Repository 承担。 */
 @Composable
@@ -80,6 +81,10 @@ internal fun HeroComposer(
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
     onOpenConversationList: () -> Unit,
+    workspaceScope: WorkspaceScope? = null,
+    workspaceOptions: List<WorkspaceOption> = emptyList(),
+    workspaceEditable: Boolean = false,
+    onWorkspaceSelected: (WorkspaceScope) -> Unit = {},
 ) {
     ComposerLayout(
         state = state,
@@ -100,6 +105,10 @@ internal fun HeroComposer(
         onPickImages = onPickImages,
         onPickFiles = onPickFiles,
         onOpenConversationList = onOpenConversationList,
+        workspaceScope = workspaceScope,
+        workspaceOptions = workspaceOptions,
+        workspaceEditable = workspaceEditable,
+        onWorkspaceSelected = onWorkspaceSelected,
     )
 }
 
@@ -175,6 +184,10 @@ internal fun ComposerLayout(
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
     onOpenConversationList: () -> Unit,
+    workspaceScope: WorkspaceScope? = null,
+    workspaceOptions: List<WorkspaceOption> = emptyList(),
+    workspaceEditable: Boolean = false,
+    onWorkspaceSelected: (WorkspaceScope) -> Unit = {},
 ) {
     val hasDraft =
         state.text.isNotBlank() ||
@@ -326,6 +339,15 @@ internal fun ComposerLayout(
                 }
             }
 
+            workspaceScope?.let { scope ->
+                NewTopicWorkspaceSelector(
+                    currentScope = scope,
+                    options = workspaceOptions,
+                    enabled = workspaceEditable,
+                    onSelect = onWorkspaceSelected,
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -452,6 +474,10 @@ internal fun Composer(
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
     onOpenConversationList: () -> Unit,
+    workspaceScope: WorkspaceScope? = null,
+    workspaceOptions: List<WorkspaceOption> = emptyList(),
+    workspaceEditable: Boolean = false,
+    onWorkspaceSelected: (WorkspaceScope) -> Unit = {},
 ) {
     if (isHero) {
         HeroComposer(
@@ -472,6 +498,10 @@ internal fun Composer(
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
             onOpenConversationList = onOpenConversationList,
+            workspaceScope = workspaceScope,
+            workspaceOptions = workspaceOptions,
+            workspaceEditable = workspaceEditable,
+            onWorkspaceSelected = onWorkspaceSelected,
         )
     } else {
         ConversationComposer(
