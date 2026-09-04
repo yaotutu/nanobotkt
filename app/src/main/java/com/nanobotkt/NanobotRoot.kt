@@ -40,6 +40,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.nanobotkt.core.designsystem.NanobotTheme
 import com.nanobotkt.core.model.ChatSummary
+import com.nanobotkt.core.model.displayName
 import com.nanobotkt.core.model.SidebarSortMode
 import com.nanobotkt.core.persistence.DensityPreference
 import com.nanobotkt.core.persistence.ThemePreference
@@ -245,6 +246,7 @@ private fun ReadyRoot(
                     key = session.key,
                     title = session.displayTitle(sidebar),
                     preview = session.preview,
+                    workspaceName = session.workspaceScope?.displayName(),
                     pinned = session.key in sidebar.sidebar.pinnedKeys,
                     archived = false,
                     pending = session.key in sidebar.pendingKeys,
@@ -261,6 +263,7 @@ private fun ReadyRoot(
                     key = session.key,
                     title = session.displayTitle(sidebar),
                     preview = session.preview,
+                    workspaceName = session.workspaceScope?.displayName(),
                     pinned = session.key in sidebar.sidebar.pinnedKeys,
                     archived = true,
                     pending = session.key in sidebar.pendingKeys,

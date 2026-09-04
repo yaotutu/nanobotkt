@@ -52,6 +52,7 @@ import com.nanobotkt.core.designsystem.NanobotEmptyState
 import com.nanobotkt.core.designsystem.NanobotErrorState
 import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.model.UiMessage
+import com.nanobotkt.core.model.displayName
 import com.nanobotkt.core.transport.TransportStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -329,6 +330,7 @@ fun ChatScreen(
     Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         ChatTopStatusBar(
             title = title,
+            workspaceName = activeWorkspaceScope?.displayName(),
             status = headerStatus,
             configMenuOpen = configMenuOpen,
             hasPromptNavigator = state.sessionKey != null && hasUserPrompts,

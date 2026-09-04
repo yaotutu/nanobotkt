@@ -47,6 +47,8 @@ import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 @Composable
 internal fun ChatTopStatusBar(
     title: String,
+    /** 当前会话所属工作区的短名称；不传绝对路径，避免顶部栏被长文本撑乱。 */
+    workspaceName: String? = null,
     status: ChatHeaderStatus,
     configMenuOpen: Boolean,
     hasPromptNavigator: Boolean,
@@ -62,7 +64,7 @@ internal fun ChatTopStatusBar(
     onOpenAccess: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    val hasSecondaryRow = status != ChatHeaderStatus.IDLE
+    val hasSecondaryRow = workspaceName != null || status != ChatHeaderStatus.IDLE
 
     Row(
         modifier =
@@ -103,6 +105,9 @@ internal fun ChatTopStatusBar(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    workspaceName?.let { name ->
+                        WorkspaceNameLabel(workspaceName = name)
+                    }
                     if (status != ChatHeaderStatus.IDLE) {
                         HeaderStatusLabel(status = status, onClick = onStatusClick)
                     }
@@ -185,6 +190,32 @@ internal fun ChatTopStatusBar(
                 }
             }
         }
+    }
+}
+
+/**
+ * 顶部栏只显示工作区名称，不显示完整路径；名称过长时由标题区域的单行省略保护右侧操作。
+ */
+@Composable
+private fun WorkspaceNameLabel(workspaceName: String) {
+    Row(
+        modifier = Modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Folder,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = workspaceName,
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

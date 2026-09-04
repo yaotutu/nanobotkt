@@ -33,6 +33,37 @@ class WorkspaceScopeUtilsTest {
     }
 
     @Test
+    fun `display name keeps only the workspace name instead of the full path`() {
+        assertEquals(
+            "custom-name",
+            WorkspaceScope(
+                projectPath = "/srv/projects/nanobot",
+                projectName = " custom-name ",
+                accessMode = WorkspaceAccessMode.RESTRICTED,
+            ).displayName(),
+        )
+        assertEquals(
+            "nanobot",
+            WorkspaceScope(
+                projectPath = "C:\\dev\\nanobot",
+                projectName = "",
+                accessMode = WorkspaceAccessMode.RESTRICTED,
+            ).displayName(),
+        )
+    }
+
+    @Test
+    fun `display name is absent when workspace path has no directory name`() {
+        assertEquals(
+            null,
+            WorkspaceScope(
+                projectPath = "/",
+                accessMode = WorkspaceAccessMode.RESTRICTED,
+            ).displayName(),
+        )
+    }
+
+    @Test
     fun `absolute path validation matches RN rules`() {
         listOf("~", "~/project", "~\\project", "/srv/project", "C:\\dev\\project", "d:/code")
             .forEach { assertTrue(it, isAbsoluteWorkspacePath(it)) }

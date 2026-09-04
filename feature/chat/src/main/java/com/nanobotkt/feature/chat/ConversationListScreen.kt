@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -81,6 +82,8 @@ data class ConversationListItem(
     val running: Boolean = false,
     /** 非当前会话在上次查看后完成了新活动。 */
     val unread: Boolean = false,
+    /** 只传入工作区短名称，不把服务端绝对路径泄漏到列表布局中。 */
+    val workspaceName: String? = null,
 )
 
 /**
@@ -249,6 +252,7 @@ private fun ConversationListContent(
         normalizedQuery.isBlank() ||
             item.title.contains(normalizedQuery, ignoreCase = true) ||
             item.preview.contains(normalizedQuery, ignoreCase = true) ||
+            item.workspaceName.orEmpty().contains(normalizedQuery, ignoreCase = true) ||
             item.key.contains(normalizedQuery, ignoreCase = true)
     }
     val pinned = filtered.filter(ConversationListItem::pinned)
@@ -462,17 +466,24 @@ private fun ConversationRow(
             )
         },
         supportingContent =
-            if (item.preview.isBlank()) {
+            if (item.workspaceName == null && item.preview.isBlank()) {
                 null
             } else {
                 {
-                    Text(
-                        text = item.preview,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        item.workspaceName?.let { workspaceName ->
+                            WorkspaceNameLabel(workspaceName = workspaceName)
+                        }
+                        if (item.preview.isNotBlank()) {
+                            Text(
+                                text = item.preview,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             },
         leadingContent = {
@@ -534,6 +545,32 @@ private fun ConversationRow(
         modifier = Modifier.padding(start = 64.dp, end = 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
     )
+}
+
+/**
+ * 会话列表中的工作区只作为轻量元数据展示：图标加短名称即可帮助用户区分会话，
+ * 完整路径仍留在会话模型和设置页面中，不参与每一行的常规布局。
+ */
+@Composable
+private fun WorkspaceNameLabel(workspaceName: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Folder,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = workspaceName,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable

@@ -10,6 +10,21 @@ fun projectNameFromPath(path: String): String {
     return normalized.split('/').filter(String::isNotEmpty).lastOrNull() ?: path
 }
 
+/**
+ * 返回 Workspace 在会话列表和聊天标题栏中的短名称。
+ *
+ * UI 只需要让用户区分不同会话所属的工作目录，不应把服务端完整绝对路径直接铺在
+ * 每一行会话上；因此优先使用服务端给出的项目名，缺失时只取路径最后一级目录。
+ * 空路径不会被渲染成孤立的“/”，调用方可以据此隐藏整个 Workspace 标签。
+ */
+fun WorkspaceScope.displayName(): String? {
+    val explicitName = projectName?.trim()?.takeIf { it.isNotEmpty() }
+    val derivedName = projectNameFromPath(projectPath).trim().takeIf {
+        it.isNotEmpty() && it != "/"
+    }
+    return explicitName ?: derivedName
+}
+
 fun shortWorkspacePath(path: String): String {
     val normalized = path.replace('\\', '/')
     val parts = normalized.split('/').filter(String::isNotEmpty)
