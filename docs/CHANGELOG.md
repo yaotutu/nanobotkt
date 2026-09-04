@@ -1,9 +1,11 @@
-# NanobotKT 0.1.25
+# NanobotKT 0.1.26
 
-> 自动构建发布，提交：`574d720`。
+> 自动构建发布，提交：`215bb13`。
 
 ## 变更
 
+- fix(chat): handle rejected workspace switching (`215bb13`)
+- chore(dev): prepare v0.1.25 (`96b4d7d`)
 - feat(chat): move workspace selection to new topic composer (`574d720`)
 - chore(dev): prepare v0.1.24 (`8c79a97`)
 - feat(chat): select workspace when creating conversations (`db45b84`)
