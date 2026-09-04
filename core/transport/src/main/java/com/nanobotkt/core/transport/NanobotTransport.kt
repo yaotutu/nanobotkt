@@ -502,6 +502,27 @@ class NanobotTransport @Inject constructor(
                     requests.takeMessage(messageKey(chatId, turnId))?.accepted?.completeExceptionally(IllegalStateException(event.detail ?: event.reason ?: "turn_rejected"))
                     if (event.detail == "workspace_scope_rejected") mutableErrors.tryEmit(TransportError.WorkspaceScopeRejected(chatId, turnId, event.reason))
                     else mutableErrors.tryEmit(TransportError.TurnRejected(chatId, turnId, event.detail, event.reason))
+                } else if (
+                    event.detail == "workspace_scope_rejected" &&
+                    chatId == null &&
+                    turnId == null
+                ) {
+                    // 创建新会话尚未分配 chat_id，服务端只能返回无路由字段的拒绝事件。
+                    // 如果不在这里结束 pending new_chat，首次发送会错误地等待超时，表现为“切换
+                    // Workspace 后无法发送”；同时移除队列，避免迟到的 attached 再次误绑定。
+                    val failure = IllegalStateException(
+                        listOfNotNull(event.detail, event.reason)
+                            .joinToString(": ")
+                            .ifBlank { "workspace_scope_rejected" },
+                    )
+                    if (requests.failNewChat(failure)) removeQueued("new-chat")
+                    mutableErrors.tryEmit(
+                        TransportError.WorkspaceScopeRejected(
+                            chatId = null,
+                            turnId = null,
+                            reason = event.reason,
+                        ),
+                    )
                 }
                 mutableEvents.tryEmit(event)
             }

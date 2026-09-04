@@ -65,6 +65,37 @@ class WorkspaceSelectionUiTest {
     }
 
     @Test
+    fun multipleWorkspacesCannotOpenMenuWhenGatewayDisablesProjectChanges() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val options =
+            buildWorkspaceOptions(
+                listOf(
+                    workspaceScope("/Users/test/client-a/nanobot"),
+                    workspaceScope("/Users/test/client-b/mobile"),
+                )
+            )
+
+        composeRule.setContent {
+            NanobotTheme(darkTheme = false, dynamicColor = false) {
+                NewTopicWorkspaceSelector(
+                    currentScope = options.first().scope,
+                    options = options,
+                    enabled = false,
+                    onSelect = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText(
+            context.getString(R.string.current_workspace, options.first().displayName)
+        ).assertIsDisplayed()
+        // 候选数量不能绕过 Gateway 能力边界：服务端禁止改项目时仍展示当前 Workspace，
+        // 但整行必须不可点击，避免先接受选择、再在首次发送时由服务端拒绝。
+        composeRule.onNodeWithTag(NEW_TOPIC_WORKSPACE_SELECTOR_TEST_TAG)
+            .assertIsNotEnabled()
+    }
+
+    @Test
     fun singleWorkspaceIsVisibleButCannotOpenASelectionMenu() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val option = buildWorkspaceOptions(listOf(workspaceScope("/Users/test/mobile"))).single()

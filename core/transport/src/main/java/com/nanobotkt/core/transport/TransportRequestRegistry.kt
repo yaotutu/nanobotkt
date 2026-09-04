@@ -42,6 +42,21 @@ internal class TransportRequestRegistry {
         }
     }
 
+    /**
+     * 原子领取并失败新会话请求。
+     *
+     * `new_chat` 的服务端拒绝事件没有 chat_id/turn_id，不能沿用 message 请求的关联键；
+     * 必须在同一把锁下摘除 pending，再完成 Deferred，避免它与超时、断线或 attached 回执
+     * 同时到达时互相覆盖。调用方拿到 true 后还应移除对应的出站队列项。
+     */
+    fun failNewChat(error: Throwable): Boolean {
+        val request = synchronized(newChatLock) {
+            pendingNewChat.also { pendingNewChat = null }
+        } ?: return false
+        request.completeExceptionally(error)
+        return true
+    }
+
     fun registerMessage(key: String, pending: PendingTransportMessage) {
         check(messages.putIfAbsent(key, pending) == null) { "message_pending" }
     }

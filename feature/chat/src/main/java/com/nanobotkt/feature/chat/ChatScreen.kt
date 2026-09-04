@@ -287,7 +287,14 @@ fun ChatScreen(
     val activeWorkspaceScope = state.workspaceScope ?: state.workspaces?.defaultScope
     val workspaceEditable =
         // Hero 代表尚未创建 chatId 的新主题；Composer.sending 额外兜住创建请求返回前的竞态。
-        state.chatId == null && state.activeTurnId == null && !composer.sending
+        // 更关键的是必须服从服务端下发的能力开关：Android 通过局域网访问 browser surface 时，
+        // Gateway 会基于安全边界拒绝更换项目目录。此前 UI 忽略该开关，导致用户能选中一个
+        // 服务端必然拒绝的 Workspace，首次发送随后一直等待 new_chat 结果。能力尚未加载时也
+        // 保持不可切换，避免启动窗口内产生一次无法兑现的选择。
+        state.chatId == null &&
+            state.activeTurnId == null &&
+            !composer.sending &&
+            state.workspaces?.controls?.canChangeProject == true
 
     val composerContent: @Composable () -> Unit = {
         Composer(

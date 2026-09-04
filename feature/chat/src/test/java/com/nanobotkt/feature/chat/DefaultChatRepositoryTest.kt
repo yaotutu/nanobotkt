@@ -7,6 +7,8 @@ import com.nanobotkt.core.model.IngressLimitsProvider
 import com.nanobotkt.core.model.OutboundMedia
 import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.model.WebUiThreadPayload
+import com.nanobotkt.core.model.WorkspaceAccessMode
+import com.nanobotkt.core.model.WorkspaceScope
 import com.nanobotkt.core.model.WorkspacesPayload
 import com.nanobotkt.core.network.ApiCredentialProvider
 import com.nanobotkt.core.network.GatewayEndpointProvider
@@ -597,6 +599,96 @@ class DefaultChatRepositoryTest {
         assertFalse(failed.loading)
         assertFalse(failed.loadingOlder)
         assertTrue(failed.error.orEmpty().contains("thread backend unavailable"))
+    }
+
+    @Test
+    fun `first send after switching draft workspace creates chat and emits message`() = runBlocking {
+        val selectedScope = WorkspaceScope(
+            projectPath = "/Users/test/projects/selected",
+            projectName = "selected",
+            accessMode = WorkspaceAccessMode.RESTRICTED,
+            restrictToWorkspace = true,
+        )
+        val newChatScope = AtomicReference<String>()
+        val messageScope = AtomicReference<String>()
+        val sentMessage = CountDownLatch(1)
+        val socketRef = AtomicReference<WebSocket>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path?.substringBefore('?')
+                return when {
+                    path == "/ws" -> MockResponse().withWebSocketUpgrade(
+                        object : WebSocketListener() {
+                            override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                                socketRef.set(webSocket)
+                            }
+
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                val frame = json.parseToJsonElement(text).jsonObject
+                                when (frame["type"]?.jsonPrimitive?.content) {
+                                    "new_chat" -> {
+                                        newChatScope.set(
+                                            frame.getValue("workspace_scope")
+                                                .jsonObject
+                                                .getValue("project_path")
+                                                .jsonPrimitive
+                                                .content,
+                                        )
+                                        webSocket.send("""{"event":"attached","chat_id":"draft-workspace-chat"}""")
+                                    }
+                                    "message" -> {
+                                        messageScope.set(
+                                            frame.getValue("workspace_scope")
+                                                .jsonObject
+                                                .getValue("project_path")
+                                                .jsonPrimitive
+                                                .content,
+                                        )
+                                        val turnId = frame.getValue("turn_id").jsonPrimitive.content
+                                        webSocket.send(
+                                            """{"event":"message_accepted","chat_id":"draft-workspace-chat","turn_id":"$turnId"}""",
+                                        )
+                                        sentMessage.countDown()
+                                    }
+                                }
+                            }
+                        },
+                    )
+                    path?.endsWith("/webui-thread") == true ->
+                        jsonResponse(
+                            """{"schemaVersion":1,"sessionKey":"websocket:draft-workspace-chat","messages":[]}""",
+                        )
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        }
+        transport.connect()
+        withTimeout(2_000) {
+            transport.state.first { transportState -> transportState.status == TransportStatus.OPEN }
+        }
+
+        val repository = newRepository()
+        repository.startNewTopic()
+        repository.setWorkspaceScope(selectedScope)
+        val outcome = withTimeout(2_000) {
+            repository.send(
+                text = "hello selected workspace",
+                options = ChatSendOptions(
+                    workspaceScope = selectedScope,
+                    sessionGuard = ChatSessionGuard(sessionKey = null, chatId = null),
+                ),
+            )
+        }
+
+        assertEquals(ChatSendOutcome.Accepted, outcome)
+        assertTrue(sentMessage.await(2, TimeUnit.SECONDS))
+        assertEquals(selectedScope.projectPath, newChatScope.get())
+        assertEquals(selectedScope.projectPath, messageScope.get())
+        assertEquals("websocket:draft-workspace-chat", repository.state.value.sessionKey)
+        assertEquals("draft-workspace-chat", repository.state.value.chatId)
+        // 该测试验证的是首次发送创建链路，主动关闭长连接，避免 MockWebServer teardown 等待。
+        socketRef.get()?.close(1000, "test_done")
+        Unit
     }
 
     @Test

@@ -381,6 +381,35 @@ class NanobotTransportAcceptanceTest {
     }
 
     @Test
+    fun `workspace scope rejection fails pending new chat immediately`() = runBlocking {
+        connectWebSocket()
+
+        val newChat = async(SupervisorJob()) { transport.newChat(timeoutMs = 5_000) }
+        assertEquals("new_chat", receiveFrame().getValue("type").jsonPrimitive.content)
+        val error = async(start = CoroutineStart.UNDISPATCHED) {
+            transport.errors.first { it is TransportError.WorkspaceScopeRejected }
+        }
+
+        // new_chat 被拒绝时服务端还没有 chat_id/turn_id。Transport 必须直接结束 pending
+        // 创建请求，不能让首次发送一直等到 20 秒超时后才恢复 Composer。
+        serverSocket.get()!!.send(
+            """{"event":"error","detail":"workspace_scope_rejected","reason":"workspace controls are localhost-only"}""",
+        )
+
+        awaitIllegalStateMessage("workspace_scope_rejected: workspace controls are localhost-only") {
+            newChat.await()
+        }
+        assertEquals(
+            TransportError.WorkspaceScopeRejected(
+                chatId = null,
+                turnId = null,
+                reason = "workspace controls are localhost-only",
+            ),
+            withTimeout(2_000) { error.await() },
+        )
+    }
+
+    @Test
     fun `workspace scope rejected error fails matching message and emits typed error`() = runBlocking {
         connectWebSocket()
 
