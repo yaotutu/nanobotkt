@@ -1,9 +1,11 @@
-# NanobotKT 0.1.22
+# NanobotKT 0.1.23
 
-> 自动构建发布，提交：`d7ca74d`。
+> 自动构建发布，提交：`a652ee7`。
 
 ## 变更
 
+- feat(chat): show workspace names for conversations (`a652ee7`)
+- chore(dev): prepare v0.1.22 (`7af49a2`)
 - fix(chat): clear composer when starting new conversation (`d7ca74d`)
 - docs: rewrite project readme (`78096fd`)
 - chore(dev): prepare v0.1.21 (`7942d17`)
