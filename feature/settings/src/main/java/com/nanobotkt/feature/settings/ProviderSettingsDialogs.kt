@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -107,14 +108,14 @@ internal fun ProviderEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit ${provider.label}") },
+        title = { Text(stringResource(R.string.settings_edit_provider_title, provider.label)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (isCustom) {
                     OutlinedTextField(
                         displayName,
                         { displayName = it },
-                        label = { Text("Provider name") },
+                        label = { Text(stringResource(R.string.settings_provider_name)) },
                         singleLine = true,
                     )
                 }
@@ -127,8 +128,11 @@ internal fun ProviderEditDialog(
                                 clearApiKey = false
                             },
                             placeholder =
-                                if (provider.apiKeyHint.isNullOrBlank()) "Enter API key"
-                                else "Replacement API key",
+                                if (provider.apiKeyHint.isNullOrBlank()) {
+                                    stringResource(R.string.settings_enter_api_key)
+                                } else {
+                                    stringResource(R.string.settings_replacement_api_key)
+                                },
                             visible = false,
                             onToggleVisibility = {},
                         )
@@ -139,7 +143,7 @@ internal fun ProviderEditDialog(
                                     apiKey = ""
                                 }
                             ) {
-                                Text("Keep existing")
+                                Text(stringResource(R.string.settings_keep_existing))
                             }
                             if (!provider.apiKeyHint.isNullOrBlank()) {
                                 TextButton(
@@ -149,17 +153,17 @@ internal fun ProviderEditDialog(
                                         apiKey = ""
                                     }
                                 ) {
-                                    Text("Clear", color = MaterialTheme.colorScheme.error)
+                                    Text(stringResource(R.string.settings_clear), color = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
                     } else {
                         StoredSecretField(
-                            hint = provider.apiKeyHint ?: "Configured",
+                            hint = provider.apiKeyHint ?: stringResource(R.string.settings_configured),
                             onEdit = { editingApiKey = true },
                         )
                         TextButton(onClick = { clearApiKey = true }) {
-                            Text("Clear stored key", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.settings_clear_stored_key), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -167,7 +171,7 @@ internal fun ProviderEditDialog(
                     OutlinedTextField(
                         apiBase,
                         { apiBase = it },
-                        label = { Text("API base") },
+                        label = { Text(stringResource(R.string.settings_api_base)) },
                         placeholder = { Text(provider.defaultApiBase.orEmpty()) },
                         singleLine = true,
                     )
@@ -178,61 +182,61 @@ internal fun ProviderEditDialog(
                             OutlinedTextField(
                                 apiType,
                                 { apiType = it },
-                                label = { Text("API type") },
+                                label = { Text(stringResource(R.string.settings_api_type)) },
                                 singleLine = true,
                             )
                         "proxy" ->
                             OutlinedTextField(
                                 proxy,
                                 { proxy = it },
-                                label = { Text("Proxy") },
+                                label = { Text(stringResource(R.string.settings_proxy)) },
                                 singleLine = true,
                             )
                         "thinking_style" ->
                             OutlinedTextField(
                                 thinkingStyle,
                                 { thinkingStyle = it },
-                                label = { Text("Thinking style") },
+                                label = { Text(stringResource(R.string.settings_thinking_style)) },
                                 singleLine = true,
                             )
                         "region" ->
                             OutlinedTextField(
                                 region,
                                 { region = it },
-                                label = { Text("Region") },
+                                label = { Text(stringResource(R.string.settings_region)) },
                                 singleLine = true,
                             )
                         "profile" ->
                             OutlinedTextField(
                                 profile,
                                 { profile = it },
-                                label = { Text("Profile") },
+                                label = { Text(stringResource(R.string.settings_profile)) },
                                 singleLine = true,
                             )
                         "extra_headers" ->
                             OutlinedTextField(
                                 extraHeaders,
                                 { extraHeaders = it },
-                                label = { Text("Extra headers (JSON)") },
+                                label = { Text(stringResource(R.string.settings_extra_headers_json)) },
                                 minLines = 2,
                             )
                         "extra_body" ->
                             OutlinedTextField(
                                 extraBody,
                                 { extraBody = it },
-                                label = { Text("Extra body (JSON)") },
+                                label = { Text(stringResource(R.string.settings_extra_body_json)) },
                                 minLines = 2,
                             )
                         "extra_query" ->
                             OutlinedTextField(
                                 extraQuery,
                                 { extraQuery = it },
-                                label = { Text("Extra query (JSON)") },
+                                label = { Text(stringResource(R.string.settings_extra_query_json)) },
                                 minLines = 2,
                             )
                         else ->
                             Text(
-                                "Unsupported advanced field: $field",
+                                stringResource(R.string.settings_unsupported_advanced_field, field),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                             )
@@ -241,32 +245,38 @@ internal fun ProviderEditDialog(
                 if (provider.oauthLoginSupported == true) {
                     HorizontalDivider()
                     Text(
-                        "OAuth",
+                        stringResource(R.string.settings_oauth),
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.titleSmall,
                     )
                     if (!provider.oauthAccount.isNullOrBlank()) {
                         Text(
-                            "Signed in as ${provider.oauthAccount}",
+                            stringResource(R.string.settings_signed_in_as, provider.oauthAccount.orEmpty()),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
                         TextButton(onClick = onOAuthLogout, enabled = !oauthPending) {
-                            Text(if (oauthPending) "Signing out…" else "Sign out")
+                            Text(
+                                if (oauthPending) stringResource(R.string.settings_signing_out)
+                                else stringResource(R.string.settings_sign_out)
+                            )
                         }
                     } else {
                         Text(
-                            "This provider uses an interactive OAuth flow.",
+                            stringResource(R.string.settings_interactive_oauth_description),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
                         TextButton(onClick = onOAuthLogin, enabled = !oauthPending) {
-                            Text(if (oauthPending) "Starting…" else "Start OAuth login")
+                            Text(
+                                if (oauthPending) stringResource(R.string.settings_starting)
+                                else stringResource(R.string.settings_start_oauth_login)
+                            )
                         }
                     }
                     if (oauth?.authorizationUrl != null) {
                         Text(
-                            "Open this URL in a browser:",
+                            stringResource(R.string.settings_open_url_in_browser),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -280,7 +290,7 @@ internal fun ProviderEditDialog(
                         OutlinedTextField(
                             oauthCode,
                             { oauthCode = it },
-                            label = { Text("Authorization code (if requested)") },
+                            label = { Text(stringResource(R.string.settings_authorization_code)) },
                             singleLine = true,
                         )
                         TextButton(
@@ -292,7 +302,10 @@ internal fun ProviderEditDialog(
                             },
                             enabled = !oauthPending && !oauth.flowId.isNullOrBlank(),
                         ) {
-                            Text(if (oauthPending) "Completing…" else "Complete OAuth login")
+                            Text(
+                            if (oauthPending) stringResource(R.string.settings_completing)
+                            else stringResource(R.string.settings_complete_oauth_login)
+                        )
                         }
                     }
                 }
@@ -341,10 +354,13 @@ internal fun ProviderEditDialog(
                 },
                 enabled = dirty && !saving && displayName.isNotBlank(),
             ) {
-                Text(if (saving) "Saving…" else "Save")
+                Text(
+                    if (saving) stringResource(R.string.settings_saving_ellipsis)
+                    else stringResource(R.string.settings_save)
+                )
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.settings_cancel)) } },
     )
 }
 
@@ -366,55 +382,55 @@ internal fun CustomProviderDialog(
     val valid = name.isNotBlank() && apiBase.isNotBlank()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add custom provider") },
+        title = { Text(stringResource(R.string.settings_add_custom_provider)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     name,
                     { name = it },
-                    label = { Text("Provider name") },
+                    label = { Text(stringResource(R.string.settings_provider_name)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     apiBase,
                     { apiBase = it },
-                    label = { Text("API base") },
+                    label = { Text(stringResource(R.string.settings_api_base)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     apiKey,
                     { apiKey = it },
-                    label = { Text("API key (optional)") },
+                    label = { Text(stringResource(R.string.settings_api_key_optional)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     proxy,
                     { proxy = it },
-                    label = { Text("Proxy (optional)") },
+                    label = { Text(stringResource(R.string.settings_proxy_optional)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     thinkingStyle,
                     { thinkingStyle = it },
-                    label = { Text("Thinking style (optional)") },
+                    label = { Text(stringResource(R.string.settings_thinking_style_optional)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     extraHeaders,
                     { extraHeaders = it },
-                    label = { Text("Extra headers (JSON object, optional)") },
+                    label = { Text(stringResource(R.string.settings_extra_headers_json_optional)) },
                     minLines = 2,
                 )
                 OutlinedTextField(
                     extraBody,
                     { extraBody = it },
-                    label = { Text("Extra body (JSON object, optional)") },
+                    label = { Text(stringResource(R.string.settings_extra_body_json_optional)) },
                     minLines = 2,
                 )
                 OutlinedTextField(
                     extraQuery,
                     { extraQuery = it },
-                    label = { Text("Extra query (JSON object, optional)") },
+                    label = { Text(stringResource(R.string.settings_extra_query_json_optional)) },
                     minLines = 2,
                 )
                 if (!error.isNullOrBlank())
@@ -443,9 +459,12 @@ internal fun CustomProviderDialog(
                 },
                 enabled = valid && !saving,
             ) {
-                Text(if (saving) "Saving…" else "Create")
+                Text(
+                    if (saving) stringResource(R.string.settings_saving_ellipsis)
+                    else stringResource(R.string.settings_create)
+                )
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.settings_cancel)) } },
     )
 }

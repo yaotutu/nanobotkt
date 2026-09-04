@@ -1,0 +1,46 @@
+<resources>
+    <!-- Apps 页面和 MCP 配置对话框的静态文案。 -->
+    <string name="apps_title">Apps &amp; integrations</string>
+    <string name="apps_back">Back</string>
+    <string name="apps_refresh">Refresh</string>
+    <string name="apps_search_hint">Search apps and integrations</string>
+    <string name="clear_search">Clear search</string>
+    <string name="apps_cli_tab">CLI apps (%1$d)</string>
+    <string name="apps_mcp_tab">MCP (%1$d)</string>
+    <string name="apps_load_error_title">Unable to load apps</string>
+    <string name="apps_retry">Retry</string>
+    <string name="apps_actions">App actions</string>
+    <string name="apps_update">Update</string>
+    <string name="apps_test">Test</string>
+    <string name="apps_remove">Remove</string>
+    <string name="apps_install">Install</string>
+    <string name="apps_add_custom_mcp">Add custom MCP</string>
+    <string name="apps_import_mcp">Import MCP</string>
+    <string name="apps_import_mcp_config">Import MCP config</string>
+    <string name="apps_import_cursor_mcp">Import Cursor MCP</string>
+    <string name="apps_mcp_actions">MCP actions</string>
+    <string name="apps_enable">Enable</string>
+    <string name="apps_required">Required</string>
+    <string name="apps_import_mcp_configuration_title">Import MCP configuration</string>
+    <string name="apps_import_cursor_mcp_configuration_title">Import Cursor MCP configuration</string>
+    <string name="apps_json_configuration">JSON configuration</string>
+    <string name="apps_import">Import</string>
+    <string name="apps_cancel">Cancel</string>
+    <string name="apps_tools">Tools</string>
+    <string name="apps_save_tools">Save tools</string>
+    <string name="apps_custom_mcp_transport_help">Use stdio for a local command, or sse/streamableHttp for a remote URL.</string>
+    <string name="apps_name_required">Name *</string>
+    <string name="apps_transport_required">Transport *</string>
+    <string name="apps_transport_values">stdio, sse, or streamableHttp</string>
+    <string name="apps_command">Command</string>
+    <string name="apps_command_placeholder">npx</string>
+    <string name="apps_url">URL</string>
+    <string name="apps_args_json_array">Args JSON array</string>
+    <string name="apps_environment_json_object">Environment JSON object</string>
+    <string name="apps_working_directory">Working directory</string>
+    <string name="apps_headers_json_object">Headers JSON object</string>
+    <string name="apps_tool_timeout_seconds">Tool timeout (seconds)</string>
+    <string name="apps_enabled_tools">Enabled tools</string>
+    <string name="apps_enabled_tools_help">* or a JSON string array</string>
+    <string name="apps_save">Save</string>
+</resources>

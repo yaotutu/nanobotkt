@@ -126,4 +126,136 @@
     <string name="settings_up_to_date">设置已是最新状态。</string>
     <string name="settings_saving">正在保存</string>
     <string name="settings_save">保存</string>
+
+    <!-- 设置输入组件与模型选择器。 -->
+    <string name="settings_version">版本</string>
+    <string name="settings_checking_ellipsis">正在检查…</string>
+    <string name="settings_check_for_updates">检查更新</string>
+    <string name="settings_you_are_up_to_date">已是最新版本</string>
+    <string name="settings_select_image_model">选择图片模型</string>
+    <string name="settings_search_or_type_model_id">搜索或输入模型 ID</string>
+    <string name="settings_type_supported_model_id">输入此提供商支持的模型 ID。</string>
+    <string name="settings_selected">已选择</string>
+    <string name="settings_use_model_id">使用“%1$s”</string>
+    <string name="settings_hide_api_key">隐藏 API 密钥</string>
+    <string name="settings_show_api_key">显示 API 密钥</string>
+    <string name="settings_edit_api_key">编辑 API 密钥</string>
+    <string name="settings_decrease">减少</string>
+    <string name="settings_increase">增加</string>
+
+
+    <!-- 模型、Provider 与通用输入操作文案。 -->
+    <string name="settings_models">模型</string>
+    <string name="settings_no_models_available">暂无可用模型</string>
+    <string name="settings_connect_gateway_model_presets">连接 Gateway 以加载模型预设。</string>
+    <string name="settings_refresh">刷新</string>
+    <string name="settings_active">当前使用</string>
+    <string name="settings_edit_model">编辑模型</string>
+    <string name="settings_delete_model">删除模型</string>
+    <string name="settings_add_model_configuration">添加模型配置</string>
+    <string name="settings_migrate_model_configurations">迁移模型配置</string>
+    <string name="settings_primary_and_fallback_models">主模型与备用模型</string>
+    <string name="settings_unknown_preset">未知预设：%1$s</string>
+    <string name="settings_primary">主模型</string>
+    <string name="settings_fallback">备用模型 %1$d</string>
+    <string name="settings_move_up">上移</string>
+    <string name="settings_move_down">下移</string>
+    <string name="settings_providers_unavailable">提供商不可用</string>
+    <string name="settings_provider_settings_failed">无法加载提供商设置。</string>
+    <string name="settings_connected">已连接</string>
+    <string name="settings_edit_provider">编辑提供商</string>
+    <string name="settings_edit_provider_title">编辑 %1$s</string>
+    <string name="settings_provider_name">提供商名称</string>
+    <string name="settings_keep_existing">保留现有密钥</string>
+    <string name="settings_clear">清除</string>
+    <string name="settings_clear_stored_key">清除已保存的密钥</string>
+    <string name="settings_api_base">API 地址</string>
+    <string name="settings_api_type">API 类型</string>
+    <string name="settings_proxy">代理</string>
+    <string name="settings_thinking_style">思考风格</string>
+    <string name="settings_region">区域</string>
+    <string name="settings_profile">配置文件</string>
+    <string name="settings_extra_headers_json">额外请求头（JSON）</string>
+    <string name="settings_extra_body_json">额外请求体（JSON）</string>
+    <string name="settings_extra_query_json">额外查询参数（JSON）</string>
+    <string name="settings_signing_out">正在退出…</string>
+    <string name="settings_sign_out">退出登录</string>
+    <string name="settings_starting">正在启动…</string>
+    <string name="settings_start_oauth_login">开始 OAuth 登录</string>
+    <string name="settings_authorization_code">授权码（如果需要）</string>
+    <string name="settings_completing">正在完成…</string>
+    <string name="settings_complete_oauth_login">完成 OAuth 登录</string>
+    <string name="settings_add_custom_provider">添加自定义提供商</string>
+    <string name="settings_api_key_optional">API 密钥（可选）</string>
+    <string name="settings_proxy_optional">代理（可选）</string>
+    <string name="settings_thinking_style_optional">思考风格（可选）</string>
+    <string name="settings_extra_headers_json_optional">额外请求头（JSON 对象，可选）</string>
+    <string name="settings_extra_body_json_optional">额外请求体（JSON 对象，可选）</string>
+    <string name="settings_extra_query_json_optional">额外查询参数（JSON 对象，可选）</string>
+    <string name="settings_create">创建</string>
+    <string name="settings_cancel">取消</string>
+    <string name="settings_unsupported_advanced_field">不支持的高级字段：%1$s</string>
+    <string name="settings_delete_model_configuration_title">删除模型配置？</string>
+    <string name="settings_delete">删除</string>
+    <string name="settings_edit_model_configuration">编辑模型配置</string>
+    <string name="settings_label">标签</string>
+    <string name="settings_name_optional">名称（可选）</string>
+    <string name="settings_name">名称</string>
+    <string name="settings_model">模型</string>
+    <string name="settings_max_tokens_optional">最大令牌数（可选）</string>
+    <string name="settings_context_window_optional">上下文窗口（可选）</string>
+    <string name="settings_temperature_optional">温度（0–2，可选）</string>
+    <string name="settings_reasoning_effort_optional">推理强度（可选）</string>
+    <string name="settings_default">默认</string>
+    <string name="settings_numeric_values_invalid">数值无效，请检查允许的范围。</string>
+    <string name="settings_saving_ellipsis">正在保存…</string>
+
+
+    <!-- App 更新对话框文案。 -->
+    <string name="settings_current_version_detail">当前版本：%1$s（%2$s，versionCode %3$d）</string>
+    <string name="settings_update_check_instruction">点击检查以获取当前发布渠道的最新版本。</string>
+    <string name="settings_checking_update_ellipsis">正在检查更新…</string>
+    <string name="settings_currently_up_to_date">当前已是最新版本</string>
+    <string name="settings_downloading_version">正在下载 %1$s（%2$s）</string>
+    <string name="settings_download_complete_message">安装包已下载完成。点击“安装”后将由系统安装器请求你的确认。</string>
+    <string name="settings_opening_installer_ellipsis">正在打开系统安装器…</string>
+    <string name="settings_check">检查</string>
+    <string name="settings_download">下载</string>
+    <string name="settings_install">安装</string>
+    <string name="settings_retry">重试</string>
+    <string name="settings_done">完成</string>
+    <string name="settings_close">关闭</string>
+    <string name="settings_new_version">新版本：%1$s</string>
+    <string name="settings_version_channel">版本类型：%1$s</string>
+    <string name="settings_release_notes">更新日志</string>
+    <string name="settings_no_release_notes">暂无更新日志</string>
+    <string name="settings_downloaded_bytes">已下载 %1$s</string>
+    <string name="settings_downloaded_bytes_total">%1$s / %2$s</string>
+    <string name="settings_check_updates">检查更新</string>
+    <string name="settings_up_to_date_title">已是最新版本</string>
+    <string name="settings_new_version_title">发现新版本</string>
+    <string name="settings_update_failed_title">更新失败</string>
+
+    <string name="settings_open_item">打开 %1$s</string>
+    <string name="settings_open">打开</string>
+
+    <string name="settings_enter_api_key">输入 API 密钥</string>
+    <string name="settings_replacement_api_key">替换 API 密钥</string>
+    <string name="settings_oauth">OAuth</string>
+    <string name="settings_signed_in_as">已登录：%1$s</string>
+    <string name="settings_interactive_oauth_description">此提供商使用交互式 OAuth 流程。</string>
+    <string name="settings_open_url_in_browser">在浏览器中打开此 URL：</string>
+    <string name="settings_legacy_model_configuration">旧版模型配置</string>
+    <string name="settings_migrate_model_description">将旧版主模型和备用模型设置转换为具名模型预设。</string>
+    <string name="settings_migrating">正在迁移…</string>
+    <string name="settings_migrate">迁移</string>
+    <string name="settings_model_call_order">模型调用顺序</string>
+    <string name="settings_model_call_order_description">优先使用第一个模型；请求失败时依次尝试后续模型。</string>
+    <string name="settings_providers">提供商</string>
+    <string name="settings_oauth_account">OAuth：%1$s</string>
+    <string name="settings_no_models_found">未找到模型</string>
+    <string name="settings_provider_returned_no_models">此提供商没有返回模型。</string>
+    <string name="settings_auto">自动</string>
+    <string name="settings_select">选择</string>
+
 </resources>

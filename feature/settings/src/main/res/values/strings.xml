@@ -126,4 +126,136 @@
     <string name="settings_up_to_date">Settings are up to date.</string>
     <string name="settings_saving">Saving</string>
     <string name="settings_save">Save</string>
+
+    <!-- 设置输入组件与模型选择器。 -->
+    <string name="settings_version">Version</string>
+    <string name="settings_checking_ellipsis">Checking…</string>
+    <string name="settings_check_for_updates">Check for updates</string>
+    <string name="settings_you_are_up_to_date">You are up to date</string>
+    <string name="settings_select_image_model">Select image model</string>
+    <string name="settings_search_or_type_model_id">Search or type model ID</string>
+    <string name="settings_type_supported_model_id">Type the model ID supported by this provider.</string>
+    <string name="settings_selected">Selected</string>
+    <string name="settings_use_model_id">Use “%1$s”</string>
+    <string name="settings_hide_api_key">Hide API key</string>
+    <string name="settings_show_api_key">Show API key</string>
+    <string name="settings_edit_api_key">Edit API key</string>
+    <string name="settings_decrease">Decrease</string>
+    <string name="settings_increase">Increase</string>
+
+
+    <!-- 模型、Provider 与通用输入操作文案。 -->
+    <string name="settings_models">Models</string>
+    <string name="settings_no_models_available">No models available</string>
+    <string name="settings_connect_gateway_model_presets">Connect to the gateway to load model presets.</string>
+    <string name="settings_refresh">Refresh</string>
+    <string name="settings_active">Active</string>
+    <string name="settings_edit_model">Edit model</string>
+    <string name="settings_delete_model">Delete model</string>
+    <string name="settings_add_model_configuration">Add model configuration</string>
+    <string name="settings_migrate_model_configurations">Migrate model configurations</string>
+    <string name="settings_primary_and_fallback_models">Primary and fallback models</string>
+    <string name="settings_unknown_preset">Unknown preset: %1$s</string>
+    <string name="settings_primary">Primary</string>
+    <string name="settings_fallback">Fallback %1$d</string>
+    <string name="settings_move_up">Move up</string>
+    <string name="settings_move_down">Move down</string>
+    <string name="settings_providers_unavailable">Providers unavailable</string>
+    <string name="settings_provider_settings_failed">Provider settings could not be loaded.</string>
+    <string name="settings_connected">Connected</string>
+    <string name="settings_edit_provider">Edit provider</string>
+    <string name="settings_edit_provider_title">Edit %1$s</string>
+    <string name="settings_provider_name">Provider name</string>
+    <string name="settings_keep_existing">Keep existing</string>
+    <string name="settings_clear">Clear</string>
+    <string name="settings_clear_stored_key">Clear stored key</string>
+    <string name="settings_api_base">API base</string>
+    <string name="settings_api_type">API type</string>
+    <string name="settings_proxy">Proxy</string>
+    <string name="settings_thinking_style">Thinking style</string>
+    <string name="settings_region">Region</string>
+    <string name="settings_profile">Profile</string>
+    <string name="settings_extra_headers_json">Extra headers (JSON)</string>
+    <string name="settings_extra_body_json">Extra body (JSON)</string>
+    <string name="settings_extra_query_json">Extra query (JSON)</string>
+    <string name="settings_signing_out">Signing out…</string>
+    <string name="settings_sign_out">Sign out</string>
+    <string name="settings_starting">Starting…</string>
+    <string name="settings_start_oauth_login">Start OAuth login</string>
+    <string name="settings_authorization_code">Authorization code (if requested)</string>
+    <string name="settings_completing">Completing…</string>
+    <string name="settings_complete_oauth_login">Complete OAuth login</string>
+    <string name="settings_add_custom_provider">Add custom provider</string>
+    <string name="settings_api_key_optional">API key (optional)</string>
+    <string name="settings_proxy_optional">Proxy (optional)</string>
+    <string name="settings_thinking_style_optional">Thinking style (optional)</string>
+    <string name="settings_extra_headers_json_optional">Extra headers (JSON object, optional)</string>
+    <string name="settings_extra_body_json_optional">Extra body (JSON object, optional)</string>
+    <string name="settings_extra_query_json_optional">Extra query (JSON object, optional)</string>
+    <string name="settings_create">Create</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_unsupported_advanced_field">Unsupported advanced field: %1$s</string>
+    <string name="settings_delete_model_configuration_title">Delete model configuration?</string>
+    <string name="settings_delete">Delete</string>
+    <string name="settings_edit_model_configuration">Edit model configuration</string>
+    <string name="settings_label">Label</string>
+    <string name="settings_name_optional">Name (optional)</string>
+    <string name="settings_name">Name</string>
+    <string name="settings_model">Model</string>
+    <string name="settings_max_tokens_optional">Max tokens (optional)</string>
+    <string name="settings_context_window_optional">Context window (optional)</string>
+    <string name="settings_temperature_optional">Temperature (0–2, optional)</string>
+    <string name="settings_reasoning_effort_optional">Reasoning effort (optional)</string>
+    <string name="settings_default">Default</string>
+    <string name="settings_numeric_values_invalid">Numeric values are invalid. Check the allowed ranges.</string>
+    <string name="settings_saving_ellipsis">Saving…</string>
+
+
+    <!-- App 更新对话框文案。 -->
+    <string name="settings_current_version_detail">Current version: %1$s (%2$s, versionCode %3$d)</string>
+    <string name="settings_update_check_instruction">Check to get the latest version for the current release channel.</string>
+    <string name="settings_checking_update_ellipsis">Checking for updates…</string>
+    <string name="settings_currently_up_to_date">You are up to date</string>
+    <string name="settings_downloading_version">Downloading %1$s (%2$s)</string>
+    <string name="settings_download_complete_message">The package has finished downloading. Tap Install to let the system installer ask for your confirmation.</string>
+    <string name="settings_opening_installer_ellipsis">Opening system installer…</string>
+    <string name="settings_check">Check</string>
+    <string name="settings_download">Download</string>
+    <string name="settings_install">Install</string>
+    <string name="settings_retry">Retry</string>
+    <string name="settings_done">Done</string>
+    <string name="settings_close">Close</string>
+    <string name="settings_new_version">New version: %1$s</string>
+    <string name="settings_version_channel">Version channel: %1$s</string>
+    <string name="settings_release_notes">Release notes</string>
+    <string name="settings_no_release_notes">No release notes</string>
+    <string name="settings_downloaded_bytes">Downloaded %1$s</string>
+    <string name="settings_downloaded_bytes_total">%1$s / %2$s</string>
+    <string name="settings_check_updates">Check for updates</string>
+    <string name="settings_up_to_date_title">Up to date</string>
+    <string name="settings_new_version_title">New version available</string>
+    <string name="settings_update_failed_title">Update failed</string>
+
+    <string name="settings_open_item">Open %1$s</string>
+    <string name="settings_open">Open</string>
+
+    <string name="settings_enter_api_key">Enter API key</string>
+    <string name="settings_replacement_api_key">Replacement API key</string>
+    <string name="settings_oauth">OAuth</string>
+    <string name="settings_signed_in_as">Signed in as %1$s</string>
+    <string name="settings_interactive_oauth_description">This provider uses an interactive OAuth flow.</string>
+    <string name="settings_open_url_in_browser">Open this URL in a browser:</string>
+    <string name="settings_legacy_model_configuration">Legacy model configuration</string>
+    <string name="settings_migrate_model_description">Convert the legacy primary and fallback settings into named model presets.</string>
+    <string name="settings_migrating">Migrating…</string>
+    <string name="settings_migrate">Migrate</string>
+    <string name="settings_model_call_order">Model call order</string>
+    <string name="settings_model_call_order_description">The first model is used first; following entries are tried when a request fails.</string>
+    <string name="settings_providers">Providers</string>
+    <string name="settings_oauth_account">OAuth: %1$s</string>
+    <string name="settings_no_models_found">No models found</string>
+    <string name="settings_provider_returned_no_models">This provider returned no models.</string>
+    <string name="settings_auto">Auto</string>
+    <string name="settings_select">Select</string>
+
 </resources>

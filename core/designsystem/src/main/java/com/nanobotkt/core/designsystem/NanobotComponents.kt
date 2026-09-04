@@ -11,10 +11,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.DockedSearchBar
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,11 +71,65 @@ fun NanobotSectionHeader(
 }
 
 /**
+ * 统一的 Material 3 列表搜索入口。
+ *
+ * 组件直接组合标准 DockedSearchBar 和 SearchBarDefaults.InputField，仅固定 Nanobot 列表页共用的
+ * 搜索图标、清除动作与折叠态。列表过滤没有独立的建议数据源，因此这里明确不展开结果浮层；调用方
+ * 继续持有 TextFieldState，并从 state.text 派生过滤结果，避免搜索 UI 与业务 ViewModel 双向同步。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NanobotSearchBar(
+    state: TextFieldState,
+    placeholder: String,
+    clearContentDescription: String,
+    modifier: Modifier = Modifier,
+    onSearch: (String) -> Unit = {},
+) {
+    DockedSearchBar(
+        inputField = {
+            SearchBarDefaults.InputField(
+                state = state,
+                onSearch = onSearch,
+                expanded = false,
+                // 本地列表过滤不渲染建议面板，焦点变化不能把空的结果浮层展开。
+                onExpandedChange = {},
+                placeholder = { Text(placeholder) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                    )
+                },
+                trailingIcon =
+                    if (state.text.isNotEmpty()) {
+                        {
+                            IconButton(onClick = state::clearText) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = clearContentDescription,
+                                )
+                            }
+                        }
+                    } else {
+                        null
+                    },
+            )
+        },
+        expanded = false,
+        onExpandedChange = {},
+        modifier = modifier,
+        content = {},
+    )
+}
+
+/**
  * Nanobot 的平面导航行组合。
  *
  * ListItem 的排版、状态层和触控语义仍由 Material 3 提供；本组合仅统一普通行透明、选中行 tonal、
  * 单行标题和最多两行摘要的产品规则。表单行、开关行和复杂业务行不应强行套用本组件。
  */
+
 @Composable
 fun NanobotNavigationRow(
     headline: String,

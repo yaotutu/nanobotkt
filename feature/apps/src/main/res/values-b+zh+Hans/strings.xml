@@ -1,0 +1,46 @@
+<resources>
+    <!-- Apps 页面和 MCP 配置对话框的简体中文文案。 -->
+    <string name="apps_title">应用与集成</string>
+    <string name="apps_back">返回</string>
+    <string name="apps_refresh">刷新</string>
+    <string name="apps_search_hint">搜索应用与集成</string>
+    <string name="clear_search">清除搜索</string>
+    <string name="apps_cli_tab">CLI 应用（%1$d）</string>
+    <string name="apps_mcp_tab">MCP（%1$d）</string>
+    <string name="apps_load_error_title">无法加载应用</string>
+    <string name="apps_retry">重试</string>
+    <string name="apps_actions">应用操作</string>
+    <string name="apps_update">更新</string>
+    <string name="apps_test">测试</string>
+    <string name="apps_remove">移除</string>
+    <string name="apps_install">安装</string>
+    <string name="apps_add_custom_mcp">添加自定义 MCP</string>
+    <string name="apps_import_mcp">导入 MCP</string>
+    <string name="apps_import_mcp_config">导入 MCP 配置</string>
+    <string name="apps_import_cursor_mcp">导入 Cursor MCP</string>
+    <string name="apps_mcp_actions">MCP 操作</string>
+    <string name="apps_enable">启用</string>
+    <string name="apps_required">必填</string>
+    <string name="apps_import_mcp_configuration_title">导入 MCP 配置</string>
+    <string name="apps_import_cursor_mcp_configuration_title">导入 Cursor MCP 配置</string>
+    <string name="apps_json_configuration">JSON 配置</string>
+    <string name="apps_import">导入</string>
+    <string name="apps_cancel">取消</string>
+    <string name="apps_tools">工具</string>
+    <string name="apps_save_tools">保存工具</string>
+    <string name="apps_custom_mcp_transport_help">本地命令请使用 stdio，远程 URL 请使用 sse 或 streamableHttp。</string>
+    <string name="apps_name_required">名称 *</string>
+    <string name="apps_transport_required">传输方式 *</string>
+    <string name="apps_transport_values">stdio、sse 或 streamableHttp</string>
+    <string name="apps_command">命令</string>
+    <string name="apps_command_placeholder">npx</string>
+    <string name="apps_url">URL</string>
+    <string name="apps_args_json_array">参数 JSON 数组</string>
+    <string name="apps_environment_json_object">环境变量 JSON 对象</string>
+    <string name="apps_working_directory">工作目录</string>
+    <string name="apps_headers_json_object">请求头 JSON 对象</string>
+    <string name="apps_tool_timeout_seconds">工具超时（秒）</string>
+    <string name="apps_enabled_tools">已启用工具</string>
+    <string name="apps_enabled_tools_help">* 或 JSON 字符串数组</string>
+    <string name="apps_save">保存</string>
+</resources>

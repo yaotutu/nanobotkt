@@ -86,7 +86,8 @@ Chat Composer、User Message、Assistant Message、Agent Activity、Conversation
 ### Capability Pages
 
 - Apps、Skills、Automations、Channels 等默认使用平面列表，不为每个条目套 `ElevatedCard`。
-- 状态优先使用统一 Status Label；只有需要筛选或切换的状态才使用 Chip。
+- 列表条目只有一个主要操作时可以直接使用 Button 或 Switch；存在多个次级操作时使用 `IconButton` + `DropdownMenu`，不要在尾部横向或纵向堆叠按钮。
+- 状态优先使用统一 Status Label；FilterChip 只用于筛选。互斥配置优先使用 `SingleChoiceSegmentedButtonRow`，不要用多个 FilterChip 模拟单选。
 - Loading、Empty、Error 必须是不同状态；错误状态提供恢复入口。
 
 ## 7. 禁止事项与例外

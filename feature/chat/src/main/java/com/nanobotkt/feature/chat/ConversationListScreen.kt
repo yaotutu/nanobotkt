@@ -8,14 +8,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -24,13 +23,12 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PushPin
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -47,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nanobotkt.core.designsystem.NanobotNavigationRow
 import com.nanobotkt.core.designsystem.NanobotSectionHeader
+import com.nanobotkt.core.designsystem.NanobotSearchBar
 
 /**
  * 会话列表只依赖这个轻量 UI 模型，避免聊天 feature 反向依赖 app 的 Root 状态或 Sidebar UI。
@@ -157,39 +157,46 @@ fun ConversationListSheet(
                 .heightIn(min = 320.dp, max = 680.dp)
                 .navigationBarsPadding(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (archivedMode) {
-                    IconButton(onClick = { archivedMode = false }) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.conversation_back),
-                        )
+            // Sheet 内也复用标准 TopAppBar，避免普通页面与归档子页各自维护标题排版、返回按钮
+            // 和触控目标。BottomSheet 的拖拽手柄仍由 ModalBottomSheet 自己负责。
+            TopAppBar(
+                title = {
+                    Text(
+                        stringResource(
+                            if (archivedMode) {
+                                R.string.conversation_archived_title
+                            } else {
+                                R.string.conversation_list_title
+                            },
+                        ),
+                    )
+                },
+                navigationIcon = {
+                    if (archivedMode) {
+                        IconButton(onClick = { archivedMode = false }) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = stringResource(R.string.conversation_back),
+                            )
+                        }
                     }
-                }
-                Text(
-                    text = stringResource(
-                        if (archivedMode) R.string.conversation_archived_title else R.string.conversation_list_title,
-                    ),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (!archivedMode) {
-                    // 全局设置已经由聊天主页顶部的常驻入口承载；会话列表只保留与会话导航
-                    // 直接相关的新建操作，避免同一个 Settings 动作在两个层级重复出现。
-                    IconButton(onClick = onNewTopic) {
-                        Icon(
-                            Icons.Rounded.Add,
-                            contentDescription = stringResource(R.string.conversation_new_topic),
-                        )
+                },
+                actions = {
+                    if (!archivedMode) {
+                        // 全局设置已经由聊天主页顶部的常驻入口承载；会话列表只保留与会话导航
+                        // 直接相关的新建操作，避免同一个 Settings 动作在两个层级重复出现。
+                        IconButton(onClick = onNewTopic) {
+                            Icon(
+                                Icons.Rounded.Add,
+                                contentDescription = stringResource(R.string.conversation_new_topic),
+                            )
+                        }
                     }
-                }
-            }
+                },
+                // ModalBottomSheet 已经决定了内容起点；清空 TopAppBar 的系统栏 inset，避免
+                // 在 Sheet 内再次叠加状态栏高度，同时保留标准组件的排版和交互语义。
+                windowInsets = WindowInsets(0, 0, 0, 0),
+            )
 
             ConversationListContent(
                 items = if (archivedMode) archivedItems else items,
@@ -217,6 +224,7 @@ fun ConversationListSheet(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationListContent(
     items: List<ConversationListItem>,
@@ -234,7 +242,8 @@ private fun ConversationListContent(
     archivedCount: Int = 0,
     onShowArchived: () -> Unit = {},
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
+    val queryState = rememberTextFieldState()
+    val query = queryState.text.toString()
     // 输入仅属于当前 UI 实例；关闭 Sheet 后不会写入业务状态，也不会改变会话选择。
     var renameTarget by remember { mutableStateOf<ConversationListItem?>(null) }
     var deleteTarget by remember { mutableStateOf<ConversationListItem?>(null) }
@@ -254,53 +263,36 @@ private fun ConversationListContent(
         modifier = modifier.background(MaterialTheme.colorScheme.background),
     ) {
         if (showHeader) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(R.string.conversation_back),
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.conversation_list_title),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                IconButton(onClick = onNewTopic) {
-                    Icon(
-                        Icons.Rounded.Add,
-                        contentDescription = stringResource(R.string.conversation_new_topic),
-                    )
-                }
-            }
-        }
-
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp),
-            singleLine = true,
-            placeholder = { Text(stringResource(R.string.conversation_search_hint)) },
-            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { query = "" }) {
+            // 使用标准 TopAppBar 处理系统栏 inset、标题层级和操作按钮触控目标，避免手写
+            // 固定 56dp Header 在大字体、横屏或不同窗口尺寸下产生布局偏差。
+            TopAppBar(
+                title = { Text(stringResource(R.string.conversation_list_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
                         Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.clear_search),
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.conversation_back),
                         )
                     }
-                }
-            },
+                },
+                actions = {
+                    IconButton(onClick = onNewTopic) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            contentDescription = stringResource(R.string.conversation_new_topic),
+                        )
+                    }
+                },
+            )
+        }
+
+        NanobotSearchBar(
+            state = queryState,
+            placeholder = stringResource(R.string.conversation_search_hint),
+            clearContentDescription = stringResource(R.string.clear_search),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
         )
 
         LazyColumn(

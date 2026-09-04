@@ -1,6 +1,7 @@
 package com.nanobotkt.feature.automations
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,12 +17,15 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -40,7 +44,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -96,15 +102,15 @@ fun AutomationsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Automations") },
+                title = { Text(stringResource(R.string.automations_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.automations_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
+                        Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.automations_refresh))
                     }
                 },
             )
@@ -125,9 +131,9 @@ fun AutomationsScreen(
             }
             state.error?.let {
                 NanobotErrorState(
-                    title = "Unable to load automations",
+                    title = stringResource(R.string.automations_load_error_title),
                     message = it,
-                    retryLabel = "Retry",
+                    retryLabel = stringResource(R.string.automations_retry),
                     onRetry = viewModel::refresh,
                 )
             }
@@ -135,7 +141,17 @@ fun AutomationsScreen(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (state.loading && state.payload == null) item { CircularProgressIndicator() }
+                if (state.loading && state.payload == null) {
+                    item {
+                        // 列表初次加载使用居中的 Material 进度指示器，避免状态组件贴在左上角。
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                }
                 items(jobs, key = { it.id }) { job ->
                     // 服务端 pending 可能来自另一客户端或后台调度；不能只看本地网络 action。
                     val pending = job.id in state.pending || job.state.pending == true
@@ -153,43 +169,99 @@ fun AutomationsScreen(
                                     Text("${job.schedule.kind} · ${job.state.lastStatus ?: "not run"}")
                                 },
                                 trailingContent = {
-                                    Row {
-                                        IconButton(
-                                            enabled = canToggle,
-                                            onClick = {
-                                                viewModel.action(
-                                                    if (job.enabled) "disable" else "enable",
-                                                    job.id,
+                                    if (canManage) {
+                                        var actionsExpanded by remember(job.id) { mutableStateOf(false) }
+                                        Box {
+                                            IconButton(
+                                                enabled = !pending,
+                                                onClick = { actionsExpanded = true },
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.MoreVert,
+                                                    contentDescription = stringResource(R.string.automations_actions),
                                                 )
-                                            },
-                                        ) {
-                                            Icon(
-                                                if (job.enabled) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                                contentDescription = null,
-                                            )
-                                        }
-                                        if (!isLocalTrigger) {
-                                            IconButton(
-                                                enabled = canRun,
-                                                onClick = { viewModel.action("run", job.id) },
-                                            ) {
-                                                Icon(Icons.Rounded.Bolt, contentDescription = null)
                                             }
-                                        }
-                                        if (canManage) {
-                                            IconButton(
-                                                enabled = !pending,
-                                                onClick = { editJob = job },
+                                            DropdownMenu(
+                                                expanded = actionsExpanded,
+                                                onDismissRequest = { actionsExpanded = false },
                                             ) {
-                                                Icon(Icons.Rounded.Edit, contentDescription = null)
-                                            }
-                                        }
-                                        if (job.protected != true) {
-                                            IconButton(
-                                                enabled = !pending,
-                                                onClick = { deleteJob = job },
-                                            ) {
-                                                Icon(Icons.Rounded.Delete, contentDescription = null)
+                                                // 先关闭菜单再转发原有 action，避免列表刷新或条目删除时
+                                                // Popup 仍然锚定已经离开 Composition 的旧行。
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                            stringResource(
+                                                                if (job.enabled) {
+                                                                    R.string.automations_disable
+                                                                } else {
+                                                                    R.string.automations_enable
+                                                                },
+                                                            ),
+                                                        )
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            if (job.enabled) {
+                                                                Icons.Rounded.Pause
+                                                            } else {
+                                                                Icons.Rounded.PlayArrow
+                                                            },
+                                                            contentDescription = null,
+                                                        )
+                                                    },
+                                                    enabled = canToggle,
+                                                    onClick = {
+                                                        actionsExpanded = false
+                                                        viewModel.action(
+                                                            if (job.enabled) "disable" else "enable",
+                                                            job.id,
+                                                        )
+                                                    },
+                                                )
+                                                if (!isLocalTrigger) {
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.automations_run_now)) },
+                                                        leadingIcon = {
+                                                            Icon(
+                                                                Icons.Rounded.Bolt,
+                                                                contentDescription = null,
+                                                            )
+                                                        },
+                                                        enabled = canRun,
+                                                        onClick = {
+                                                            actionsExpanded = false
+                                                            viewModel.action("run", job.id)
+                                                        },
+                                                    )
+                                                }
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.automations_edit)) },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            Icons.Rounded.Edit,
+                                                            contentDescription = null,
+                                                        )
+                                                    },
+                                                    enabled = !pending,
+                                                    onClick = {
+                                                        actionsExpanded = false
+                                                        editJob = job
+                                                    },
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.automations_delete)) },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            Icons.Rounded.Delete,
+                                                            contentDescription = null,
+                                                        )
+                                                    },
+                                                    enabled = !pending,
+                                                    onClick = {
+                                                        actionsExpanded = false
+                                                        deleteJob = job
+                                                    },
+                                                )
                                             }
                                         }
                                     }
@@ -273,7 +345,7 @@ fun AutomationsScreen(
     deleteJob?.let { job ->
         AlertDialog(
             onDismissRequest = { deleteJob = null },
-            title = { Text("Delete automation?") },
+            title = { Text(stringResource(R.string.automations_delete_title)) },
             text = { Text("This action cannot be undone: ${job.name}") },
             confirmButton = {
                 Button(
@@ -282,10 +354,10 @@ fun AutomationsScreen(
                         viewModel.action("delete", job.id)
                         deleteJob = null
                     },
-                ) { Text("Delete") }
+                ) { Text(stringResource(R.string.automations_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteJob = null }) { Text("Cancel") }
+                TextButton(onClick = { deleteJob = null }) { Text(stringResource(R.string.automations_cancel)) }
             },
         )
     }
@@ -341,7 +413,7 @@ private fun AutomationEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit automation") },
+        title = { Text(stringResource(R.string.automations_edit_title)) },
         text = {
             LazyColumn(
                 modifier = Modifier.heightIn(max = 560.dp),
@@ -367,7 +439,7 @@ private fun AutomationEditDialog(
                         )
                     }
                     item {
-                        Text("Schedule type", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.automations_schedule_type), style = MaterialTheme.typography.labelLarge)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("every" to "Every", "cron" to "Cron", "at" to "Once").forEach { (kind, label) ->
                                 FilterChip(
@@ -461,8 +533,8 @@ private fun AutomationEditDialog(
                         )
                     }
                 },
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.automations_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.automations_cancel)) } },
     )
 }

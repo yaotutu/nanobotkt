@@ -62,20 +62,25 @@ internal fun AppUpdateDialog(
             ) {
                 item {
                     Text(
-                        text = "当前版本：${state.current.versionName}（${state.current.channel.displayName}，versionCode ${state.current.versionCode}）",
+                        text = stringResource(
+                            R.string.settings_current_version_detail,
+                            state.current.versionName,
+                            state.current.channel.displayName,
+                            state.current.versionCode,
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 when (status) {
                     AppUpdateStatus.Idle -> item {
-                        Text("点击检查以获取当前发布渠道的最新版本。")
+                        Text(stringResource(R.string.settings_update_check_instruction))
                     }
                     AppUpdateStatus.Checking -> item {
-                        BusyStatus(text = "正在检查更新…")
+                        BusyStatus(text = stringResource(R.string.settings_checking_update_ellipsis))
                     }
                     AppUpdateStatus.UpToDate -> item {
-                        Text("当前已是最新版本")
+                        Text(stringResource(R.string.settings_currently_up_to_date))
                     }
                     is AppUpdateStatus.UpdateAvailable -> {
                         updateSummaryItems(status.update)
@@ -83,7 +88,11 @@ internal fun AppUpdateDialog(
                     is AppUpdateStatus.Downloading -> {
                         item {
                             Text(
-                                text = "正在下载 ${status.update.versionName}（${status.update.channel.displayName}）",
+                                text = stringResource(
+                                    R.string.settings_downloading_version,
+                                    status.update.versionName,
+                                    status.update.channel.displayName,
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
@@ -93,12 +102,12 @@ internal fun AppUpdateDialog(
                     }
                     is AppUpdateStatus.Downloaded -> {
                         item {
-                            Text("安装包已下载完成。点击“安装”后将由系统安装器请求你的确认。")
+                            Text(stringResource(R.string.settings_download_complete_message))
                         }
                         updateSummaryItems(status.update)
                     }
                     is AppUpdateStatus.Installing -> item {
-                        BusyStatus(text = "正在打开系统安装器…")
+                        BusyStatus(text = stringResource(R.string.settings_opening_installer_ellipsis))
                     }
                     is AppUpdateStatus.Error -> {
                         item {
@@ -133,11 +142,11 @@ internal fun AppUpdateDialog(
         },
         confirmButton = {
             when (status) {
-                AppUpdateStatus.Idle -> TextButton(onClick = onCheck) { Text("检查") }
-                is AppUpdateStatus.UpdateAvailable -> TextButton(onClick = onDownload) { Text("下载") }
-                is AppUpdateStatus.Downloaded -> TextButton(onClick = onInstall) { Text("安装") }
-                is AppUpdateStatus.Error -> TextButton(onClick = onRetry) { Text("重试") }
-                AppUpdateStatus.UpToDate -> TextButton(onClick = onDismiss) { Text("完成") }
+                AppUpdateStatus.Idle -> TextButton(onClick = onCheck) { Text(stringResource(R.string.settings_check)) }
+                is AppUpdateStatus.UpdateAvailable -> TextButton(onClick = onDownload) { Text(stringResource(R.string.settings_download)) }
+                is AppUpdateStatus.Downloaded -> TextButton(onClick = onInstall) { Text(stringResource(R.string.settings_install)) }
+                is AppUpdateStatus.Error -> TextButton(onClick = onRetry) { Text(stringResource(R.string.settings_retry)) }
+                AppUpdateStatus.UpToDate -> TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_done)) }
                 AppUpdateStatus.Checking,
                 is AppUpdateStatus.Downloading,
                 is AppUpdateStatus.Installing,
@@ -150,7 +159,7 @@ internal fun AppUpdateDialog(
                 is AppUpdateStatus.UpdateAvailable,
                 is AppUpdateStatus.Downloaded,
                 is AppUpdateStatus.Error,
-                -> TextButton(onClick = onDismiss) { Text("关闭") }
+                -> TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_close)) }
                 // “已是最新”已经提供“完成”按钮，不再重复渲染语义相同的关闭操作。
                 AppUpdateStatus.UpToDate,
                 AppUpdateStatus.Checking,
@@ -167,12 +176,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.updateSummaryItems(up
     item {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = "新版本：${update.versionName}",
+                text = stringResource(R.string.settings_new_version, update.versionName),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "版本类型：${update.channel.displayName}",
+                text = stringResource(R.string.settings_version_channel, update.channel.displayName),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -181,14 +190,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.updateSummaryItems(up
     item { HorizontalDivider() }
     item {
         Text(
-            text = "更新日志",
+            text = stringResource(R.string.settings_release_notes),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
         )
     }
     item {
         Text(
-            text = update.changelog.trim().ifBlank { "暂无更新日志" },
+            text = update.changelog.trim().ifBlank { stringResource(R.string.settings_no_release_notes) },
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -220,9 +229,13 @@ private fun DownloadProgress(progress: AppUpdateProgress) {
         }
         Text(
             text = if (progress.totalBytes == null) {
-                "已下载 ${formatBytes(progress.downloadedBytes)}"
+                stringResource(R.string.settings_downloaded_bytes, formatBytes(progress.downloadedBytes))
             } else {
-                "${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}"
+                stringResource(
+                R.string.settings_downloaded_bytes_total,
+                formatBytes(progress.downloadedBytes),
+                formatBytes(progress.totalBytes),
+            )
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -230,17 +243,18 @@ private fun DownloadProgress(progress: AppUpdateProgress) {
     }
 }
 
+@Composable
 private fun appUpdateDialogTitle(status: AppUpdateStatus): String = when (status) {
     AppUpdateStatus.Idle,
     AppUpdateStatus.Checking,
-    -> "检查更新"
-    AppUpdateStatus.UpToDate -> "已是最新版本"
+    -> stringResource(R.string.settings_check_updates)
+    AppUpdateStatus.UpToDate -> stringResource(R.string.settings_up_to_date_title)
     is AppUpdateStatus.UpdateAvailable,
     is AppUpdateStatus.Downloading,
     is AppUpdateStatus.Downloaded,
     is AppUpdateStatus.Installing,
-    -> "发现新版本"
-    is AppUpdateStatus.Error -> "更新失败"
+    -> stringResource(R.string.settings_new_version_title)
+    is AppUpdateStatus.Error -> stringResource(R.string.settings_update_failed_title)
 }
 
 /** 仅用于人类可读的下载进度；版本和完整性判断仍使用原始字节数。 */

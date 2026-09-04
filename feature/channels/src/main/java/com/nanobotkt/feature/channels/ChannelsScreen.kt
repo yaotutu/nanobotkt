@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -115,10 +116,21 @@ fun ChannelsScreen(
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            // ListItem 自带标准内边距；与 Divider 配合时不再额外插入整行间距，
+            // 避免出现“空白—分隔线—空白”的松散节奏。
+            contentPadding = PaddingValues(vertical = 8.dp),
         ) {
-            if (state.loading && state.payload == null) item { CircularProgressIndicator() }
+            if (state.loading && state.payload == null) {
+                item {
+                    // 加载状态独立占据一行并居中，避免进度指示器贴在列表左上角。
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+            }
             state.error?.let { error ->
                 item {
                     NanobotErrorState(

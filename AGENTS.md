@@ -133,6 +133,19 @@ feature/<name>/src/main/java/com/nanobotkt/feature/<name>/
 
 ## 5. Kotlin、Compose 与状态管理
 
+### 5.1 Material 3 与自适应 UI
+
+- `docs/UI_RULES.md` 是本项目 UI 组件选择、页面组合和视觉语义的详细规范；修改 Compose UI 前应先阅读与当前页面类型相关的章节。
+- Material 3 已提供完整能力时，优先直接使用标准组件，例如 `Scaffold`、`TopAppBar`、`ListItem`、`Button`、`IconButton`、`OutlinedTextField`、`SearchBar`、`ModalBottomSheet`、`DropdownMenu` 和标准进度组件；不要用手写 `Row`、固定高度或私有绘制重复实现标准组件。
+- 页面级标题栏统一使用 Material 3 `TopAppBar` 系列，并由 `Scaffold` 或所属容器统一处理系统栏 inset。`ModalBottomSheet` 等已经确定内容起点的容器内，可以显式清空重复 inset，但仍应保留标准 TopAppBar 的排版、语义和触控目标。
+- 页面级列表搜索优先复用 `core:designsystem` 中的 `NanobotSearchBar`；下拉菜单、选择器内部的局部筛选可以继续使用 `OutlinedTextField`，不要为了形式统一强行套用页面级 SearchBar。
+- Settings 和配置表单不得使用无业务必要的固定字段宽度。手机宽度下优先 `fillMaxWidth()`；为保证平板、横屏和大窗口的可读性，可以组合 `widthIn(max = ...)` 限制行长。图标尺寸、触控目标、Spacer 和明确的最小尺寸不属于此限制。
+- 所有用户可见静态文案和无障碍 `contentDescription` 必须放入 Android string resources；默认资源使用英文，并同步维护项目已有的简体中文资源目录。服务端返回值、用户输入和纯调试文本不做资源化。
+- 只有稳定、跨 Feature 的产品组合才进入 `core:designsystem`；Feature 专属业务组件留在所属模块。不得仅为了统一名称给每个 Material 3 基础组件增加一层包装。
+- UI 调整至少检查 Light/Dark、大字体、窄屏和宽屏下的布局风险；条件允许时在 `emulator-5554` 验证触控、焦点、滚动、系统栏和返回行为。
+
+### 5.2 Kotlin、Compose 与状态管理
+
 - Kotlin/Java 生产代码优先使用不可变数据、纯函数和表达式式写法。
 - 若任务涉及 JavaScript/TypeScript，优先采用纯函数、不可变数据和显式数据转换，避免依赖可变共享状态。
 - 优先使用 `val`、不可变集合、`data class`、`StateFlow` 和单向数据流；避免可变全局状态。

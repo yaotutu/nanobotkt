@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.Json
@@ -60,13 +61,13 @@ internal fun ModelsPage(
     val editingModel = payload?.modelPresets?.firstOrNull { it.name == editingModelName }
     val editingProvider = payload?.providers?.firstOrNull { it.name == editingProviderName }
 
-    SettingsGroup("Models") {
+    SettingsGroup(stringResource(R.string.settings_models)) {
         if (payload?.modelPresets.isNullOrEmpty()) {
             EmptySettingsRow(
                 icon = Icons.Outlined.SmartToy,
-                title = "No models available",
-                subtitle = "Connect to the gateway to load model presets.",
-                action = "Refresh",
+                title = stringResource(R.string.settings_no_models_available),
+                subtitle = stringResource(R.string.settings_connect_gateway_model_presets),
+                action = stringResource(R.string.settings_refresh),
                 onClick = viewModel::refresh,
             )
         } else {
@@ -77,7 +78,7 @@ internal fun ModelsPage(
                     showBrandLogos = showBrandLogos,
                     title = preset.label,
                     subtitle = "${preset.provider} · ${preset.model}",
-                    value = if (preset.active) "Active" else null,
+                    value = if (preset.active) stringResource(R.string.settings_active) else null,
                     selected = preset.active,
                     // 保留原有语义：点击整行仍然切换当前活动模型。
                     onClick = { viewModel.update(SettingsUpdate(modelPreset = preset.name)) },
@@ -87,14 +88,14 @@ internal fun ModelsPage(
                                 TextButton(onClick = { editingModelName = preset.name }) {
                                     Icon(
                                         Icons.Outlined.Edit,
-                                        contentDescription = "Edit model",
+                                        contentDescription = stringResource(R.string.settings_edit_model),
                                         modifier = Modifier.size(16.dp),
                                     )
                                 }
                                 TextButton(onClick = { deletingModelName = preset.name }) {
                                     Icon(
                                         Icons.Outlined.Delete,
-                                        contentDescription = "Delete model",
+                                        contentDescription = stringResource(R.string.settings_delete_model),
                                         modifier = Modifier.size(16.dp),
                                     )
                                 }
@@ -112,17 +113,17 @@ internal fun ModelsPage(
         ) {
             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Add model configuration")
+            Text(stringResource(R.string.settings_add_model_configuration))
         }
     }
 
     if (payload?.modelCallOrderEditable == false && payload.modelPresets.isNotEmpty()) {
         GroupSpacer()
-        SettingsGroup("Legacy model configuration") {
+        SettingsGroup(stringResource(R.string.settings_legacy_model_configuration)) {
             PreferenceBlock(
-                title = "Migrate model configurations",
+                title = stringResource(R.string.settings_migrate_model_configurations),
                 description =
-                    "Convert the legacy primary and fallback settings into named model presets.",
+                    stringResource(R.string.settings_migrate_model_description),
             )
             TextButton(
                 onClick = viewModel::migrateModelConfigurations,
@@ -130,8 +131,11 @@ internal fun ModelsPage(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             ) {
                 Text(
-                    if ("model-configuration-migration" in state.pending) "Migrating…"
-                    else "Migrate"
+                    if ("model-configuration-migration" in state.pending) {
+                        stringResource(R.string.settings_migrating)
+                    } else {
+                        stringResource(R.string.settings_migrate)
+                    }
                 )
             }
         }
@@ -143,11 +147,11 @@ internal fun ModelsPage(
                 payload.modelPresets.filterNot { it.isDefault }.map { it.name }
             }
         GroupSpacer()
-        SettingsGroup("Model call order") {
+        SettingsGroup(stringResource(R.string.settings_model_call_order)) {
             PreferenceBlock(
-                title = "Primary and fallback models",
+                title = stringResource(R.string.settings_primary_and_fallback_models),
                 description =
-                    "The first model is used first; following entries are tried when a request fails.",
+                    stringResource(R.string.settings_model_call_order_description),
             )
             order.forEachIndexed { index, name ->
                 val preset = payload.modelPresets.firstOrNull { it.name == name }
@@ -156,8 +160,8 @@ internal fun ModelsPage(
                     leadingProvider = preset?.resolvedProvider ?: preset?.provider,
                     showBrandLogos = showBrandLogos,
                     title = preset?.label ?: name,
-                    subtitle = if (preset == null) "Unknown preset: $name" else preset.model,
-                    value = if (index == 0) "Primary" else "Fallback ${index}",
+                    subtitle = if (preset == null) stringResource(R.string.settings_unknown_preset, name) else preset.model,
+                    value = if (index == 0) stringResource(R.string.settings_primary) else stringResource(R.string.settings_fallback, index),
                     showChevron = false,
                     trailingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -173,7 +177,7 @@ internal fun ModelsPage(
                             ) {
                                 Icon(
                                     Icons.Outlined.ArrowUpward,
-                                    contentDescription = "Move up",
+                                    contentDescription = stringResource(R.string.settings_move_up),
                                     modifier = Modifier.size(18.dp),
                                 )
                             }
@@ -190,7 +194,7 @@ internal fun ModelsPage(
                             ) {
                                 Icon(
                                     Icons.Outlined.ArrowDownward,
-                                    contentDescription = "Move down",
+                                    contentDescription = stringResource(R.string.settings_move_down),
                                     modifier = Modifier.size(18.dp),
                                 )
                             }
@@ -203,13 +207,13 @@ internal fun ModelsPage(
     }
 
     GroupSpacer()
-    SettingsGroup("Providers") {
+    SettingsGroup(stringResource(R.string.settings_providers)) {
         if (payload?.providers.isNullOrEmpty()) {
             EmptySettingsRow(
                 icon = Icons.Outlined.Dns,
-                title = "Providers unavailable",
-                subtitle = "Provider settings could not be loaded.",
-                action = "Refresh",
+                title = stringResource(R.string.settings_providers_unavailable),
+                subtitle = stringResource(R.string.settings_provider_settings_failed),
+                action = stringResource(R.string.settings_refresh),
                 onClick = viewModel::refresh,
             )
         } else {
@@ -221,18 +225,18 @@ internal fun ModelsPage(
                     title = provider.label,
                     subtitle =
                         listOfNotNull(
-                                if (provider.configured) "Configured" else "Not configured",
-                                provider.oauthAccount?.let { "OAuth: $it" },
+                                if (provider.configured) stringResource(R.string.settings_configured) else stringResource(R.string.settings_not_configured),
+                                provider.oauthAccount?.let { stringResource(R.string.settings_oauth_account, it) },
                             )
                             .joinToString(" · "),
-                    value = if (provider.configured) "Connected" else null,
+                    value = if (provider.configured) stringResource(R.string.settings_connected) else null,
                     // 点击 Provider 仍然加载模型目录；编辑入口单独放在尾部。
                     onClick = { viewModel.providerModels(provider.name) },
                     trailingContent = {
                         TextButton(onClick = { editingProviderName = provider.name }) {
                             Icon(
                                 Icons.Outlined.Edit,
-                                contentDescription = "Edit provider",
+                                contentDescription = stringResource(R.string.settings_edit_provider),
                                 modifier = Modifier.size(16.dp),
                             )
                         }
@@ -248,7 +252,7 @@ internal fun ModelsPage(
         ) {
             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Add custom provider")
+            Text(stringResource(R.string.settings_add_custom_provider))
         }
     }
 
@@ -258,8 +262,8 @@ internal fun ModelsPage(
             if (catalog.models.isEmpty()) {
                 EmptySettingsRow(
                     Icons.Outlined.Search,
-                    "No models found",
-                    catalog.message ?: "This provider returned no models.",
+                    stringResource(R.string.settings_no_models_found),
+                    catalog.message ?: stringResource(R.string.settings_provider_returned_no_models),
                 )
             } else {
                 catalog.models.forEachIndexed { index, model ->
@@ -368,7 +372,7 @@ internal fun ModelsPage(
             onDismissRequest = {
                 if (!state.pending.contains("model-configuration")) deletingModelName = null
             },
-            title = { Text("Delete model configuration?") },
+            title = { Text(stringResource(R.string.settings_delete_model_configuration_title)) },
             text = {
                 Text(
                     "${preset?.label ?: name} will be removed from the gateway. A model in the call order must be moved first."
@@ -382,11 +386,11 @@ internal fun ModelsPage(
                     },
                     enabled = !state.pending.contains("model-configuration"),
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.settings_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deletingModelName = null }) { Text("Cancel") }
+                TextButton(onClick = { deletingModelName = null }) { Text(stringResource(R.string.settings_cancel)) }
             },
         )
     }
@@ -449,27 +453,27 @@ internal fun ModelConfigurationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (editing) "Edit model configuration" else "Add model configuration") },
+        title = { Text(if (editing) stringResource(R.string.settings_edit_model_configuration) else stringResource(R.string.settings_add_model_configuration)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     label,
                     { label = it },
-                    label = { Text("Label") },
+                    label = { Text(stringResource(R.string.settings_label)) },
                     singleLine = true,
                 )
                 if (!editing) {
                     OutlinedTextField(
                         name,
                         { name = it },
-                        label = { Text("Name (optional)") },
+                        label = { Text(stringResource(R.string.settings_name_optional)) },
                         singleLine = true,
                     )
                 } else {
                     OutlinedTextField(
                         name,
                         {},
-                        label = { Text("Name") },
+                        label = { Text(stringResource(R.string.settings_name)) },
                         singleLine = true,
                         readOnly = true,
                     )
@@ -477,32 +481,32 @@ internal fun ModelConfigurationDialog(
                 OutlinedTextField(
                     model,
                     { model = it },
-                    label = { Text("Model") },
+                    label = { Text(stringResource(R.string.settings_model)) },
                     singleLine = true,
                 )
                 PillPicker(
                     value = provider,
-                    options = (listOf("auto" to "Auto") + providers).withCurrent(provider),
+                    options = (listOf("auto" to stringResource(R.string.settings_auto)) + providers).withCurrent(provider),
                     onSelected = { provider = it },
                 )
                 OutlinedTextField(
                     maxTokens,
                     { maxTokens = it },
-                    label = { Text("Max tokens (optional)") },
+                    label = { Text(stringResource(R.string.settings_max_tokens_optional)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
                 OutlinedTextField(
                     contextWindow,
                     { contextWindow = it },
-                    label = { Text("Context window (optional)") },
+                    label = { Text(stringResource(R.string.settings_context_window_optional)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
                 OutlinedTextField(
                     temperature,
                     { temperature = it },
-                    label = { Text("Temperature (0–2, optional)") },
+                    label = { Text(stringResource(R.string.settings_temperature_optional)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 )
@@ -510,20 +514,20 @@ internal fun ModelConfigurationDialog(
                     PillPicker(
                         value = reasoningEffort,
                         options =
-                            reasoningOptions.map { it to if (it.isBlank()) "Default" else it },
+                            reasoningOptions.map { it to if (it.isBlank()) stringResource(R.string.settings_default) else it },
                         onSelected = { reasoningEffort = it },
                     )
                 } else {
                     OutlinedTextField(
                         reasoningEffort,
                         { reasoningEffort = it },
-                        label = { Text("Reasoning effort (optional)") },
+                        label = { Text(stringResource(R.string.settings_reasoning_effort_optional)) },
                         singleLine = true,
                     )
                 }
                 if (!numericValuesValid) {
                     Text(
-                        "Numeric values are invalid. Check the allowed ranges.",
+                        stringResource(R.string.settings_numeric_values_invalid),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -554,9 +558,15 @@ internal fun ModelConfigurationDialog(
                 },
                 enabled = valid && !saving,
             ) {
-                Text(if (saving) "Saving…" else if (editing) "Save" else "Create")
+                Text(
+                    when {
+                        saving -> stringResource(R.string.settings_saving_ellipsis)
+                        editing -> stringResource(R.string.settings_save)
+                        else -> stringResource(R.string.settings_create)
+                    }
+                )
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.settings_cancel)) } },
     )
 }

@@ -16,13 +16,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -44,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -52,6 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nanobotkt.core.designsystem.NanobotEmptyState
 import com.nanobotkt.core.designsystem.NanobotErrorState
 import com.nanobotkt.core.designsystem.NanobotRowDivider
+import com.nanobotkt.core.designsystem.NanobotSearchBar
 import com.nanobotkt.core.model.McpPresetInfo
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -61,7 +67,8 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
     val mcpFieldValues by viewModel.mcpFieldValues.collectAsStateWithLifecycle()
     val mcpToolSelections by viewModel.mcpToolSelections.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var query by rememberSaveable { mutableStateOf("") }
+    val queryState = rememberTextFieldState()
+    val query = queryState.text.toString()
     var importDialog by remember { mutableStateOf(false) }
     var cursorImportDialog by remember { mutableStateOf(false) }
     var customDialog by remember { mutableStateOf(false) }
@@ -80,15 +87,21 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Apps & integrations") },
+                title = { Text(stringResource(R.string.apps_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.apps_back),
+                        )
                     }
                 },
                 actions = {
                     IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Rounded.Refresh, "Refresh")
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = stringResource(R.string.apps_refresh),
+                        )
                     }
                 },
             )
@@ -99,31 +112,37 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                 Tab(
                     selected = tab == 0,
                     onClick = { tab = 0 },
-                    text = { Text("CLI apps (${state.cli?.installedCount ?: 0})") },
+                    text = { Text(stringResource(R.string.apps_cli_tab, state.cli?.installedCount ?: 0)) },
                 )
                 Tab(
                     selected = tab == 1,
                     onClick = { tab = 1 },
-                    text = { Text("MCP (${state.mcp?.installedCount ?: 0})") },
+                    text = { Text(stringResource(R.string.apps_mcp_tab, state.mcp?.installedCount ?: 0)) },
                 )
             }
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
+            NanobotSearchBar(
+                state = queryState,
+                placeholder = stringResource(R.string.apps_search_hint),
+                clearContentDescription = stringResource(R.string.clear_search),
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
-                label = { Text("Search") },
-                singleLine = true,
             )
             state.error?.let {
                 NanobotErrorState(
-                    title = "Unable to load apps",
+                    title = stringResource(R.string.apps_load_error_title),
                     message = it,
-                    retryLabel = "Retry",
+                    retryLabel = stringResource(R.string.apps_retry),
                     onRetry = viewModel::refresh,
                 )
             }
             if (state.loading && state.cli == null) {
-                Box(Modifier.padding(16.dp)) { CircularProgressIndicator() }
+                // 初次加载时把进度指示器放到可用区域中央，避免沿列表左上角贴边，
+                // 也避免加载状态与真实列表内容形成不一致的视觉层级。
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
             }
             if (tab == 0) {
                 LazyColumn(
@@ -140,30 +159,57 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                                 headlineContent = { Text(app.displayName) },
                                 supportingContent = { Text("${app.description}\n${app.status}") },
                                 trailingContent = {
-                                    Column {
-                                        if (app.installed) {
-                                            // 只有后端 manifest 明确提供可更新的包策略时才显示 Update，
-                                            // 避免给 bundled 或 unsupported app 暴露一个无效按钮。
-                                            if (viewModel.canUpdateCli(app)) {
-                                                TextButton(
-                                                    enabled = !pending,
-                                                    onClick = { viewModel.cli("update", app.name) },
-                                                ) { Text("Update") }
+                                    if (app.installed) {
+                                        var actionsExpanded by remember(app.name) { mutableStateOf(false) }
+                                        Box {
+                                            IconButton(
+                                                enabled = !pending,
+                                                onClick = { actionsExpanded = true },
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.MoreVert,
+                                                    contentDescription = stringResource(R.string.apps_actions),
+                                                )
                                             }
-                                            TextButton(
-                                                enabled = !pending,
-                                                onClick = { viewModel.cli("test", app.name) },
-                                            ) { Text("Test") }
-                                            TextButton(
-                                                enabled = !pending,
-                                                onClick = { viewModel.cli("uninstall", app.name) },
-                                            ) { Text("Remove") }
-                                        } else {
-                                            Button(
-                                                enabled = app.installSupported && !pending,
-                                                onClick = { viewModel.cli("install", app.name) },
-                                            ) { Text("Install") }
+                                            DropdownMenu(
+                                                expanded = actionsExpanded,
+                                                onDismissRequest = { actionsExpanded = false },
+                                            ) {
+                                                // 菜单只负责收敛操作密度，具体 action 字符串仍由 AppsViewModel
+                                                // 解释并交给现有 Gateway 边界处理，因此不会改变业务行为。
+                                                if (viewModel.canUpdateCli(app)) {
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.apps_update)) },
+                                                        onClick = {
+                                                            actionsExpanded = false
+                                                            viewModel.cli("update", app.name)
+                                                        },
+                                                        enabled = !pending,
+                                                    )
+                                                }
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.apps_test)) },
+                                                    onClick = {
+                                                        actionsExpanded = false
+                                                        viewModel.cli("test", app.name)
+                                                    },
+                                                    enabled = !pending,
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text(stringResource(R.string.apps_remove)) },
+                                                    onClick = {
+                                                        actionsExpanded = false
+                                                        viewModel.cli("uninstall", app.name)
+                                                    },
+                                                    enabled = !pending,
+                                                )
+                                            }
                                         }
+                                    } else {
+                                        Button(
+                                            enabled = app.installSupported && !pending,
+                                            onClick = { viewModel.cli("install", app.name) },
+                                        ) { Text(stringResource(R.string.apps_install)) }
                                     }
                                 },
                             )
@@ -184,15 +230,40 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        var importMenuExpanded by remember { mutableStateOf(false) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // 保留一个清晰的主入口，把低频导入能力放入官方 overflow 菜单，
+                            // 避免三个长文本按钮在小屏或大字体下互相挤压。
                             OutlinedButton(onClick = { customDialog = true }) {
-                                Text("Add custom MCP")
+                                Text(stringResource(R.string.apps_add_custom_mcp))
                             }
-                            OutlinedButton(onClick = { importDialog = true }) {
-                                Text("Import MCP config")
-                            }
-                            OutlinedButton(onClick = { cursorImportDialog = true }) {
-                                Text("Import Cursor MCP")
+                            Box {
+                                IconButton(onClick = { importMenuExpanded = true }) {
+                                    Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.apps_import_mcp))
+                                }
+                                DropdownMenu(
+                                    expanded = importMenuExpanded,
+                                    onDismissRequest = { importMenuExpanded = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.apps_import_mcp_config)) },
+                                        onClick = {
+                                            importMenuExpanded = false
+                                            importDialog = true
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.apps_import_cursor_mcp)) },
+                                        onClick = {
+                                            importMenuExpanded = false
+                                            cursorImportDialog = true
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -226,31 +297,52 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                                         )
                                     },
                                     trailingContent = {
-                                        Column {
-                                            if (preset.installed) {
-                                                TextButton(
-                                                    enabled = !pending && !missingRequiredFields,
-                                                    onClick = {
-                                                        // 点击 Test 时把当前字段快照传入 VM，由 VM 再做一次必填校验。
-                                                        viewModel.mcp("test", preset.name, values)
-                                                    },
-                                                ) { Text("Test") }
-                                                TextButton(
+                                        if (preset.installed) {
+                                            var actionsExpanded by remember(preset.name) { mutableStateOf(false) }
+                                            Box {
+                                                IconButton(
                                                     enabled = !pending,
-                                                    onClick = { viewModel.mcp("remove", preset.name) },
-                                                ) { Text("Remove") }
-                                            } else {
-                                                Button(
-                                                    enabled =
-                                                        preset.installSupported &&
-                                                            !pending &&
-                                                            !missingRequiredFields,
-                                                    onClick = {
-                                                        // Enable 与 Test 使用同一套 requiredFields 值和校验路径。
-                                                        viewModel.mcp("enable", preset.name, values)
-                                                    },
-                                                ) { Text("Enable") }
+                                                    onClick = { actionsExpanded = true },
+                                                ) {
+                                                    Icon(
+                                                        Icons.Rounded.MoreVert,
+                                                        contentDescription = stringResource(R.string.apps_mcp_actions),
+                                                    )
+                                                }
+                                                DropdownMenu(
+                                                    expanded = actionsExpanded,
+                                                    onDismissRequest = { actionsExpanded = false },
+                                                ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.apps_test)) },
+                                                        onClick = {
+                                                            actionsExpanded = false
+                                                            // 点击 Test 时把当前字段快照传入 VM，由 VM 再做一次必填校验。
+                                                            viewModel.mcp("test", preset.name, values)
+                                                        },
+                                                        enabled = !pending && !missingRequiredFields,
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.apps_remove)) },
+                                                        onClick = {
+                                                            actionsExpanded = false
+                                                            viewModel.mcp("remove", preset.name)
+                                                        },
+                                                        enabled = !pending,
+                                                    )
+                                                }
                                             }
+                                        } else {
+                                            Button(
+                                                enabled =
+                                                    preset.installSupported &&
+                                                        !pending &&
+                                                        !missingRequiredFields,
+                                                onClick = {
+                                                    // Enable 与 Test 使用同一套 requiredFields 值和校验路径。
+                                                    viewModel.mcp("enable", preset.name, values)
+                                                },
+                                            ) { Text(stringResource(R.string.apps_enable)) }
                                         }
                                     },
                                 )
@@ -283,7 +375,7 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
                                                     { Text(hint) }
                                                 },
                                                 supportingText = if (field.required && !field.configured) {
-                                                    { Text("Required") }
+                                                    { Text(stringResource(R.string.apps_required)) }
                                                 } else {
                                                     null
                                                 },
@@ -320,14 +412,14 @@ fun AppsScreen(onBack: () -> Unit, viewModel: AppsViewModel = hiltViewModel()) {
     }
     if (importDialog) {
         McpImportDialog(
-            title = "Import MCP configuration",
+            title = stringResource(R.string.apps_import_mcp_configuration_title),
             onDismiss = { importDialog = false },
             onImport = viewModel::importConfig,
         )
     }
     if (cursorImportDialog) {
         McpImportDialog(
-            title = "Import Cursor MCP configuration",
+            title = stringResource(R.string.apps_import_cursor_mcp_configuration_title),
             onDismiss = { cursorImportDialog = false },
             onImport = viewModel::importCursorConfig,
         )
@@ -359,7 +451,7 @@ private fun McpImportDialog(
                 value = config,
                 onValueChange = { config = it },
                 minLines = 6,
-                label = { Text("JSON configuration") },
+                label = { Text(stringResource(R.string.apps_json_configuration)) },
             )
         },
         confirmButton = {
@@ -369,10 +461,10 @@ private fun McpImportDialog(
                     onImport(config)
                     onDismiss()
                 },
-            ) { Text("Import") }
+            ) { Text(stringResource(R.string.apps_import)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.apps_cancel)) }
         },
     )
 }
@@ -391,7 +483,7 @@ private fun McpToolsEditor(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text("Tools", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.apps_tools), style = MaterialTheme.typography.titleSmall)
         tools.forEach { tool ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -411,7 +503,7 @@ private fun McpToolsEditor(
             enabled = !pending,
             onClick = { viewModel.updateTools(preset.name) },
         ) {
-            Text("Save tools")
+            Text(stringResource(R.string.apps_save_tools))
         }
     }
 }
@@ -445,7 +537,7 @@ private fun CustomMcpDialog(viewModel: AppsViewModel, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add custom MCP") },
+        title = { Text(stringResource(R.string.apps_add_custom_mcp)) },
         text = {
             Column(
                 modifier = Modifier
@@ -455,44 +547,44 @@ private fun CustomMcpDialog(viewModel: AppsViewModel, onDismiss: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    "Use stdio for a local command, or sse/streamableHttp for a remote URL.",
+                    stringResource(R.string.apps_custom_mcp_transport_help),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Name *") },
+                    label = { Text(stringResource(R.string.apps_name_required)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = transport,
                     onValueChange = { transport = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Transport *") },
-                    supportingText = { Text("stdio, sse, or streamableHttp") },
+                    label = { Text(stringResource(R.string.apps_transport_required)) },
+                    supportingText = { Text(stringResource(R.string.apps_transport_values)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = command,
                     onValueChange = { command = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Command") },
-                    placeholder = { Text("npx") },
+                    label = { Text(stringResource(R.string.apps_command)) },
+                    placeholder = { Text(stringResource(R.string.apps_command_placeholder)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("URL") },
+                    label = { Text(stringResource(R.string.apps_url)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = args,
                     onValueChange = { args = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Args JSON array") },
+                    label = { Text(stringResource(R.string.apps_args_json_array)) },
                     placeholder = { Text("[\"-y\", \"@modelcontextprotocol/server\"]") },
                     singleLine = false,
                 )
@@ -500,7 +592,7 @@ private fun CustomMcpDialog(viewModel: AppsViewModel, onDismiss: () -> Unit) {
                     value = env,
                     onValueChange = { env = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Environment JSON object") },
+                    label = { Text(stringResource(R.string.apps_environment_json_object)) },
                     placeholder = { Text("{\"API_KEY\": \"...\"}") },
                     singleLine = false,
                 )
@@ -508,29 +600,29 @@ private fun CustomMcpDialog(viewModel: AppsViewModel, onDismiss: () -> Unit) {
                     value = cwd,
                     onValueChange = { cwd = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Working directory") },
+                    label = { Text(stringResource(R.string.apps_working_directory)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = headers,
                     onValueChange = { headers = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Headers JSON object") },
+                    label = { Text(stringResource(R.string.apps_headers_json_object)) },
                     singleLine = false,
                 )
                 OutlinedTextField(
                     value = toolTimeout,
                     onValueChange = { toolTimeout = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Tool timeout (seconds)") },
+                    label = { Text(stringResource(R.string.apps_tool_timeout_seconds)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = enabledTools,
                     onValueChange = { enabledTools = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Enabled tools") },
-                    supportingText = { Text("* or a JSON string array") },
+                    label = { Text(stringResource(R.string.apps_enabled_tools)) },
+                    supportingText = { Text(stringResource(R.string.apps_enabled_tools_help)) },
                     singleLine = true,
                 )
                 validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -543,10 +635,10 @@ private fun CustomMcpDialog(viewModel: AppsViewModel, onDismiss: () -> Unit) {
                     viewModel.saveCustom(values)
                     onDismiss()
                 },
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.apps_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.apps_cancel)) }
         },
     )
 }

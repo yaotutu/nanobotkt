@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowCircleUp
@@ -43,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -60,7 +62,7 @@ internal fun VersionCheckRow(
     onCheckVersion: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
-        Text(text = "Version", style = MaterialTheme.typography.titleSmall)
+        Text(text = stringResource(R.string.settings_version), style = MaterialTheme.typography.titleSmall)
         Text(
             text = if (version == "nanobot") version else "v$version",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -70,9 +72,15 @@ internal fun VersionCheckRow(
         OutlinedButton(onClick = onCheckVersion, enabled = !checking) {
             Icon(imageVector = Icons.Outlined.ArrowCircleUp, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text(if (checking) "Checking..." else "Check for updates")
+            Text(
+                if (checking) {
+                    stringResource(R.string.settings_checking_ellipsis)
+                } else {
+                    stringResource(R.string.settings_check_for_updates)
+                }
+            )
         }
-        val status = updateText ?: if (checked) "You're up to date" else null
+        val status = updateText ?: if (checked) stringResource(R.string.settings_you_are_up_to_date) else null
         if (status != null) {
             Spacer(Modifier.size(8.dp))
             Text(
@@ -122,10 +130,10 @@ internal fun ModelIdPicker(
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded },
-        modifier = Modifier.width(280.dp),
+        modifier = Modifier.fillMaxWidth().widthIn(max = 420.dp),
     ) {
         OutlinedTextField(
-            value = value.ifBlank { "Select image model" },
+            value = value.ifBlank { stringResource(R.string.settings_select_image_model) },
             onValueChange = {},
             readOnly = true,
             singleLine = true,
@@ -153,7 +161,7 @@ internal fun ModelIdPicker(
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                placeholder = { Text("Search or type model ID") },
+                placeholder = { Text(stringResource(R.string.settings_search_or_type_model_id)) },
                 leadingIcon = {
                     Icon(imageVector = Icons.Outlined.Search, contentDescription = null)
                 },
@@ -162,7 +170,7 @@ internal fun ModelIdPicker(
             )
             if (models.isEmpty() && trimmedQuery.isBlank()) {
                 Text(
-                    text = "Type the model ID supported by this provider.",
+                    text = stringResource(R.string.settings_type_supported_model_id),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
@@ -190,7 +198,7 @@ internal fun ModelIdPicker(
                         if (modelId == value) {
                             Icon(
                                 imageVector = Icons.Rounded.Check,
-                                contentDescription = "Selected",
+                                contentDescription = stringResource(R.string.settings_selected),
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -209,7 +217,7 @@ internal fun ModelIdPicker(
                     },
                     text = {
                         Text(
-                            text = "Use “$trimmedQuery”",
+                            text = stringResource(R.string.settings_use_model_id, trimmedQuery),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -235,7 +243,7 @@ internal fun SecretPillTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = Modifier.width(280.dp),
+        modifier = Modifier.fillMaxWidth().widthIn(max = 420.dp),
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium,
         placeholder = {
@@ -246,7 +254,12 @@ internal fun SecretPillTextField(
                 Icon(
                     imageVector =
                         if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                    contentDescription = if (visible) "Hide API key" else "Show API key",
+                    contentDescription =
+                        if (visible) {
+                            stringResource(R.string.settings_hide_api_key)
+                        } else {
+                            stringResource(R.string.settings_show_api_key)
+                        },
                 )
             }
         },
@@ -261,13 +274,16 @@ internal fun StoredSecretField(hint: String, onEdit: () -> Unit) {
     OutlinedTextField(
         value = hint,
         onValueChange = {},
-        modifier = Modifier.width(280.dp),
+        modifier = Modifier.fillMaxWidth().widthIn(max = 420.dp),
         readOnly = true,
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium,
         trailingIcon = {
             IconButton(onClick = onEdit) {
-                Icon(imageVector = Icons.Outlined.Edit, contentDescription = "Edit API key")
+                Icon(
+                    imageVector = Icons.Outlined.Edit,
+                    contentDescription = stringResource(R.string.settings_edit_api_key),
+                )
             }
         },
     )
@@ -330,7 +346,10 @@ internal fun NumberStepper(
             onClick = { onValueChange((value - 1).coerceIn(range)) },
             enabled = canDecrease,
         ) {
-            Icon(imageVector = Icons.Rounded.Remove, contentDescription = "Decrease")
+            Icon(
+                imageVector = Icons.Rounded.Remove,
+                contentDescription = stringResource(R.string.settings_decrease),
+            )
         }
         Text(
             text = if (suffix.isBlank()) value.toString() else "$value $suffix",
@@ -342,7 +361,10 @@ internal fun NumberStepper(
             onClick = { onValueChange((value + 1).coerceIn(range)) },
             enabled = canIncrease,
         ) {
-            Icon(imageVector = Icons.Rounded.Add, contentDescription = "Increase")
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = stringResource(R.string.settings_increase),
+            )
         }
     }
 }

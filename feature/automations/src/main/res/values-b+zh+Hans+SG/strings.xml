@@ -1,0 +1,19 @@
+<resources>
+    <!-- Automations 页面和操作对话框的简体中文文案。 -->
+    <string name="automations_title">自动化</string>
+    <string name="automations_back">返回</string>
+    <string name="automations_refresh">刷新</string>
+    <string name="automations_load_error_title">无法加载自动化任务</string>
+    <string name="automations_retry">重试</string>
+    <string name="automations_actions">自动化任务操作</string>
+    <string name="automations_enable">启用</string>
+    <string name="automations_disable">停用</string>
+    <string name="automations_run_now">立即运行</string>
+    <string name="automations_edit">编辑</string>
+    <string name="automations_delete">删除</string>
+    <string name="automations_delete_title">删除自动化任务？</string>
+    <string name="automations_cancel">取消</string>
+    <string name="automations_edit_title">编辑自动化任务</string>
+    <string name="automations_schedule_type">计划类型</string>
+    <string name="automations_save">保存</string>
+</resources>

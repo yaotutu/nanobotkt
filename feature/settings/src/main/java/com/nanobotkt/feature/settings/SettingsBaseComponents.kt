@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Dns
@@ -30,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,9 +50,9 @@ internal fun OpenSectionPage(
     SettingsGroup(title) {
         EmptySettingsRow(
             icon = icon,
-            title = "Open $title",
+            title = stringResource(R.string.settings_open_item, title),
             subtitle = description,
-            action = "Open",
+            action = stringResource(R.string.settings_open),
             onClick = onOpen,
         )
     }
@@ -230,11 +232,11 @@ internal fun PillPicker(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val currentLabel =
-        options.firstOrNull { it.first == value }?.second ?: value.ifBlank { "Select" }
+        options.firstOrNull { it.first == value }?.second ?: value.ifBlank { stringResource(R.string.settings_select) }
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { if (options.isNotEmpty()) expanded = !expanded },
-        modifier = Modifier.width(240.dp),
+        modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp),
     ) {
         OutlinedTextField(
             value = currentLabel,
