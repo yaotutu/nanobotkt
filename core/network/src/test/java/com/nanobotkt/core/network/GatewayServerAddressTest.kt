@@ -7,8 +7,8 @@ class GatewayServerAddressTest {
     @Test
     fun `normalizes supported addresses without guessing protocol`() {
         assertEquals(
-            GatewayServerAddressResult.Valid("http://192.168.55.147:8765"),
-            normalizeGatewayServerAddress("  http://192.168.55.147:8765///  "),
+            GatewayServerAddressResult.Valid("http://192.168.55.201:8765"),
+            normalizeGatewayServerAddress("  http://192.168.55.201:8765///  "),
         )
         assertEquals(
             GatewayServerAddressResult.Valid("https://example.com/nanobot"),

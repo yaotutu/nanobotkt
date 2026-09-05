@@ -33,7 +33,7 @@ class GatewayReconfigurationRulesTest {
 
     @Test
     fun sameEndpointDoesNotDisableACompleteReplacement() {
-        val currentEndpoint = "http://192.168.55.147:8765"
+        val currentEndpoint = "http://192.168.55.201:8765"
         val normalized = normalizeGatewayServerAddress(currentEndpoint)
 
         // 规则没有“地址必须变化”的条件；同地址加新的完整 Secret 仍可提交。

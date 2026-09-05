@@ -1,16 +1,13 @@
 package com.nanobotkt.feature.chat
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Toc
 import androidx.compose.material.icons.outlined.Settings
@@ -19,9 +16,12 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.SmartToy
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -39,10 +39,12 @@ import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 /**
  * 聊天页唯一的顶部常驻区域。
  *
- * 顶部只承载“标题、运行/连接状态、系统设置、当前会话菜单”。会话列表属于高频的移动端导航，
- * 已下沉到 Composer 左侧的独立按钮；这里不再保留重复入口，避免顶部和底部出现两个相同动作。
- * 空闲时不渲染状态文案；出现运行、等待或连接状态时才增加第二行。
+ * 这里直接使用 Material 3 的 CenterAlignedTopAppBar：当前会话标题和辅助状态位于视觉中轴，
+ * 顶部只保留右侧低频会话菜单，不再为了视觉对称把系统设置放到难以触达的左上角。
+ * 高频会话切换继续留在 Composer 旁的拇指热区；系统设置则进入右侧溢出菜单，避免把
+ * “视觉平衡”置于移动端单手可达性之上。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ChatTopStatusBar(
     title: String,
@@ -64,122 +66,115 @@ internal fun ChatTopStatusBar(
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val hasSecondaryRow = workspaceName != null || status != ChatHeaderStatus.IDLE
 
-    Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .statusBarsPadding()
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            // 移除左侧会话按钮后补足标准页面边距，避免标题贴近屏幕边缘；weight 继续保证
-            // 超长标题优先压缩，不会把右侧系统设置和当前会话设置挤出可触控区域。
-            modifier = Modifier.weight(1f).padding(start = 12.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                text = title.ifBlank { stringResource(R.string.conversation_list_title) },
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (hasSecondaryRow) {
-                Row(
-                    // 所有非空状态共用固定的最小行高，避免 Running 或连接状态在文字
-                    // lineHeight 不同时造成顶部栏细微跳动；只压缩标题间距，不缩小两侧 48dp 触控区。
-                    modifier = Modifier.padding(top = 1.dp).heightIn(min = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    workspaceName?.let { name ->
-                        WorkspaceNameLabel(workspaceName = name)
-                    }
-                    if (status != ChatHeaderStatus.IDLE) {
-                        HeaderStatusLabel(status = status, onClick = onStatusClick)
-                    }
-                }
-            }
-        }
-
-        // 系统设置是应用级入口，使用独立的描边齿轮并放在会话菜单左侧。两个按钮共享右侧操作区，
-        // 但不合并到同一个菜单中，从视觉和语义上同时保留“全局设置 / 当前会话设置”的边界。
-        IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
-            Icon(
-                Icons.Outlined.Settings,
-                contentDescription = stringResource(R.string.system_settings),
-                modifier = Modifier.size(22.dp),
-                tint = muted,
-            )
-        }
-
-        Box {
-            IconButton(onClick = { onConfigMenuOpenChange(true) }, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    Icons.Rounded.MoreVert,
-                    contentDescription = stringResource(R.string.current_session_settings),
-                    modifier = Modifier.size(22.dp),
-                    tint = muted,
-                )
-            }
-            DropdownMenu(
-                expanded = configMenuOpen,
-                onDismissRequest = { onConfigMenuOpenChange(false) },
+    CenterAlignedTopAppBar(
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                if (hasSessionInfo) {
-                    SessionConfigMenuItem(
-                        label = stringResource(R.string.session_info_title),
-                        icon = Icons.Rounded.Info,
-                        onClick = {
-                            onConfigMenuOpenChange(false)
-                            onOpenSessionInfo()
-                        },
-                    )
-                }
-                if (hasPromptNavigator) {
-                    SessionConfigMenuItem(
-                        label = stringResource(R.string.prompt_navigator_open),
-                        icon = Icons.Rounded.Checklist,
-                        onClick = {
-                            onConfigMenuOpenChange(false)
-                            onOpenPromptNavigator()
-                        },
-                    )
-                }
-                SessionConfigMenuItem(
-                    label = stringResource(R.string.model_select_title),
-                    icon = Icons.Rounded.SmartToy,
-                    onClick = {
-                        onConfigMenuOpenChange(false)
-                        onOpenModel()
-                    },
+                Text(
+                    text = title.ifBlank { stringResource(R.string.conversation_list_title) },
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                if (hasAccessSettings) {
-                    SessionConfigMenuItem(
-                        label = stringResource(R.string.workspace_access_title),
-                        icon = Icons.Rounded.Folder,
-                        onClick = {
-                            onConfigMenuOpenChange(false)
-                            onOpenAccess()
-                        },
+                if (hasSecondaryRow) {
+                    Row(
+                        // 辅助信息仍保留在标题下方，但随标题整体居中；固定最小行高避免运行状态
+                        // 出现或消失时造成顶部栏细微跳动，同时不改变两侧标准触控区。
+                        modifier = Modifier.heightIn(min = 18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        workspaceName?.let { name ->
+                            WorkspaceNameLabel(workspaceName = name)
+                        }
+                        if (status != ChatHeaderStatus.IDLE) {
+                            HeaderStatusLabel(status = status, onClick = onStatusClick)
+                        }
+                    }
+                }
+            }
+        },
+        actions = {
+            Box {
+                // 当前会话操作放在右槽；展开菜单后仍沿用原有回调和状态，不改变业务行为。
+                IconButton(onClick = { onConfigMenuOpenChange(true) }) {
+                    Icon(
+                        Icons.Rounded.MoreVert,
+                        contentDescription = stringResource(R.string.current_session_settings),
+                        modifier = Modifier.size(22.dp),
+                        tint = muted,
                     )
                 }
-                // Automation 仍由“会话信息”页面展示，避免把同一会话元数据拆成两个边界模糊的入口。
-                if (hasSessionInfo) {
+                DropdownMenu(
+                    expanded = configMenuOpen,
+                    onDismissRequest = { onConfigMenuOpenChange(false) },
+                ) {
+                    if (hasSessionInfo) {
+                        SessionConfigMenuItem(
+                            label = stringResource(R.string.session_info_title),
+                            icon = Icons.Rounded.Info,
+                            onClick = {
+                                onConfigMenuOpenChange(false)
+                                onOpenSessionInfo()
+                            },
+                        )
+                    }
+                    if (hasPromptNavigator) {
+                        SessionConfigMenuItem(
+                            label = stringResource(R.string.prompt_navigator_open),
+                            icon = Icons.Rounded.Checklist,
+                            onClick = {
+                                onConfigMenuOpenChange(false)
+                                onOpenPromptNavigator()
+                            },
+                        )
+                    }
                     SessionConfigMenuItem(
-                        label = stringResource(R.string.session_info_automations),
-                        icon = Icons.AutoMirrored.Rounded.Toc,
+                        label = stringResource(R.string.model_select_title),
+                        icon = Icons.Rounded.SmartToy,
                         onClick = {
                             onConfigMenuOpenChange(false)
-                            onOpenSessionInfo()
+                            onOpenModel()
+                        },
+                    )
+                    if (hasAccessSettings) {
+                        SessionConfigMenuItem(
+                            label = stringResource(R.string.workspace_access_title),
+                            icon = Icons.Rounded.Folder,
+                            onClick = {
+                                onConfigMenuOpenChange(false)
+                                onOpenAccess()
+                            },
+                        )
+                    }
+                    // Automation 仍由“会话信息”页面展示，避免把同一会话元数据拆成两个边界模糊的入口。
+                    if (hasSessionInfo) {
+                        SessionConfigMenuItem(
+                            label = stringResource(R.string.session_info_automations),
+                            icon = Icons.AutoMirrored.Rounded.Toc,
+                            onClick = {
+                                onConfigMenuOpenChange(false)
+                                onOpenSessionInfo()
+                            },
+                        )
+                    }
+                    // 系统设置是应用级低频入口，与上方当前会话操作用分隔线区分；
+                    // 用户无需伸手到左上角，仍可从唯一的右侧菜单稳定进入设置。
+                    HorizontalDivider()
+                    SessionConfigMenuItem(
+                        label = stringResource(R.string.system_settings),
+                        icon = Icons.Outlined.Settings,
+                        onClick = {
+                            onConfigMenuOpenChange(false)
+                            onOpenSettings()
                         },
                     )
                 }
             }
-        }
-    }
+        },
+    )
 }
 
 /**

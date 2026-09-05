@@ -30,5 +30,5 @@
     <string name="model_select_title">Select model</string>
     <string name="model_select_help">Used for new replies.</string>
     <string name="model_settings">Models &amp; providers</string>
-    <string name="reconfigure_gateway">Reconfigure Gateway</string>
+    <string name="login_again">Sign in again</string>
 </resources>

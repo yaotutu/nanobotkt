@@ -16,7 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
-import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.CircularProgressIndicator
@@ -183,7 +183,9 @@ internal fun ConversationListButton(onClick: () -> Unit) {
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = Icons.Rounded.ChatBubbleOutline,
+                // Forum 表达“多个会话之间切换”，比单个 ChatBubbleOutline 更不容易被理解为
+                // 新建消息或当前对话状态；入口仍保留在底部拇指热区，不迁移到顶部导航栏。
+                imageVector = Icons.Rounded.Forum,
                 contentDescription = stringResource(R.string.open_conversation_list),
                 modifier = Modifier.size(21.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,

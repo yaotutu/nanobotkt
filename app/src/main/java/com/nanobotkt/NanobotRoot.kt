@@ -4,7 +4,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -100,7 +102,7 @@ fun NanobotRoot(appViewModel: AppViewModel) {
                     error = state.error,
                     serverUrl = state.serverUrl,
                     onRetry = appViewModel::retry,
-                    onReconfigure = appViewModel::editGatewayConfiguration,
+                    onLoginAgain = appViewModel::editGatewayConfiguration,
                 )
                 is AuthState.Ready -> ReadyRoot(state, appViewModel)
             }
@@ -120,11 +122,11 @@ private fun LoadingScreen() {
 }
 
 @Composable
-private fun UnreachableScreen(
+internal fun UnreachableScreen(
     error: GatewayConfigurationError,
     serverUrl: String,
     onRetry: () -> Unit,
-    onReconfigure: () -> Unit,
+    onLoginAgain: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
@@ -139,18 +141,31 @@ private fun UnreachableScreen(
             )
             Text(stringResource(R.string.gateway_unreachable), style = MaterialTheme.typography.headlineSmall)
             // 临时故障保留完整配置，因此明确展示当前重试目标，并同时提供“重试当前”
-            // 和“重新配置”两个出口；用户不再被困在只允许换密码的旧流程。
+            // 和“重新登录”两个出口；地址或引导密钥错误时，用户不必对同一个错误无限重试。
             Text(serverUrl, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
                 gatewayConfigurationErrorMessage(error),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(onClick = onRetry) {
-                Icon(Icons.Rounded.Refresh, contentDescription = null)
-                Text(stringResource(R.string.retry), Modifier.padding(start = 8.dp))
-            }
-            OutlinedButton(onClick = onReconfigure) {
-                Text(stringResource(R.string.reconfigure_gateway))
+            // 两个恢复动作并排呈现：左侧主按钮继续使用当前地址重试，右侧次按钮进入
+            // 完整登录配置。固定使用 weight 而不是固定宽度，窄屏与横屏都能平分可用空间。
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Button(
+                    modifier = Modifier.weight(1f),
+                    onClick = onRetry,
+                ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null)
+                    Text(stringResource(R.string.retry), Modifier.padding(start = 8.dp))
+                }
+                OutlinedButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = onLoginAgain,
+                ) {
+                    Text(stringResource(R.string.login_again))
+                }
             }
         }
     }
