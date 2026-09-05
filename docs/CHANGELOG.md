@@ -1,9 +1,11 @@
-# NanobotKT 0.1.27
+# NanobotKT 0.1.28
 
-> 自动构建发布，提交：`41a3424`。
+> 自动构建发布，提交：`ef4049f`。
 
 ## 变更
 
+- refactor(ui): streamline recovery and chat header (`ef4049f`)
+- chore(dev): prepare v0.1.27 (`078d098`)
 - refactor(ui): align screens with Material 3 (`41a3424`)
 - chore(dev): prepare v0.1.26 (`bb20766`)
 - fix(chat): handle rejected workspace switching (`215bb13`)
