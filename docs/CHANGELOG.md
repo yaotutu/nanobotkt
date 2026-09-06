@@ -1,9 +1,11 @@
-# NanobotKT 0.1.29
+# NanobotKT 0.1.30
 
-> 自动构建发布，提交：`5a375a5`。
+> 自动构建发布，提交：`87037bb`。
 
 ## 变更
 
+- refactor(chat): 顶部连接状态改为标题 Badge，正常状态完全隐藏 (`87037bb`)
+- chore(dev): prepare v0.1.29 (`02fb533`)
 - feat(chat): consolidate conversation header actions (`5a375a5`)
 - chore(dev): prepare v0.1.28 (`ef3956e`)
 - refactor(ui): streamline recovery and chat header (`ef4049f`)
