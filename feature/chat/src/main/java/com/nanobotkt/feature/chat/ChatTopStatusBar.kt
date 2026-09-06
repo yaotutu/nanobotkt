@@ -7,7 +7,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -21,7 +21,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -35,9 +34,10 @@ import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.transport.TransportStatus
 
 /**
- * 聊天页顶部只保留高频识别信息和一个应用级入口：标题、连接点、系统设置。
+ * 聊天页顶部只保留高频识别信息和一个应用级入口：标题、系统设置。
  * Workspace、模型和自动化都属于低频会话信息，统一收纳到标题点击后的详情面板，避免顶部为
- * 一个纯展示字段额外占行，也避免三个点菜单同时承载两套不同层级的操作。
+ * 一个纯展示字段额外占行，也避免三个点菜单同时承载两套不同层级的操作。连接正常时顶部完全
+ * 不渲染状态；只有连接中或断开时，才在标题右上角叠加不参与布局的轻量 Badge。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,26 +49,28 @@ internal fun ChatTopStatusBar(
 ) {
     CenterAlignedTopAppBar(
         title = {
-            Column(
-                modifier = Modifier
-                    .clickable(onClick = onOpenSessionInfo)
-                    .semantics { role = Role.Button },
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+            Box {
                 Text(
                     text = title.ifBlank { stringResource(R.string.conversation_list_title) },
+                    modifier = Modifier
+                        .clickable(onClick = onOpenSessionInfo)
+                        .semantics { role = Role.Button },
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                ConnectionStatusBadge(
+                    status = transportStatus,
+                    modifier = Modifier
+                        // offset 只改变绘制位置，不参与标题测量，因此 Badge 不会挤压标题或
+                        // 为 TopAppBar 新增操作宽度；轻微向右上偏移，保持“附着于标题”的视觉关系。
+                        .align(androidx.compose.ui.Alignment.TopEnd)
+                        .offset(x = 5.dp, y = 1.dp),
+                )
             }
         },
         actions = {
-            ConnectionStatusDot(
-                status = transportStatus,
-                onClick = onOpenSessionInfo,
-            )
             IconButton(onClick = onOpenSettings) {
                 Icon(
                     imageVector = Icons.Outlined.Settings,
@@ -82,21 +84,29 @@ internal fun ChatTopStatusBar(
 }
 
 /**
- * 顶部连接点是唯一的连接状态视觉提示：正常为绿点，连接中为闪烁橙点，异常为红点。
- * 点本身仍保留 48dp 左右的触控区域，并通过完整 contentDescription 暴露状态，不能只依赖颜色。
+ * 标题 Badge 只提示需要关注的连接状态：连接中为闪烁橙点，断开或错误为红点。
+ * 正常连接和初始空闲都直接不渲染，避免成功状态持续抢占注意力。Badge 不提供独立点击行为，
+ * 用户仍通过标题打开详情，因此这里不需要 48dp 触控区域，也不会占据 TopAppBar actions 宽度。
  */
 @Composable
-internal fun ConnectionStatusDot(
+internal fun ConnectionStatusBadge(
     status: TransportStatus,
-    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val connectionStatus = resolveConnectionStatus(status)
+    if (
+        connectionStatus == ChatConnectionStatus.IDLE ||
+        connectionStatus == ChatConnectionStatus.CONNECTED
+    ) {
+        return
+    }
     val color =
         when (connectionStatus) {
-            ChatConnectionStatus.IDLE -> MaterialTheme.colorScheme.onSurfaceVariant
             ChatConnectionStatus.CONNECTING -> NanobotThemeDefaults.statusColors.warning
-            ChatConnectionStatus.CONNECTED -> NanobotThemeDefaults.statusColors.success
             ChatConnectionStatus.DISCONNECTED -> MaterialTheme.colorScheme.error
+            ChatConnectionStatus.IDLE,
+            ChatConnectionStatus.CONNECTED,
+            -> Color.Transparent
         }
     val alpha =
         if (connectionStatus == ChatConnectionStatus.CONNECTING) {
@@ -112,36 +122,18 @@ internal fun ConnectionStatusDot(
         }
     val statusDescription =
         when (connectionStatus) {
-            ChatConnectionStatus.IDLE -> stringResource(R.string.connection_status_idle)
             ChatConnectionStatus.CONNECTING -> stringResource(R.string.connection_status_connecting)
-            ChatConnectionStatus.CONNECTED -> stringResource(R.string.connection_status_connected)
             ChatConnectionStatus.DISCONNECTED -> stringResource(R.string.connection_status_disconnected)
+            ChatConnectionStatus.IDLE -> stringResource(R.string.connection_status_idle)
+            ChatConnectionStatus.CONNECTED -> stringResource(R.string.connection_status_connected)
         }
-    val modifier =
-        Modifier
-            .size(48.dp)
-            .then(
-                if (onClick == null) {
-                    Modifier
-                } else {
-                    Modifier
-                        .clickable(onClick = onClick)
-                        .semantics { role = Role.Button }
-                },
-            )
-            .padding(19.dp)
-            .semantics { contentDescription = statusDescription }
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            modifier = Modifier
-                .size(10.dp),
-            shape = androidx.compose.foundation.shape.CircleShape,
-            color = color.copy(alpha = alpha),
-        ) {}
-    }
+    Surface(
+        modifier = modifier
+            .size(6.dp)
+            .semantics { contentDescription = statusDescription },
+        shape = androidx.compose.foundation.shape.CircleShape,
+        color = color.copy(alpha = alpha),
+    ) {}
 }
 
 /** 供详情面板复用的连接状态文字，顶部栏本身不显示这段文字。 */
