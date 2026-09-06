@@ -75,6 +75,8 @@ fun ChatScreen(
     onNewConversation: () -> Unit = {},
     onToggleConversationPinned: (String) -> Unit = {},
     onRenameConversation: (ConversationListItem, String) -> Unit = { _, _ -> },
+    conversationMutationError: String? = null,
+    onClearConversationMutationError: () -> Unit = {},
     onArchiveConversation: (String) -> Unit = {},
     onDeleteConversation: (ConversationListItem) -> Unit = {},
     onSessionCreated: (String) -> Unit = {},
@@ -90,7 +92,6 @@ fun ChatScreen(
     var sessionInfoOpen by remember { mutableStateOf(false) }
     var modelDialogOpen by remember { mutableStateOf(false) }
     var accessDialogOpen by remember { mutableStateOf(false) }
-    var configMenuOpen by remember { mutableStateOf(false) }
     // 关闭错误条只影响当前页面的视觉反馈，不清理 ViewModel 或 Repository 中的业务错误。
     // key 绑定会话，避免用户切换会话后旧页面的关闭选择错误地隐藏新会话反馈。
     var dismissedInlineErrorKey by remember(state.sessionKey) { mutableStateOf<String?>(null) }
@@ -114,7 +115,6 @@ fun ChatScreen(
         sessionInfoOpen = false
         modelDialogOpen = false
         accessDialogOpen = false
-        configMenuOpen = false
     }
 
     val hasUserPrompts =
@@ -285,6 +285,13 @@ fun ChatScreen(
     }
 
     val activeWorkspaceScope = state.workspaceScope ?: state.workspaces?.defaultScope
+    val currentConversation =
+        remember(conversationItems, state.sessionKey, selectedConversationKey) {
+            // 已持久化会话可能先出现在 ChatRepository、稍后才进入 Sidebar；只有找到 Sidebar
+            // 对应项时才开放重命名，确保修改继续复用同一条乐观更新和失败回滚链路。
+            val currentKey = state.sessionKey ?: selectedConversationKey
+            (conversationItems + archivedConversationItems).firstOrNull { item -> item.key == currentKey }
+        }
     val workspaceEditable =
         // Hero 代表尚未创建 chatId 的新主题；Composer.sending 额外兜住创建请求返回前的竞态。
         // 更关键的是必须服从服务端下发的能力开关：Android 通过局域网访问 browser surface 时，
@@ -332,47 +339,14 @@ fun ChatScreen(
         )
     }
 
-    val waitingForUser =
-        remember(state.messages, state.activeTurnId) {
-            hasWaitingForUserActivity(
-                messages = state.messages,
-                activeTurnId = state.activeTurnId,
-            )
-        }
-    val headerStatus =
-        resolveChatHeaderStatus(
-            transportStatus = transportStatus,
-            waitingForUser = waitingForUser,
-            active = state.activeTurnId != null,
-        )
     // 页面骨架固定为“顶部状态栏 + 中间消息区 + 底部 Composer”。
     // Composer 不再覆盖消息列表，因此消息区只需要负责自己的滚动和跳转。
     Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         ChatTopStatusBar(
             title = title,
-            workspaceName = activeWorkspaceScope?.displayName(),
-            status = headerStatus,
-            configMenuOpen = configMenuOpen,
-            hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
-            hasSessionInfo = state.sessionKey != null,
-            hasAccessSettings = activeWorkspaceScope != null,
+            transportStatus = transportStatus,
             onOpenSettings = onOpenSettings,
-            onStatusClick = {
-                // 运行/等待状态指向当前时间轴中最后一段可见 Activity；连接状态没有对应
-                // 消息记录，因此点击时保持原位，避免伪造跳转目标。
-                if (headerStatus == ChatHeaderStatus.RUNNING ||
-                    headerStatus == ChatHeaderStatus.WAITING_FOR_USER
-                ) {
-                    visibleTimelineItems
-                        .lastOrNull { item -> item is ChatTimelineItem.AgentActivity }
-                        ?.let { item -> jumpTargetKey = item.key }
-                }
-            },
-            onConfigMenuOpenChange = { configMenuOpen = it },
-            onOpenPromptNavigator = { promptNavigatorOpen = true },
             onOpenSessionInfo = { sessionInfoOpen = true },
-            onOpenModel = { modelDialogOpen = true },
-            onOpenAccess = { accessDialogOpen = true },
         )
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -456,8 +430,33 @@ fun ChatScreen(
     SessionInfoSheet(
         title = title,
         sessionKey = state.sessionKey,
+        workspaceName = activeWorkspaceScope?.displayName(),
+        modelName = state.model.displayLabel,
+        transportStatus = transportStatus,
+        hasPromptNavigator = state.sessionKey != null && hasUserPrompts,
+        hasWorkspaceAccess = activeWorkspaceScope != null,
+        renamePending = currentConversation?.pending == true,
+        renameFailed = conversationMutationError != null,
         loadJobs = viewModel.loadSessionAutomations,
         visible = sessionInfoOpen,
+        onRename = { updatedTitle ->
+            // 不在 Chat 内直接写标题；Sidebar item 是跨入口共享的 UI 契约，重命名后顶部、
+            // 会话列表和持久化状态会沿同一条 Repository 流同步或一起回滚。
+            currentConversation?.let { item -> onRenameConversation(item, updatedTitle) }
+        },
+        onClearRenameError = onClearConversationMutationError,
+        onOpenPromptNavigator = {
+            sessionInfoOpen = false
+            promptNavigatorOpen = true
+        },
+        onOpenModel = {
+            sessionInfoOpen = false
+            modelDialogOpen = true
+        },
+        onOpenWorkspaceAccess = {
+            sessionInfoOpen = false
+            accessDialogOpen = true
+        },
         onClose = { sessionInfoOpen = false },
     )
 

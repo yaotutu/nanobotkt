@@ -3,42 +3,31 @@ package com.nanobotkt.feature.chat
 import com.nanobotkt.core.model.UiMessage
 import com.nanobotkt.core.transport.TransportStatus
 
-/**
- * 聊天页顶部状态的产品级枚举。
- *
- * [IDLE] 只表示“没有需要用户注意的临时状态”，界面不会把“空闲”三个字渲染出来；其余状态
- * 都对应可操作或需要关注的会话级事实。消息发送失败等单条消息问题不进入这里，避免顶部状态与
- * 具体消息的错误提示重复。
- */
-internal enum class ChatHeaderStatus {
+/** 顶部连接点只表达传输层状态，不再混入 Agent 运行或等待用户确认等会话活动。 */
+internal enum class ChatConnectionStatus {
     IDLE,
-    WAITING_FOR_USER,
-    RUNNING,
-    RECONNECTING,
+    CONNECTING,
+    CONNECTED,
     DISCONNECTED,
 }
 
 /**
- * 集中定义顶部状态优先级：等待用户确认高于连接问题，其次才是普通运行。
+ * 将底层 WebSocket 状态收敛成顶部栏需要的四种视觉语义。
  *
- * `hasError` 不再参与顶部状态推导。Repository 的通用错误可能来自加载、模型配置或某次发送，
- * 这些错误应由对应内容区或 Snackbar 解释；把它们统一显示成“失败”会让用户无法判断哪里出了问题。
+ * `CONNECTING` 和 `RECONNECTING` 共用动画橙点，`CLOSED` 和 `ERROR` 共用错误红点；这样顶部不会
+ * 因底层状态枚举继续扩展而出现一串难以理解的标签，也保证 Agent 的 RUNNING/WAITING 不会误导
+ * 用户把“模型正在工作”理解为“网络正在连接”。
  */
-internal fun resolveChatHeaderStatus(
-    transportStatus: TransportStatus,
-    waitingForUser: Boolean,
-    active: Boolean,
-): ChatHeaderStatus =
-    when {
-        // 等待确认意味着页面上已经存在一个需要用户处理的 Activity。即使连接随后波动，
-        // 用户仍应先看到这个可操作状态，而不是被较低优先级的重连文案覆盖。
-        waitingForUser -> ChatHeaderStatus.WAITING_FOR_USER
-        transportStatus == TransportStatus.CONNECTING ||
-            transportStatus == TransportStatus.RECONNECTING -> ChatHeaderStatus.RECONNECTING
-        transportStatus == TransportStatus.CLOSED ||
-            transportStatus == TransportStatus.ERROR -> ChatHeaderStatus.DISCONNECTED
-        active -> ChatHeaderStatus.RUNNING
-        else -> ChatHeaderStatus.IDLE
+internal fun resolveConnectionStatus(transportStatus: TransportStatus): ChatConnectionStatus =
+    when (transportStatus) {
+        TransportStatus.IDLE -> ChatConnectionStatus.IDLE
+        TransportStatus.CONNECTING,
+        TransportStatus.RECONNECTING,
+        -> ChatConnectionStatus.CONNECTING
+        TransportStatus.OPEN -> ChatConnectionStatus.CONNECTED
+        TransportStatus.CLOSED,
+        TransportStatus.ERROR,
+        -> ChatConnectionStatus.DISCONNECTED
     }
 
 /**

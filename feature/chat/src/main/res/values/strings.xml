@@ -14,6 +14,10 @@
     <string name="chat_status_running">Running</string>
     <string name="chat_status_reconnecting">Reconnecting</string>
     <string name="chat_status_failed">Failed</string>
+    <string name="connection_status_idle">Connection idle</string>
+    <string name="connection_status_connecting">Connecting</string>
+    <string name="connection_status_connected">Connected</string>
+    <string name="connection_status_disconnected">Connection error</string>
     <string name="jump_to_latest_messages">Scroll to latest message</string>
     <string name="jump_to_latest_messages_with_count">%1$d new messages. Scroll to latest.</string>
     <string name="open_conversation_list">Open conversations</string>
@@ -132,6 +136,11 @@
     <string name="session_info_title">Session details</string>
     <string name="session_info_label">Session</string>
     <string name="session_info_untitled">Untitled topic</string>
+    <string name="session_info_workspace">Workspace</string>
+    <string name="session_info_model">Model</string>
+    <string name="session_info_connection">Connection</string>
+    <string name="session_info_not_available">Not available</string>
+    <string name="session_info_rename_failed">Couldn’t rename this conversation. Try again.</string>
     <string name="session_info_automations">Automations</string>
     <string name="session_info_count">%1$d</string>
     <string name="session_info_loading">Loading automations...</string>

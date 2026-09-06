@@ -339,6 +339,8 @@ private fun ReadyRoot(
                 onNewConversation = requestNewConversation,
                 onToggleConversationPinned = sidebarViewModel::togglePinned,
                 onRenameConversation = { item, title -> sidebarViewModel.rename(item.key, title) },
+                conversationMutationError = sidebar.error,
+                onClearConversationMutationError = sidebarViewModel::clearError,
                 onArchiveConversation = sidebarViewModel::toggleArchived,
                 onDeleteConversation = { item -> sidebarViewModel.delete(item.key) },
                 onToggleTheme = appViewModel::toggleTheme,

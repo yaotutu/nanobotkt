@@ -99,6 +99,15 @@
     <string name="session_info_title">会话详情</string>
     <string name="session_info_label">会话</string>
     <string name="session_info_untitled">未命名话题</string>
+    <string name="connection_status_idle">连接空闲</string>
+    <string name="connection_status_connecting">正在连接</string>
+    <string name="connection_status_connected">连接正常</string>
+    <string name="connection_status_disconnected">连接异常</string>
+    <string name="session_info_workspace">工作区</string>
+    <string name="session_info_model">模型</string>
+    <string name="session_info_connection">连接状态</string>
+    <string name="session_info_not_available">暂不可用</string>
+    <string name="session_info_rename_failed">无法重命名当前会话，请重试。</string>
     <string name="session_info_automations">自动任务</string>
     <string name="session_info_count">%1$d</string>
     <string name="session_info_loading">正在加载自动任务...</string>

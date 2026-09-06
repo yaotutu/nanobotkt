@@ -10,62 +10,34 @@ import org.junit.Test
 
 class ChatHomeStateTest {
     @Test
-    fun `等待确认优先于重连和活动回合`() {
+    fun `连接中状态覆盖底层重连枚举`() {
         assertEquals(
-            ChatHeaderStatus.WAITING_FOR_USER,
-            resolveChatHeaderStatus(
-                transportStatus = TransportStatus.RECONNECTING,
-                waitingForUser = true,
-                active = true,
-            ),
+            ChatConnectionStatus.CONNECTING,
+            resolveConnectionStatus(TransportStatus.RECONNECTING),
         )
     }
 
     @Test
     fun `连接关闭时显示断开而不是笼统失败`() {
         assertEquals(
-            ChatHeaderStatus.DISCONNECTED,
-            resolveChatHeaderStatus(
-                transportStatus = TransportStatus.ERROR,
-                waitingForUser = false,
-                active = true,
-            ),
+            ChatConnectionStatus.DISCONNECTED,
+            resolveConnectionStatus(TransportStatus.ERROR),
         )
     }
 
     @Test
-    fun `连接正常时等待确认优先于普通运行`() {
+    fun `连接正常时不受 Agent 活动影响`() {
         assertEquals(
-            ChatHeaderStatus.WAITING_FOR_USER,
-            resolveChatHeaderStatus(
-                transportStatus = TransportStatus.OPEN,
-                waitingForUser = true,
-                active = true,
-            ),
+            ChatConnectionStatus.CONNECTED,
+            resolveConnectionStatus(TransportStatus.OPEN),
         )
     }
 
     @Test
-    fun `连接正常且存在活动回合时显示运行中`() {
+    fun `空闲连接返回中性状态`() {
         assertEquals(
-            ChatHeaderStatus.RUNNING,
-            resolveChatHeaderStatus(
-                transportStatus = TransportStatus.OPEN,
-                waitingForUser = false,
-                active = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `无临时状态时返回空闲但界面不渲染标签`() {
-        assertEquals(
-            ChatHeaderStatus.IDLE,
-            resolveChatHeaderStatus(
-                transportStatus = TransportStatus.OPEN,
-                waitingForUser = false,
-                active = false,
-            ),
+            ChatConnectionStatus.IDLE,
+            resolveConnectionStatus(TransportStatus.IDLE),
         )
     }
 
