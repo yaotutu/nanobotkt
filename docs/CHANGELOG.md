@@ -1,9 +1,11 @@
-# NanobotKT 0.1.28
+# NanobotKT 0.1.29
 
-> 自动构建发布，提交：`ef4049f`。
+> 自动构建发布，提交：`5a375a5`。
 
 ## 变更
 
+- feat(chat): consolidate conversation header actions (`5a375a5`)
+- chore(dev): prepare v0.1.28 (`ef3956e`)
 - refactor(ui): streamline recovery and chat header (`ef4049f`)
 - chore(dev): prepare v0.1.27 (`078d098`)
 - refactor(ui): align screens with Material 3 (`41a3424`)
