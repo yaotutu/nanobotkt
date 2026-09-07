@@ -1,9 +1,11 @@
-# NanobotKT 0.1.30
+# NanobotKT 0.1.31
 
-> 自动构建发布，提交：`87037bb`。
+> 自动构建发布，提交：`fe4c37d`。
 
 ## 变更
 
+- feat(chat): add left navigation drawer (`fe4c37d`)
+- chore(dev): prepare v0.1.30 (`754bfb9`)
 - refactor(chat): 顶部连接状态改为标题 Badge，正常状态完全隐藏 (`87037bb`)
 - chore(dev): prepare v0.1.29 (`02fb533`)
 - feat(chat): consolidate conversation header actions (`5a375a5`)
