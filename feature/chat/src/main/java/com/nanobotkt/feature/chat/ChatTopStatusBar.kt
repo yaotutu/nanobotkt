@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -34,7 +35,7 @@ import com.nanobotkt.core.designsystem.NanobotThemeDefaults
 import com.nanobotkt.core.transport.TransportStatus
 
 /**
- * 聊天页顶部只保留高频识别信息和一个应用级入口：标题、系统设置。
+ * 聊天页顶部保留一个显式导航入口和当前会话信息。
  * Workspace、模型和自动化都属于低频会话信息，统一收纳到标题点击后的详情面板，避免顶部为
  * 一个纯展示字段额外占行，也避免三个点菜单同时承载两套不同层级的操作。连接正常时顶部完全
  * 不渲染状态；只有连接中或断开时，才在标题右上角叠加不参与布局的轻量 Badge。
@@ -44,6 +45,7 @@ import com.nanobotkt.core.transport.TransportStatus
 internal fun ChatTopStatusBar(
     title: String,
     transportStatus: TransportStatus,
+    onOpenDrawer: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSessionInfo: () -> Unit,
 ) {
@@ -70,7 +72,21 @@ internal fun ChatTopStatusBar(
                 )
             }
         },
+        navigationIcon = {
+            // 手势入口不易被新用户发现，也缺少无障碍语义；保留左上角 Menu 作为稳定兜底。
+            // navigationIcon 会由 TopAppBar 统一处理 inset 与触控目标，不额外手写宽度。
+            IconButton(onClick = onOpenDrawer) {
+                Icon(
+                    imageVector = Icons.Rounded.Menu,
+                    contentDescription = stringResource(R.string.open_navigation),
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
         actions = {
+            // 这里承载的是应用级全局设置，而不是当前会话或模型的局部设置；因此固定放在
+            // Chat 顶部右侧，并沿用 Settings 页面已有的统一入口。
             IconButton(onClick = onOpenSettings) {
                 Icon(
                     imageVector = Icons.Outlined.Settings,

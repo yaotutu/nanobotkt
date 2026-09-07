@@ -8,11 +8,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.Button
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -23,12 +27,14 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,14 +67,17 @@ import com.nanobotkt.feature.chat.ChatScreen
 import com.nanobotkt.feature.chat.ChatViewModel
 import com.nanobotkt.feature.chat.ConversationListItem
 import com.nanobotkt.feature.chat.ConversationListScreen
+import com.nanobotkt.feature.chat.ConversationListDrawerContent
 import com.nanobotkt.feature.security.SecurityScreen
 import com.nanobotkt.feature.settings.SETTINGS_SECTION_MODELS
+import com.nanobotkt.feature.settings.SETTINGS_SECTION_OVERVIEW
 import com.nanobotkt.feature.settings.SettingsScreen
 import com.nanobotkt.feature.sidebar.SidebarUiState
 import com.nanobotkt.feature.sidebar.SidebarViewModel
 import com.nanobotkt.feature.skills.SkillsScreen
 import com.nanobotkt.feature.workspaces.ui.WorkspacesScreen
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 
 @Composable
@@ -191,6 +200,12 @@ private fun ReadyRoot(
     val gatewayErrorMessage = authState.error?.let { gatewayConfigurationErrorMessage(it) }
         ?: stringResource(R.string.gateway_unreachable)
     val retryLabel = stringResource(R.string.retry)
+
+    // Drawer 是纯 UI 状态；不会写入 SavedStateHandle，也不会影响会话选择链路。
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
+    val openDrawer: () -> Unit = { drawerScope.launch { drawerState.open() } }
+    val closeDrawer: () -> Unit = { drawerScope.launch { drawerState.close() } }
 
     DisposableEffect(lifecycleOwner, chatViewModel) {
         val observer = LifecycleEventObserver { _, event ->
@@ -324,43 +339,89 @@ private fun ReadyRoot(
         }
     }
 
-    // 移除 ModalNavigationDrawer 后，Root 直接渲染当前目的地。所有原抽屉入口都由
-    // Settings Home 通过回调交给 app 组合根打开，Settings feature 不依赖兄弟 feature。
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (destination) {
-            AppDestination.CHAT -> ChatScreen(
-                viewModel = chatViewModel,
-                title = selected?.displayTitle(sidebar) ?: stringResource(R.string.new_topic),
-                onOpenSettings = appViewModel::openSettings,
-                conversationItems = conversationItems,
-                archivedConversationItems = archivedConversationItems,
-                selectedConversationKey = selectedKey,
-                onSelectConversation = { item -> appViewModel.selectSession(item.key) },
-                onNewConversation = requestNewConversation,
-                onToggleConversationPinned = sidebarViewModel::togglePinned,
-                onRenameConversation = { item, title -> sidebarViewModel.rename(item.key, title) },
-                conversationMutationError = sidebar.error,
-                onClearConversationMutationError = sidebarViewModel::clearError,
-                onArchiveConversation = sidebarViewModel::toggleArchived,
-                onDeleteConversation = { item -> sidebarViewModel.delete(item.key) },
-                onToggleTheme = appViewModel::toggleTheme,
-                onOpenModelSettings = {
-                    // 模型快捷入口来源是 Chat，因此返回时不经过 Settings Home。
-                    appViewModel.openSettings(SETTINGS_SECTION_MODELS)
-                },
-                // Chat feature 只接收 TransportStatus 这一最小只读边界，用于顶部状态展示；
-                // WebSocket 重连与生命周期仍由 AppViewModel/Transport 管理，避免 UI 产生第二状态源。
-                transportStatus = transport.status,
-                workspaceOptions = workspaceOptions,
-                onSessionCreated = { key ->
-                    if (selectedKey != key) {
-                        // 新会话出现在 Sidebar 前继续保留 drafting guard，避免传播窗口内
-                        // 被第一条旧会话抢占；只在刷新后由 reconcileSessionSelection 清除。
-                        appViewModel.updateSessionSelection(SessionSelection(key, draftingNewTopic))
-                        sidebarViewModel.refresh()
-                    }
-                },
-            )
+    // 根节点只负责组装左侧 Drawer 和当前目的地；Drawer 的会话数据仍来自同一份
+    // Sidebar 快照，导航本身不创建第二套会话状态。
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = drawerState.isOpen,
+        scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f),
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .widthIn(max = 360.dp),
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerContentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                ConversationListDrawerContent(
+                    items = conversationItems,
+                    selectedKey = selectedKey,
+                    onSelect = { item ->
+                        closeDrawer()
+                        appViewModel.selectSession(item.key)
+                    },
+                    onNewTopic = {
+                        closeDrawer()
+                        requestNewConversation()
+                    },
+                    onTogglePinned = sidebarViewModel::togglePinned,
+                    onRename = { item, title ->
+                        sidebarViewModel.rename(item.key, title)
+                    },
+                    onArchive = sidebarViewModel::toggleArchived,
+                    onDelete = { item -> sidebarViewModel.delete(item.key) },
+                )
+            }
+        },
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            when (destination) {
+                AppDestination.CHAT -> ChatScreen(
+                    viewModel = chatViewModel,
+                    title = selected?.displayTitle(sidebar) ?: stringResource(R.string.new_topic),
+                    onOpenDrawer = openDrawer,
+                    conversationItems = conversationItems,
+                    archivedConversationItems = archivedConversationItems,
+                    selectedConversationKey = selectedKey,
+                    onSelectConversation = { item ->
+                        appViewModel.selectSession(item.key)
+                    },
+                    onNewConversation = requestNewConversation,
+                    onToggleConversationPinned = sidebarViewModel::togglePinned,
+                    onRenameConversation = { item, title ->
+                        sidebarViewModel.rename(item.key, title)
+                    },
+                    conversationMutationError = sidebar.error,
+                    onClearConversationMutationError = sidebarViewModel::clearError,
+                    onArchiveConversation = sidebarViewModel::toggleArchived,
+                    onDeleteConversation = { item ->
+                        sidebarViewModel.delete(item.key)
+                    },
+                    onToggleTheme = appViewModel::toggleTheme,
+                    onOpenSettings = {
+                        // 顶部右侧入口是应用级全局设置，始终从 Settings 总览开始，
+                        // 不携带当前会话的模型或 Workspace 局部上下文。
+                        appViewModel.openSettings(SETTINGS_SECTION_OVERVIEW)
+                    },
+                    onOpenModelSettings = {
+                        // 模型快捷入口来源是 Chat，因此返回时不经过 Settings Home。
+                        appViewModel.openSettings(SETTINGS_SECTION_MODELS)
+                    },
+                    // Chat feature 只接收 TransportStatus 这一最小只读边界，用于顶部状态展示；
+                    // WebSocket 重连与生命周期仍由 AppViewModel/Transport 管理，避免 UI 产生第二状态源。
+                    transportStatus = transport.status,
+                    workspaceOptions = workspaceOptions,
+                    onSessionCreated = { key ->
+                        if (selectedKey != key) {
+                            // 新会话出现在 Sidebar 前继续保留 drafting guard，避免传播窗口内
+                            // 被第一条旧会话抢占；只在刷新后由 reconcileSessionSelection 清除。
+                            appViewModel.updateSessionSelection(
+                                SessionSelection(key, draftingNewTopic),
+                            )
+                            sidebarViewModel.refresh()
+                        }
+                    },
+                )
             // 该目的地仅用于兼容旧 SavedState；新的会话列表入口已经是 Chat 内 Bottom Sheet。
             AppDestination.CONVERSATIONS -> ConversationListScreen(
                 items = conversationItems,
@@ -414,6 +475,7 @@ private fun ReadyRoot(
             hostState = sidebarSnackbar,
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
         )
+    }
     }
 }
 

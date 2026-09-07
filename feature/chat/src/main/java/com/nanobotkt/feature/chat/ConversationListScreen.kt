@@ -224,6 +224,41 @@ fun ConversationListSheet(
     }
 }
 
+/**
+ * 左侧 Drawer 的会话列表内容。
+ *
+ * 复用现有 ConversationListContent，只替换容器形态；不引入第二套会话状态。
+ */
+@Composable
+fun ConversationListDrawerContent(
+    items: List<ConversationListItem>,
+    selectedKey: String?,
+    onSelect: (ConversationListItem) -> Unit,
+    onNewTopic: () -> Unit,
+    onTogglePinned: (String) -> Unit,
+    onRename: (ConversationListItem, String) -> Unit,
+    onArchive: (String) -> Unit,
+    onDelete: (ConversationListItem) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        ConversationListContent(
+            items = items,
+            selectedKey = selectedKey,
+            onBack = {},
+            onSelect = onSelect,
+            onNewTopic = onNewTopic,
+            onTogglePinned = onTogglePinned,
+            onRename = onRename,
+            onArchive = onArchive,
+            onDelete = onDelete,
+            showHeader = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationListContent(

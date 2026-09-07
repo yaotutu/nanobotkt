@@ -9,15 +9,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -47,7 +48,6 @@ class ChatComposerUiTest {
         val composerState = mutableStateOf(ComposerUiState())
         val darkTheme = mutableStateOf(false)
         val imagePickCount = AtomicInteger(0)
-        val conversationOpenCount = AtomicInteger(0)
 
         composeRule.setContent {
             NanobotTheme(darkTheme = darkTheme.value, dynamicColor = false) {
@@ -80,7 +80,6 @@ class ChatComposerUiTest {
                         onRemoveAttachment = {},
                         onPickImages = { imagePickCount.incrementAndGet() },
                         onPickFiles = {},
-                        onOpenConversationList = { conversationOpenCount.incrementAndGet() },
                     )
                 }
             }
@@ -92,21 +91,10 @@ class ChatComposerUiTest {
         val conversationDescription = context.getString(R.string.open_conversation_list)
 
         composeRule.onNode(hasTestTag(COMPOSER_TEST_ROOT)).assertIsDisplayed()
-        val conversationNode =
-            composeRule.onNodeWithContentDescription(conversationDescription)
-                .assertIsDisplayed()
-                .assertHasClickAction()
-        val conversationBounds = conversationNode.fetchSemanticsNode().boundsInRoot
-        val inputContainerBounds =
-            composeRule.onNode(hasTestTag(CHAT_INPUT_CONTAINER_TEST_TAG))
-                .assertIsDisplayed()
-                .fetchSemanticsNode()
-                .boundsInRoot
-        check(conversationBounds.right < inputContainerBounds.left) {
-            "会话导航按钮必须位于输入胶囊外侧"
-        }
-        conversationNode.performClick()
-        composeRule.runOnIdle { assertEquals(1, conversationOpenCount.get()) }
+        // 会话列表已迁移到顶部 Menu 打开的 Drawer；底部输入区不再保留第二个会话入口，
+        // 防止同一功能出现两个互相竞争的触控位置。
+        composeRule.onAllNodesWithContentDescription(conversationDescription).assertCountEquals(0)
+        composeRule.onNode(hasTestTag(CHAT_INPUT_CONTAINER_TEST_TAG)).assertIsDisplayed()
         // 空草稿时发送动作保持可见但不可用；输入文字后应立即变为可发送状态。
         composeRule.onNodeWithContentDescription(sendDescription).assertIsNotEnabled()
         saveRootScreenshot(SCREENSHOT_LIGHT_EMPTY)

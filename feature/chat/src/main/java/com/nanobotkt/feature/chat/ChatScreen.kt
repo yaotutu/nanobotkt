@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -57,13 +59,20 @@ import com.nanobotkt.core.transport.TransportStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * 从聊天消息区中部右滑打开左侧 Drawer 的触发阈值。
+ * 选用 48dp：高于系统 touch slop，降低误触；同时低于半屏，不需要大幅移动就能打开。
+ */
+private val DRAWER_OPEN_DRAG_THRESHOLD = 48.dp
+
 /** Chat 页面组合入口与顶部状态区域。复杂消息和输入组件按职责放在同包文件中。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
     title: String,
-    onOpenSettings: () -> Unit,
+    onOpenDrawer: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onOpenModelSettings: () -> Unit,
     onToggleTheme: () -> Unit = {},
     transportStatus: TransportStatus,
@@ -327,11 +336,6 @@ fun ChatScreen(
                 )
             },
             onPickFiles = { filePicker.launch(arrayOf("*/*")) },
-            onOpenConversationList = {
-                // 会话导航入口位于输入框外侧，但仍复用当前 ChatScreen 内的 Sheet；这样只改变
-                // 触达位置，不改变会话选择、草稿恢复或消息树生命周期。
-                conversationSheetOpen = true
-            },
             workspaceScope = activeWorkspaceScope.takeIf { hero },
             workspaceOptions = workspaceOptions,
             workspaceEditable = workspaceEditable && hero,
@@ -345,11 +349,45 @@ fun ChatScreen(
         ChatTopStatusBar(
             title = title,
             transportStatus = transportStatus,
+            onOpenDrawer = onOpenDrawer,
             onOpenSettings = onOpenSettings,
             onOpenSessionInfo = { sessionInfoOpen = true },
         )
 
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    // 只监听消息区中部 50% 的右滑，避免抢占系统返回手势边缘；
+                    // 阈值略高于 touch slop，防止滚动或点击时误触发 Drawer。
+                    var active = false
+                    var accumulatedDrag = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { start ->
+                            active = start.x in (size.width * 0.25f)..(size.width * 0.75f)
+                            accumulatedDrag = 0f
+                        },
+                        onDragEnd = {
+                            active = false
+                            accumulatedDrag = 0f
+                        },
+                        onDragCancel = {
+                            active = false
+                            accumulatedDrag = 0f
+                        },
+                    ) { _, dragAmount ->
+                        if (active && dragAmount > 0f) {
+                            accumulatedDrag += dragAmount
+                            if (accumulatedDrag >= DRAWER_OPEN_DRAG_THRESHOLD.toPx()) {
+                                onOpenDrawer()
+                                active = false
+                                accumulatedDrag = 0f
+                            }
+                        }
+                    }
+                },
+        ) {
             if (state.loading) {
                 ChatTimelineLoadingSkeleton(Modifier.fillMaxSize())
             } else if (fullLoadFailed) {

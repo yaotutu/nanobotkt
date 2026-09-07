@@ -1,6 +1,5 @@
 package com.nanobotkt.feature.chat
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
-import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.CircularProgressIndicator
@@ -160,37 +158,6 @@ internal fun reconcileComposerFieldValue(
             text = externalText,
             selection = TextRange(externalCursor),
         )
-    }
-}
-
-/**
- * 输入框外侧的会话导航按钮。
- *
- * 该按钮与输入胶囊保持独立的 Surface 和点击语义：它切换的是当前聊天上下文，不会被误解为
- * 当前消息的附件或发送动作。即使输入框扩展为多行，父级 Row 也会让它固定贴在底部，保持单手
- * 操作时的空间记忆；48dp 的外层触控区域满足 Android 无障碍最小目标尺寸。
- */
-@Composable
-internal fun ConversationListButton(onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(48.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)),
-        tonalElevation = 1.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(
-                // Forum 表达“多个会话之间切换”，比单个 ChatBubbleOutline 更不容易被理解为
-                // 新建消息或当前对话状态；入口仍保留在底部拇指热区，不迁移到顶部导航栏。
-                imageVector = Icons.Rounded.Forum,
-                contentDescription = stringResource(R.string.open_conversation_list),
-                modifier = Modifier.size(21.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 

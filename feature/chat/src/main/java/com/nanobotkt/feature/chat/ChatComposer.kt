@@ -80,7 +80,6 @@ internal fun HeroComposer(
     onRemoveAttachment: (Int) -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onOpenConversationList: () -> Unit,
     workspaceScope: WorkspaceScope? = null,
     workspaceOptions: List<WorkspaceOption> = emptyList(),
     workspaceEditable: Boolean = false,
@@ -104,7 +103,6 @@ internal fun HeroComposer(
         onRemoveAttachment = onRemoveAttachment,
         onPickImages = onPickImages,
         onPickFiles = onPickFiles,
-        onOpenConversationList = onOpenConversationList,
         workspaceScope = workspaceScope,
         workspaceOptions = workspaceOptions,
         workspaceEditable = workspaceEditable,
@@ -131,7 +129,6 @@ internal fun ConversationComposer(
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onOpenConversationList: () -> Unit,
 ) {
     ComposerLayout(
         state = state,
@@ -152,7 +149,6 @@ internal fun ConversationComposer(
         onClearQuote = onClearQuote,
         onPickImages = onPickImages,
         onPickFiles = onPickFiles,
-        onOpenConversationList = onOpenConversationList,
     )
 }
 
@@ -183,7 +179,6 @@ internal fun ComposerLayout(
     onClearQuote: () -> Unit = {},
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onOpenConversationList: () -> Unit,
     workspaceScope: WorkspaceScope? = null,
     workspaceOptions: List<WorkspaceOption> = emptyList(),
     workspaceEditable: Boolean = false,
@@ -351,13 +346,9 @@ internal fun ComposerLayout(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                // 输入框增长为多行时，会话按钮固定贴住底边，不会跟随整行居中上浮。
+                // 输入框增长为多行时，输入胶囊仍贴住底部，避免操作区随文字高度发生垂直漂移。
                 verticalAlignment = Alignment.Bottom,
             ) {
-                ConversationListButton(onClick = onOpenConversationList)
-
-                // 会话按钮明确位于输入胶囊之外；输入胶囊内部只保留当前消息相关的附件、
-                // 文本与发送动作，从视觉层级上区分“切换上下文”和“编辑当前消息”。
                 Surface(
                     modifier =
                         Modifier.weight(1f)
@@ -473,7 +464,6 @@ internal fun Composer(
     onClearQuote: () -> Unit,
     onPickImages: () -> Unit,
     onPickFiles: () -> Unit,
-    onOpenConversationList: () -> Unit,
     workspaceScope: WorkspaceScope? = null,
     workspaceOptions: List<WorkspaceOption> = emptyList(),
     workspaceEditable: Boolean = false,
@@ -497,7 +487,6 @@ internal fun Composer(
             onRemoveAttachment = onRemoveAttachment,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
-            onOpenConversationList = onOpenConversationList,
             workspaceScope = workspaceScope,
             workspaceOptions = workspaceOptions,
             workspaceEditable = workspaceEditable,
@@ -522,7 +511,6 @@ internal fun Composer(
             onClearQuote = onClearQuote,
             onPickImages = onPickImages,
             onPickFiles = onPickFiles,
-            onOpenConversationList = onOpenConversationList,
         )
     }
 }
