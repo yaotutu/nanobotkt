@@ -34,6 +34,38 @@ class ConversationListScreenUiTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test
+    fun drawerShowsNewConversationAction() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val newTopicRequested = AtomicReference(false)
+
+        composeRule.setContent {
+            NanobotTheme(darkTheme = false, dynamicColor = false) {
+                ConversationListDrawerContent(
+                    items = emptyList(),
+                    selectedKey = null,
+                    onSelect = {},
+                    onNewTopic = { newTopicRequested.set(true) },
+                    onTogglePinned = {},
+                    onRename = { _, _ -> },
+                    onArchive = {},
+                    onDelete = {},
+                )
+            }
+        }
+
+        // Drawer 自己必须提供新建入口，不能只验证回调存在；这个断言锁定按钮的可见性和可点击语义。
+        composeRule.onNodeWithText(context.getString(R.string.conversation_list_title))
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(
+            context.getString(R.string.conversation_new_topic),
+        )
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .performClick()
+        composeRule.runOnIdle { assertEquals(true, newTopicRequested.get()) }
+    }
+
+    @Test
     fun listItemKeepsConversationSelectionAndTrailingMenuActionsSeparate() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val selectedKey = AtomicReference<String?>(null)

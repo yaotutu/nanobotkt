@@ -229,6 +229,7 @@ fun ConversationListSheet(
  *
  * 复用现有 ConversationListContent，只替换容器形态；不引入第二套会话状态。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListDrawerContent(
     items: List<ConversationListItem>,
@@ -241,6 +242,24 @@ fun ConversationListDrawerContent(
     onDelete: (ConversationListItem) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
+        // Drawer 不是 BottomSheet，不能依赖聊天页底部已经移除的会话入口。
+        // 这里单独保留一个标准 TopAppBar，并把“新建会话”作为会话列表的直接操作放在标题栏右侧；
+        // 这样既不会把全局 Settings 混入会话菜单，也能确保 Drawer 打开后始终有明确的新建入口。
+        TopAppBar(
+            title = { Text(stringResource(R.string.conversation_list_title)) },
+            actions = {
+                IconButton(onClick = onNewTopic) {
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.conversation_new_topic),
+                    )
+                }
+            },
+            // ModalDrawerSheet 已经负责系统栏 inset；清除 TopAppBar 的重复 inset，避免标题栏
+            // 在不同设备上出现额外的顶部空白，同时保留 Material 3 的标准排版和触控目标。
+            windowInsets = WindowInsets(0, 0, 0, 0),
+        )
+
         ConversationListContent(
             items = items,
             selectedKey = selectedKey,
