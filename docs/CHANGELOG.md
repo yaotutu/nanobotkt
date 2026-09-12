@@ -1,9 +1,11 @@
-# NanobotKT 0.1.32
+# NanobotKT 0.1.33
 
-> 自动构建发布，提交：`5d34e7c`。
+> 自动构建发布，提交：`4e2ef1a`。
 
 ## 变更
 
+- fix(chat): allow workspace selection for new conversations (`4e2ef1a`)
+- chore(dev): prepare v0.1.32 (`bd5fe2f`)
 - fix: restore new conversation action in drawer (`5d34e7c`)
 - chore(dev): prepare v0.1.31 (`62da2b3`)
 - feat(chat): add left navigation drawer (`fe4c37d`)
