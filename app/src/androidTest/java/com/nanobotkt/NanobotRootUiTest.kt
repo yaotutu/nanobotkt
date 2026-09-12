@@ -31,7 +31,7 @@ class NanobotRootUiTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val retryCount = AtomicInteger(0)
         val loginAgainCount = AtomicInteger(0)
-        val serverUrl = "http://192.168.55.201:8765"
+        val serverUrl = "http://192.168.55.148:8765"
 
         composeRule.setContent {
             NanobotTheme(darkTheme = false, dynamicColor = false) {

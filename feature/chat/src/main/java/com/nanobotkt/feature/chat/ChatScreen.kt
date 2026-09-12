@@ -302,15 +302,14 @@ fun ChatScreen(
             (conversationItems + archivedConversationItems).firstOrNull { item -> item.key == currentKey }
         }
     val workspaceEditable =
-        // Hero 代表尚未创建 chatId 的新主题；Composer.sending 额外兜住创建请求返回前的竞态。
-        // 更关键的是必须服从服务端下发的能力开关：Android 通过局域网访问 browser surface 时，
-        // Gateway 会基于安全边界拒绝更换项目目录。此前 UI 忽略该开关，导致用户能选中一个
-        // 服务端必然拒绝的 Workspace，首次发送随后一直等待 new_chat 结果。能力尚未加载时也
-        // 保持不可切换，避免启动窗口内产生一次无法兑现的选择。
+        // Workspace 选择只属于“尚未创建 chatId 的新主题”。历史会话进入 Chat 后，即使服务端
+        // 返回了 workspace_scope，也只能展示原范围，不能把新建会话的选择逻辑误用于历史会话修改。
+        // 这里不能再用 canChangeProject 关闭入口：该字段描述的是已建立连接下的项目切换能力，
+        // 而新建会话本来就需要把用户选中的路径随 new_chat 一起提交。发送中的竞态仍由 sending
+        // 保护，避免请求已开始后又改变草稿范围。
         state.chatId == null &&
             state.activeTurnId == null &&
-            !composer.sending &&
-            state.workspaces?.controls?.canChangeProject == true
+            !composer.sending
 
     val composerContent: @Composable () -> Unit = {
         Composer(

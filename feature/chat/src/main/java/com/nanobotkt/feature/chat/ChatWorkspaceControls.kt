@@ -75,7 +75,10 @@ internal fun WorkspaceControls(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isHero && !compact && defaultScope != null && controls?.canChangeProject != false) {
+        if (isHero && !compact && defaultScope != null) {
+            // 新主题的项目选择必须独立于 canChangeProject。后者是已建立会话的服务端能力提示，
+            // 不能阻止用户在 new_chat 前选择要随请求提交的 Workspace 路径；历史会话仍不会进入
+            // isHero 分支，因此不会因此获得修改已有范围的入口。
             val label =
                 selectedProject?.projectName
                     ?: selectedProject?.projectPath?.let(::projectNameFromPath)

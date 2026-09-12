@@ -19,7 +19,7 @@ class GatewayReconfigurationStateTest {
         )
 
         val updated = current.afterGatewayReconfiguration(
-            GatewayConfigurationResult.Success("http://192.168.55.201:8765", profileId = "profile-new"),
+            GatewayConfigurationResult.Success("http://192.168.55.148:8765", profileId = "profile-new"),
         )
 
         assertEquals(8L, updated.successGeneration)

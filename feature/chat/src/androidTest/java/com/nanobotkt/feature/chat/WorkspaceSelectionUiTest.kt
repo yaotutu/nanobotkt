@@ -65,7 +65,7 @@ class WorkspaceSelectionUiTest {
     }
 
     @Test
-    fun multipleWorkspacesCannotOpenMenuWhenGatewayDisablesProjectChanges() {
+    fun multipleWorkspacesRemainSelectableForNewTopicWhenGatewayDisablesProjectChanges() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val options =
             buildWorkspaceOptions(
@@ -75,13 +75,16 @@ class WorkspaceSelectionUiTest {
                 )
             )
 
+        val selectedScope = AtomicReference<WorkspaceScope?>(null)
         composeRule.setContent {
             NanobotTheme(darkTheme = false, dynamicColor = false) {
                 NewTopicWorkspaceSelector(
                     currentScope = options.first().scope,
                     options = options,
-                    enabled = false,
-                    onSelect = {},
+                    // 新建会话的选择入口不由 can_change_project 控制；该字段不能覆盖
+                    // new_chat 请求本身携带 workspace_scope 的能力。
+                    enabled = true,
+                    onSelect = selectedScope::set,
                 )
             }
         }
@@ -89,10 +92,17 @@ class WorkspaceSelectionUiTest {
         composeRule.onNodeWithText(
             context.getString(R.string.current_workspace, options.first().displayName)
         ).assertIsDisplayed()
-        // 候选数量不能绕过 Gateway 能力边界：服务端禁止改项目时仍展示当前 Workspace，
-        // 但整行必须不可点击，避免先接受选择、再在首次发送时由服务端拒绝。
         composeRule.onNodeWithTag(NEW_TOPIC_WORKSPACE_SELECTOR_TEST_TAG)
-            .assertIsNotEnabled()
+            .assertHasClickAction()
+            .performClick()
+        composeRule.onNodeWithText(options[1].displayName)
+            .assertIsDisplayed()
+            .performClick()
+
+        composeRule.runOnIdle {
+            // 新建会话必须保留用户选择的完整路径，后续由 ViewModel 放入 new_chat 请求。
+            assertEquals(options[1].scope.projectPath, selectedScope.get()?.projectPath)
+        }
     }
 
     @Test

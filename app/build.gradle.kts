@@ -25,7 +25,7 @@ val appVersionCode: Provider<String> = providers.gradleProperty("APP_VERSION_COD
 
 // 本地调试与正式构建都默认直连局域网 Gateway，避免 Android 模拟器把 localhost 解析到自身，
 // 也避免依赖重启模拟器后会丢失的 adb reverse 映射。需要连接其他环境时仍可通过 Gradle 属性或环境变量覆盖。
-val defaultServerUrl = "http://192.168.55.201:8765"
+val defaultServerUrl = "http://192.168.55.148:8765"
 val configuredServerUrl = providers.gradleProperty("NANOBOT_SERVER_URL")
     .orElse(providers.environmentVariable("NANOBOT_SERVER_URL"))
 

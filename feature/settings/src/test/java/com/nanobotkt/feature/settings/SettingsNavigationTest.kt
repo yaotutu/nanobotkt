@@ -29,9 +29,9 @@ class SettingsNavigationTest {
         // Settings Home 的连接摘要必须来自 app 实际连接入口；这个纯函数只规范显示，
         // 不允许在空值时偷偷回退到 payload.runtime 的内部监听地址。
         assertEquals(
-            "http://192.168.55.201:8765",
+            "http://192.168.55.148:8765",
             gatewayEndpointLabel(
-                gatewayEndpoint = "  http://192.168.55.201:8765/  ",
+                gatewayEndpoint = "  http://192.168.55.148:8765/  ",
                 emptyLabel = "Gateway endpoint unavailable",
             ),
         )
